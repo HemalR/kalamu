@@ -6,12 +6,15 @@ import { CliError, type CommandResult } from "./context.js";
 import { open } from "./open.js";
 import { askYesNo, installSkill, isInteractive, offerSkillInstall } from "./skill.js";
 
+// Injected by tsup's `define` from package.json at build time.
+declare const __KALAMU_VERSION__: string;
+
 const program = new Command();
 
 program
   .name("kalamu")
   .description("Repo-local outliner for turning developer thoughts into agent-ready tasks")
-  .version("0.1.0");
+  .version(__KALAMU_VERSION__);
 
 function collect(value: string, previous: string[]): string[] {
   return [...previous, value];
@@ -96,9 +99,9 @@ program
   .option("--tag <tag>", "nodes carrying a tag")
   .option("--depth <n>", "limit to the first n levels")
   .option("--format <format>", "output format (text|json)")
-  .action((opts: commands.ListOptions & { format?: string }) =>
-    run(() => commands.list(process.cwd(), opts), opts),
-  );
+  .action((opts: commands.ListOptions & { format?: string }) => {
+    run(() => commands.list(process.cwd(), opts), opts);
+  });
 
 program
   .command("show <id>")
@@ -106,9 +109,9 @@ program
   .option("--children", "include the node's subtree")
   .option("--depth <n>", "include descendants up to n levels below the node (implies --children)")
   .option("--format <format>", "output format (text|json|markdown)")
-  .action((id: string, opts: commands.ShowOptions) =>
-    run(() => commands.show(process.cwd(), id, opts), opts),
-  );
+  .action((id: string, opts: commands.ShowOptions) => {
+    run(() => commands.show(process.cwd(), id, opts), opts);
+  });
 
 program
   .command("add")
@@ -122,9 +125,9 @@ program
   .option("--after <id>", "insert after this sibling")
   .option("--before <id>", "insert before this sibling")
   .option("--format <format>", "output format (text|json)")
-  .action((opts: commands.AddOptions & { format?: string }) =>
-    run(() => commands.add(process.cwd(), opts), opts),
-  );
+  .action((opts: commands.AddOptions & { format?: string }) => {
+    run(() => commands.add(process.cwd(), opts), opts);
+  });
 
 program
   .command("update <id>")
@@ -136,9 +139,9 @@ program
   .option("--remove-tag <tag>", "remove tag (repeatable)", collect, [])
   .option("--assign <who>", "assign the task: human, agent, or none to clear")
   .option("--format <format>", "output format (text|json)")
-  .action((id: string, opts: commands.UpdateOptions & { format?: string }) =>
-    run(() => commands.update(process.cwd(), id, opts), opts),
-  );
+  .action((id: string, opts: commands.UpdateOptions & { format?: string }) => {
+    run(() => commands.update(process.cwd(), id, opts), opts);
+  });
 
 program
   .command("move <id>")
@@ -147,30 +150,34 @@ program
   .option("--after <id>", "position after this sibling")
   .option("--before <id>", "position before this sibling")
   .option("--format <format>", "output format (text|json)")
-  .action((id: string, opts: commands.MoveOptions & { format?: string }) =>
-    run(() => commands.move(process.cwd(), id, opts), opts),
-  );
+  .action((id: string, opts: commands.MoveOptions & { format?: string }) => {
+    run(() => commands.move(process.cwd(), id, opts), opts);
+  });
 
 program
   .command("delete <id>")
   .description("delete a node")
   .option("--recursive", "delete the node's subtree too")
   .option("--format <format>", "output format (text|json)")
-  .action((id: string, opts: { recursive?: boolean; format?: string }) =>
-    run(() => commands.del(process.cwd(), id, opts), opts),
-  );
+  .action((id: string, opts: { recursive?: boolean; format?: string }) => {
+    run(() => commands.del(process.cwd(), id, opts), opts);
+  });
 
 program
   .command("done <id>")
   .description("mark an item done (on bullets: visual strikethrough only)")
   .option("--format <format>", "output format (text|json)")
-  .action((id: string, opts: { format?: string }) => run(() => commands.done(process.cwd(), id), opts));
+  .action((id: string, opts: { format?: string }) => {
+    run(() => commands.done(process.cwd(), id), opts);
+  });
 
 program
   .command("reopen <id>")
   .description("reopen an item")
   .option("--format <format>", "output format (text|json)")
-  .action((id: string, opts: { format?: string }) => run(() => commands.reopen(process.cwd(), id), opts));
+  .action((id: string, opts: { format?: string }) => {
+    run(() => commands.reopen(process.cwd(), id), opts);
+  });
 
 program
   .command("handoff <id>")
@@ -178,25 +185,25 @@ program
   .requiredOption("--target <target>", "where it went (backlog|github|linear|file|...)")
   .requiredOption("--ref <ref>", "reference in the target system")
   .option("--format <format>", "output format (text|json)")
-  .action((id: string, opts: { target: string; ref: string; format?: string }) =>
-    run(() => commands.handoff(process.cwd(), id, opts), opts),
-  );
+  .action((id: string, opts: { target: string; ref: string; format?: string }) => {
+    run(() => commands.handoff(process.cwd(), id, opts), opts);
+  });
 
 program
   .command("unhandoff <id>")
   .description("clear a task's handoff record (it becomes eligible for next again)")
   .option("--format <format>", "output format (text|json)")
-  .action((id: string, opts: { format?: string }) =>
-    run(() => commands.unhandoff(process.cwd(), id), opts),
-  );
+  .action((id: string, opts: { format?: string }) => {
+    run(() => commands.unhandoff(process.cwd(), id), opts);
+  });
 
 program
   .command("search <query>")
   .description("search node text")
   .option("--format <format>", "output format (text|json)")
-  .action((query: string, opts: { format?: string }) =>
-    run(() => commands.search(process.cwd(), query), opts),
-  );
+  .action((query: string, opts: { format?: string }) => {
+    run(() => commands.search(process.cwd(), query), opts);
+  });
 
 program
   .command("next")
@@ -206,24 +213,26 @@ program
   .option("--under <id>", "only consider tasks inside this node's subtree")
   .option("--include-handed-off", "also consider tasks already handed off to another system")
   .option("--format <format>", "output format (text|json)")
-  .action((opts: commands.NextCommandOptions & { format?: string }) =>
-    run(() => commands.next(process.cwd(), opts), opts),
-  );
+  .action((opts: commands.NextCommandOptions & { format?: string }) => {
+    run(() => commands.next(process.cwd(), opts), opts);
+  });
 
 program
   .command("clean")
   .description("delete completed tasks (and their subtrees) from the outline")
   .option("--dry-run", "list what would be deleted without writing")
   .option("--format <format>", "output format (text|json)")
-  .action((opts: { dryRun?: boolean; format?: string }) =>
-    run(() => commands.clean(process.cwd(), opts), opts),
-  );
+  .action((opts: { dryRun?: boolean; format?: string }) => {
+    run(() => commands.clean(process.cwd(), opts), opts);
+  });
 
 program
   .command("validate")
   .description("validate the outline file (exit 1 when invalid)")
   .option("--format <format>", "output format (text|json)")
-  .action((opts: { format?: string }) => run(() => commands.validate(process.cwd()), opts));
+  .action((opts: { format?: string }) => {
+    run(() => commands.validate(process.cwd()), opts);
+  });
 
 program.parseAsync().catch((err: unknown) => {
   console.error(`kalamu: ${err instanceof Error ? err.message : String(err)}`);
