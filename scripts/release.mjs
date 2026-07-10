@@ -22,7 +22,11 @@ const cliDir = fileURLToPath(new URL("../packages/cli", import.meta.url));
 
 function run(cmd, opts = {}) {
   console.log(`\n> ${cmd}`);
-  execSync(cmd, { stdio: "inherit", cwd: root, ...opts });
+  try {
+    execSync(cmd, { stdio: "inherit", cwd: root, ...opts });
+  } catch {
+    fail(`"${cmd}" failed — see output above`);
+  }
 }
 
 function capture(cmd, opts = {}) {
@@ -45,6 +49,13 @@ if (capture("git status --porcelain") !== "") {
 }
 if (capture("git branch --show-current") !== "main") {
   fail("releases are cut from main only");
+}
+
+// npm sessions expire; catch that before we bump, commit, or tag anything.
+try {
+  capture("npm whoami", { stdio: ["ignore", "pipe", "ignore"] });
+} catch {
+  fail("not logged in to npm (npm whoami failed) — run `npm login` first");
 }
 
 run(`npm version ${bump} --no-git-tag-version`, { cwd: cliDir });
