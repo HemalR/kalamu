@@ -1,0 +1,50 @@
+/**
+ * The kalamu CLI's commands, rendered by the "CLI commands" sheet, plus the
+ * per-node command builder behind the palette's "Copy CLI command" submenu.
+ * Maintained by hand — must track packages/cli's command table and flags.
+ */
+
+export interface CliCommand {
+  name: string;
+  does: string;
+}
+
+export interface NodeCommandInput {
+  /** The id as the server/CLI knows it — never the optimistic local alias. */
+  serverId: string;
+  kind: "task" | "bullet";
+  done: boolean;
+  hasChildren: boolean;
+}
+
+/** Ready-to-run CLI commands for one node, real id filled in. */
+export function nodeCommands({ serverId, kind, done, hasChildren }: NodeCommandInput): string[] {
+  const commands = [`kalamu show ${serverId} --children`];
+  if (kind === "task") {
+    commands.push(done ? `kalamu reopen ${serverId}` : `kalamu done ${serverId}`);
+    commands.push(`kalamu handoff ${serverId} --target backlog --ref ""`);
+  }
+  commands.push(`kalamu add --parent ${serverId} --kind task --text ""`);
+  // Plain delete refuses nodes with children.
+  commands.push(`kalamu delete ${serverId}${hasChildren ? " --recursive" : ""}`);
+  return commands;
+}
+
+export const CLI_COMMANDS: readonly CliCommand[] = [
+  { name: "init", does: "Initialise Kalamu in the current directory" },
+  { name: "open", does: "Start the local server and open the browser UI" },
+  { name: "list", does: "List outline nodes" },
+  { name: "show", does: "Show a node" },
+  { name: "add", does: "Add a node" },
+  { name: "update", does: "Update a node" },
+  { name: "move", does: "Move a node — subtree moves with it" },
+  { name: "delete", does: "Delete a node" },
+  { name: "done", does: "Mark a task done" },
+  { name: "reopen", does: "Reopen a task" },
+  { name: "handoff", does: "Record that a task was promoted into another system" },
+  { name: "unhandoff", does: "Clear a task's handoff record" },
+  { name: "search", does: "Search node text" },
+  { name: "next", does: "Print the next task for an agent" },
+  { name: "clean", does: "Delete completed tasks and their subtrees" },
+  { name: "validate", does: "Validate the outline file" },
+];

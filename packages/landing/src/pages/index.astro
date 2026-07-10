@@ -1,0 +1,142 @@
+---
+// Placeholder hero — full design/content pass is an open outline task (n_0FNDP5SBW1).
+// The CTA copies a setup prompt the visitor pastes into their coding agent; keep the
+// commands in it aligned with the CLI and the skills.sh install flow.
+const agentInstructions = `Set up Kalamu (repo-local task outliner — https://kalamu.dev) in this repository:
+
+1. Run: npx kalamu init --tour
+   It creates .kalamu/ and seeds a self-guided onboarding outline for me, the human.
+   Every tour item is marked self — it is a demo for me, never work for you. Do not
+   act on, complete, or delete any of it.
+   init prints suggested .gitignore entries — add them to .gitignore.
+2. Install the Kalamu agent skill so coding agents in this repo know how to use it.
+   Detect which agents are in use here (config dirs like .claude/, .cursor/, .agents/, .windsurf/), then run:
+   npx skills add hemalr/kalamu -y
+   with -a <agent> flags for the agents in use (e.g. -a claude-code). Ask me if you can't tell which agents I use.
+3. Verify: npx kalamu validate, then npx kalamu next
+   (next exiting with code 2 is expected — the tour tasks are all mine, so there is no agent work yet.)
+4. Commit .kalamu/ and the installed skill files.
+5. Finally, run npx kalamu open in the background and leave it running — it serves on
+   127.0.0.1 and opens my browser on the tour outline.
+
+Then explain to me how to use Kalamu:
+- The tour in my browser walks the UI: Enter/Tab/Shift+Tab to outline, Cmd/Ctrl+K for the command palette, ? for the keyboard cheat sheet. Typing p1–p5 in a task sets priority, #words become tags, @me keeps a task for myself so agents skip it.
+- Todos I write become tasks agents can execute: they pick up work with kalamu next and mark it done with kalamu done.`;
+---
+
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<meta name="viewport" content="width=device-width" />
+		<meta name="generator" content={Astro.generator} />
+		<title>Kalamu — repo-local task outliner for you and your agents</title>
+		<meta
+			name="description"
+			content="A keyboard-first outliner that lives in your repository. Brainstorm in a fast web UI; your coding agents pick up the same tasks through a CLI built for them."
+		/>
+	</head>
+	<body>
+		<main>
+			<h1>kalamu</h1>
+			<p class="tagline">
+				A repo-local, keyboard-first outliner for turning developer thoughts into agent-ready tasks.
+			</p>
+
+			<button id="copy-cta" data-instructions={agentInstructions}>Copy instructions for your agent</button>
+			<p class="cta-hint">Paste into Claude Code, Cursor, Codex, or any coding agent — it sets your repo up and shows you how to use it.</p>
+
+			<details>
+				<summary>What gets copied</summary>
+				<pre>{agentInstructions}</pre>
+			</details>
+
+			<ul>
+				<li>One diffable file in your repo — no cloud, no account, no daemon.</li>
+				<li>Keyboard-first web UI: outline at the speed of thought, ⌘K for everything else.</li>
+				<li>Agents get their own door: <code>kalamu next</code> hands them the most urgent task with full context.</li>
+			</ul>
+		</main>
+
+		<script>
+			const button = document.getElementById('copy-cta') as HTMLButtonElement;
+			const original = button.textContent;
+			let timer: ReturnType<typeof setTimeout> | undefined;
+			button.addEventListener('click', async () => {
+				try {
+					await navigator.clipboard.writeText(button.dataset.instructions ?? '');
+					button.textContent = 'Copied — paste it to your agent';
+				} catch {
+					button.textContent = 'Copy failed — expand "What gets copied" below';
+				}
+				clearTimeout(timer);
+				timer = setTimeout(() => (button.textContent = original), 2500);
+			});
+		</script>
+	</body>
+</html>
+
+<style>
+	:root {
+		color-scheme: light dark;
+	}
+	body {
+		margin: 0;
+		min-height: 100vh;
+		display: grid;
+		place-items: center;
+		font-family: ui-sans-serif, system-ui, sans-serif;
+		line-height: 1.6;
+	}
+	main {
+		max-width: 42rem;
+		padding: 2rem;
+	}
+	h1 {
+		font-size: 2.5rem;
+		letter-spacing: 0.04em;
+		margin: 0;
+	}
+	.tagline {
+		font-size: 1.15rem;
+		opacity: 0.8;
+	}
+	#copy-cta {
+		font: inherit;
+		font-weight: 600;
+		padding: 0.7rem 1.4rem;
+		border-radius: 8px;
+		border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+		background: color-mix(in srgb, currentColor 10%, transparent);
+		color: inherit;
+		cursor: pointer;
+	}
+	#copy-cta:hover {
+		background: color-mix(in srgb, currentColor 16%, transparent);
+	}
+	.cta-hint {
+		font-size: 0.9rem;
+		opacity: 0.65;
+	}
+	details {
+		margin: 1rem 0;
+		font-size: 0.9rem;
+	}
+	details pre {
+		white-space: pre-wrap;
+		padding: 1rem;
+		border-radius: 8px;
+		border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+		overflow-x: auto;
+	}
+	summary {
+		cursor: pointer;
+		opacity: 0.7;
+	}
+	ul {
+		padding-left: 1.2rem;
+	}
+	li + li {
+		margin-top: 0.4rem;
+	}
+</style>

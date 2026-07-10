@@ -1,0 +1,47 @@
+{
+  "name": "kalamu",
+  "version": "0.1.0",
+  "description": "Repo-local outliner for turning developer thoughts into agent-ready tasks",
+  "license": "MIT",
+  "homepage": "https://kalamu.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hemalr/kalamu.git"
+  },
+  "bugs": "https://github.com/hemalr/kalamu/issues",
+  "keywords": [
+    "outliner",
+    "tasks",
+    "todo",
+    "agents",
+    "cli",
+    "repo-local",
+    "claude-code"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "type": "module",
+  "bin": {
+    "kalamu": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup && node scripts/copy-web.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@hono/node-server": "^1.13.0",
+    "@kalamu/core": "workspace:*",
+    "@types/node": "^24.0.0",
+    "commander": "^14.0.0",
+    "hono": "^4.6.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0",
+    "zod": "^3.24.0"
+  }
+}

@@ -40,10 +40,11 @@ These were deliberated and are settled. Do not relitigate them during implementa
 4. **A done or handed-off ancestor task closes its subtree.** Tasks under it are ineligible for `next`.
 5. **Live reload is not optional.** The server watches the file and pushes changes to the UI; all writers use mtime-checked atomic writes. See [Concurrency](#concurrency).
 6. **The UI ships with undo and delete.** A keyboard-first tool that moves subtrees without undo loses user data and trust.
-7. **Tags are lightweight labels, not taxonomy.** Any node can carry `tags`; colours are derived deterministically from the tag name (overridable in `meta.json`). There are no tag-management commands — a tag exists because a node uses it.
+7. **Tags live inline in the text.** A tag IS its `#token` in the node's text ("Build a new #feature to do xyz") — there is no `tags` field; tags are derived from the text. Chips are a rendering of the token in place: unfocused nodes show chips, the focused node shows raw text, so tags are edited and deleted like any other text. Colours are derived deterministically from the tag name (overridable in `meta.json`). No tag-management commands — a tag exists because text mentions it.
 8. **Self tasks.** `self: true` marks a task the developer keeps for themselves; `next` never returns it. This is audience ("not for agents"), not assignment — Kalamu still has no concept of users.
 9. **Per-node plain-text contenteditable, no editor library.** Each node's text is its own `contenteditable="plaintext-only"` element using Svelte's native bindings (`bind:textContent`). Structural keys (Enter, Tab, Backspace-on-empty) are intercepted — guarded by `event.isComposing` for IME — and become outline operations; token parsing writes back only on commit (Enter/blur), never mid-keystroke, since external updates to bound content reset the caret. No TipTap/ProseMirror — those are document editors, and Kalamu's structure lives in the data model, not the editor. Fallback if the spike finds trouble: a roaming single editor where only the focused node is live. The UI spike exists to validate this.
 10. **Collapse state is view state, never document content.** It lives in a gitignored `.kalamu/ui-state.json`, not in `outline.jsonl` — otherwise every fold click dirties the canonical file and pollutes Git history. Agents and the CLI always operate on the full tree regardless of what is collapsed.
+11. **Images are files referenced by inline markdown tokens.** Pasting an image stores it in `.kalamu/assets/` (content-hashed filename, COMMITTED — assets are outline content and must survive a clone) and inserts `![](.kalamu/assets/img-<hash>.<ext>)` into the node text. Same rendering model as tags: unfocused nodes show a thumbnail in place, the focused node shows the raw token. No new node field; agents see an ordinary greppable path.
 
 ---
 
@@ -235,7 +236,6 @@ type KalamuNode = {
   doneAt: string | null;
   handoff: Handoff | null;
   priority?: 1 | 2 | 3 | 4 | 5;
-  tags?: string[];
   self?: true;
 };
 ```
@@ -359,15 +359,11 @@ p4 = below normal
 p5 = low
 ```
 
-#### `tags`
+#### tags (derived, not stored)
 
-Optional. Valid on any node kind.
+There is deliberately no `tags` field. A tag is a `#token` inline in `text` ("Build a new #feature to do xyz") and the tag set is derived by scanning text for whole-word `#[a-z0-9][a-z0-9-]*` tokens (case-insensitive; derived names are lowercased for filtering and colour). This keeps the JSONL line readable and greppable, lets a tag double as a word in the sentence, and makes tag editing ordinary text editing.
 
-Lightweight labels for scanning and (later) filtering. Rules:
-
-* Stored lowercase, no whitespace (`backend`, `api-design`, `perf`).
-* Omit the field entirely when there are no tags — never write `"tags": []`.
-* No tag registry: a tag exists because a node uses it.
+Legacy note: files written before this decision may carry a `tags` array; readers merge any such tags into the text as trailing `#tokens` and drop the field on the next write.
 
 See [Tags](#tags) for colour and UI behaviour.
 
@@ -386,11 +382,11 @@ This is audience, not assignment. Kalamu has no users; a task is either agent-el
 ```jsonl
 {"id":"n_001","parentId":null,"kind":"bullet","text":"Auth improvements","createdAt":"2026-07-09T07:00:00.000Z","doneAt":null,"handoff":null}
 {"id":"n_002","parentId":"n_001","kind":"bullet","text":"SSO","createdAt":"2026-07-09T07:01:00.000Z","doneAt":null,"handoff":null}
-{"id":"n_003","parentId":"n_002","kind":"task","text":"Investigate WorkOS org mapping","createdAt":"2026-07-09T07:02:00.000Z","doneAt":null,"handoff":null,"priority":2,"tags":["research"]}
+{"id":"n_003","parentId":"n_002","kind":"task","text":"Investigate WorkOS org mapping #research","createdAt":"2026-07-09T07:02:00.000Z","doneAt":null,"handoff":null,"priority":2}
 {"id":"n_004","parentId":"n_002","kind":"task","text":"Add SAML config screen","createdAt":"2026-07-09T07:03:00.000Z","doneAt":null,"handoff":null}
 {"id":"n_005","parentId":"n_001","kind":"bullet","text":"Login UX","createdAt":"2026-07-09T07:04:00.000Z","doneAt":null,"handoff":null}
 {"id":"n_006","parentId":"n_005","kind":"task","text":"Fix password reset redirect","createdAt":"2026-07-09T07:05:00.000Z","doneAt":null,"handoff":null,"priority":1}
-{"id":"n_007","parentId":null,"kind":"task","text":"Write launch blog post","createdAt":"2026-07-09T07:06:00.000Z","doneAt":null,"handoff":null,"self":true,"tags":["publishing"]}
+{"id":"n_007","parentId":null,"kind":"task","text":"Write launch blog post #publishing","createdAt":"2026-07-09T07:06:00.000Z","doneAt":null,"handoff":null,"self":true}
 ```
 
 Note the file is in pre-order traversal: each node's descendants immediately follow it. The writer always emits this shape.
@@ -455,7 +451,11 @@ MVP includes only:
 ```bash
 kalamu next
 kalamu next --format json
+kalamu next --limit <n>
+kalamu next --all
 ```
+
+`--limit <n>` / `--all` return the next n (or all) eligible tasks in queue order, so an agent can load several tasks into context at once. Plain `next` keeps its single-task output; batch JSON is `{"count": N, "tasks": [{id, text, priority, path}, ...]}`. Exit code 2 with `{"count": 0, "tasks": []}` when nothing is eligible.
 
 There is no `--explain` flag — the default text output already includes the reason line.
 
@@ -490,8 +490,10 @@ kalamu delete <id>
 kalamu done <id>
 kalamu reopen <id>
 kalamu handoff <id>
+kalamu unhandoff <id>
 kalamu search <query>
 kalamu next
+kalamu clean
 kalamu validate
 ```
 
@@ -509,23 +511,31 @@ Creates:
 
 Should not overwrite existing data.
 
-Optional (not required for MVP):
+`init --tour` seeds a self-guided onboarding outline into a **fresh, empty**
+outline only (it refuses otherwise). The tour teaches the UI by being an
+outline: checkbox/done, priorities, tag chips, self, collapse, the palette, and
+the cheat sheet. Every tour task is `self: true` AND says in prose that it is a
+demo — agents must never treat tour items as work; `kalamu next` on a
+tour-only outline exits 2.
 
-```bash
-kalamu init --agent-instructions
-```
+Interactively (TTY, not JSON mode), a fresh `init` ASKS "Seed a two-minute tour
+outline to learn the UI? [Y/n]" instead of requiring the flag; `--tour` forces,
+`--no-tour` suppresses the question. Non-TTY runs (agents, scripts) are never
+prompted and never seeded — a fresh non-interactive init just prints a one-line
+hint that `init --tour` exists.
 
-Creates or updates:
+When run interactively (TTY), `init` then offers to install the **Kalamu agent
+skill** by delegating to `npx skills add <owner/repo>` — the skills.sh CLI asks
+which agents to install for and owns every agent's skills directory. `--skill`
+forces the install, `--no-skill` suppresses the offer, and a non-TTY run (an
+agent or script) never prompts.
 
-```text
-.kalamu/AGENT_GUIDE.md
-```
-
-Potentially also offers to append to:
-
-```text
-AGENTS.md
-```
+The skill itself lives at `skills/kalamu/SKILL.md`, follows the agent-agnostic
+Agent Skills spec (agentskills.io: frontmatter `name` matching the directory +
+keyword-rich `description`; body < 500 lines), and is published simply by this
+repo being public on GitHub — skills.sh indexes discoverable `skills/<name>/`
+layouts automatically; there is no separate publish step. The skill teaches any
+coding agent the CLI workflow and rules; it must never assume a specific agent.
 
 ---
 
@@ -595,10 +605,10 @@ Example text output:
 ```text
 n_001  • Auth improvements
 n_002    • SSO
-n_003      ☐ Investigate WorkOS org mapping p2 #research
+n_003      ☐ p2 Investigate WorkOS org mapping #research
 n_004      ☐ Add SAML config screen
 n_005    • Login UX
-n_006      ☐ Fix password reset redirect p1
+n_006      ☐ p1 Fix password reset redirect
 ```
 
 Done task:
@@ -668,7 +678,7 @@ Options:
 --format json
 ```
 
-`--tag` is repeatable. `--self` marks a task as the developer's own (excluded from `kalamu next`).
+`--tag` is repeatable and appends the `#tag` token to the text (tags live inline in text). `--self` marks a task as the developer's own (excluded from `kalamu next`).
 
 If `--parent` is omitted, add as top-level.
 
@@ -721,7 +731,7 @@ Options:
 
 `--p default` removes the stored priority (reverting to implicit `p3`).
 
-`--add-tag` and `--remove-tag` are repeatable. `--self` / `--no-self` set and clear the developer's-own flag.
+`--add-tag` and `--remove-tag` are repeatable text surgery: add appends the `#tag` token, remove strips the token(s) from the text. `--self` / `--no-self` set and clear the developer's-own flag.
 
 Converting a `task` back to `bullet` preserves `doneAt`, `handoff`, and `priority`. They are inert on bullets and are restored if the node is converted back to a task.
 
@@ -849,7 +859,17 @@ Stores:
 }
 ```
 
-MVP does not need `unhandoff`, but it would be useful later.
+---
+
+### `kalamu unhandoff <id>`
+
+Clears a task's handoff record (sets `handoff: null`), making it eligible for
+`kalamu next` again — e.g. when the external system fell through and the work
+comes back home. Errors on bullets and on tasks with no handoff to clear.
+
+```bash
+kalamu unhandoff n_003
+```
 
 ---
 
@@ -898,17 +918,27 @@ sort by:
   outline order ascending
 ```
 
+Flags:
+
+```bash
+kalamu next --under <id>           # only consider tasks inside this node's subtree
+kalamu next --include-handed-off   # readmit handed-off tasks/umbrellas (done exclusions still apply)
+kalamu next --limit <n> | --all    # batch mode: the queue in next-order
+```
+
 Example:
 
 ```bash
 kalamu next
 ```
 
-Text output:
+Text output — the task, its ancestor path, and its own subtree (never siblings),
+so an agent gets full context in one call:
 
 ```text
-n_006  ☐ Fix password reset redirect p1
+n_006  ☐ p1 Fix password reset redirect
 Path: Auth improvements > Login UX
+  ☐ Sub step to reproduce first  (n_007)
 Reason: highest-priority open task; tie-breaker: outline order
 ```
 
@@ -924,11 +954,51 @@ kalamu next --format json
   "text": "Fix password reset redirect",
   "priority": 1,
   "path": ["Auth improvements", "Login UX"],
+  "ancestors": [
+    { "id": "n_001", "text": "Auth improvements", "kind": "bullet" },
+    { "id": "n_004", "text": "Login UX", "kind": "bullet" }
+  ],
+  "descendants": [ /* the task's subtree, pre-order, full nodes */ ],
   "reason": "highest-priority open task; tie-breaker: outline order"
 }
 ```
 
+`ancestors` is root-first (direct chain only — no siblings); `descendants` is
+the task's own subtree. Batch mode (`--limit`/`--all`) keeps its lighter
+per-entry shape (`id`, `text`, `priority`, `path`).
+
 When no task is eligible, exit with a non-zero status and output `{"id": null}` in JSON mode so agents can detect "nothing to do" deterministically.
+
+---
+
+### `kalamu clean`
+
+Deletes completed items from the outline.
+
+```bash
+kalamu clean
+kalamu clean --dry-run
+kalamu clean --format json
+```
+
+Rules:
+
+* Removes every task with `doneAt !== null`, together with its entire subtree — consistent with key decision 4: a done parent task closes its umbrella, so anything beneath it is moot.
+* Handed-off tasks that are not done are NOT removed (handed off is not completed).
+* Bullets are never removed directly (they have no done state), only as part of a removed subtree.
+* `--dry-run` lists what would be deleted without writing.
+
+Example output:
+
+```text
+Deleted 4 nodes (3 done tasks)
+```
+
+JSON:
+
+```json
+{"deleted": 4, "doneTasks": 3, "ids": ["n_007", "n_008", "n_009", "n_010"]}
+```
 
 ---
 
@@ -947,7 +1017,6 @@ Check:
 * `doneAt` is either `null` or a valid ISO timestamp.
 * `handoff` is either `null` or has `at`, `target`, and `ref`.
 * `priority`, if present, is an integer 1–5.
-* `tags`, if present, is a non-empty array of unique lowercase strings without whitespace.
 * `self`, if present, is `true` and the node is a task.
 
 Warn (not error):
@@ -1033,8 +1102,8 @@ The UI should feel like Workflowy:
 * Undo/redo for all structural operations (in-session undo stack is sufficient for MVP)
 * Ability to toggle bullet/task
 * Done tasks greyed out and struck through
-* Priority visible only when useful
-* Tags as small coloured chips after the text
+* Priority visible only when useful, as a badge at the START of the row (scannable column)
+* Tags as small coloured chips rendered IN PLACE within the text (raw `#token` text while the node is focused)
 * Self tasks visibly distinct from agent-eligible tasks
 * Minimal visual clutter
 
@@ -1060,10 +1129,10 @@ Done task:
 ☑ Fix password reset redirect
 ```
 
-High-priority task:
+High-priority task (badge leads the row so priorities align in a scannable column):
 
 ```text
-☐ Fix password reset redirect p1
+☐ p1 Fix password reset redirect
 ```
 
 Default priority `p3` should generally be hidden.
@@ -1074,10 +1143,10 @@ Handed-off task:
 ☐ Add audit logs → backlog
 ```
 
-Tagged task:
+Tagged task (chip renders in place, mid-sentence when the token sits mid-sentence):
 
 ```text
-☐ Investigate WorkOS org mapping  [research]
+☐ Build a new [feature] to do xyz
 ```
 
 Self task:
@@ -1093,28 +1162,86 @@ Self task:
 Suggested MVP keyboard shortcuts:
 
 ```text
-Enter                    create new sibling
+Enter                    create new sibling; on an EMPTY node it toggles bullet/task
+                         instead (never creates below an empty one; outdenting an
+                         empty node is Shift+Tab's job)
 Tab                      indent
 Shift+Tab                outdent
-ArrowUp/ArrowDown        move focus
+ArrowUp/ArrowDown        move focus (goal column preserved: the caret keeps aiming
+                         for its remembered column across consecutive vertical moves,
+                         clamped to line length; any other key resets it)
 Cmd/Ctrl+ArrowUp         move node up
 Cmd/Ctrl+ArrowDown       move node down
 Cmd/Ctrl+Enter           toggle bullet/task
-Cmd/Ctrl+D               mark task done/reopen
-Cmd/Ctrl+M               toggle self (mine) on a task
+Cmd/Ctrl+Shift+Enter     mark task done/reopen (not Cmd+D — it works while editing
+                         but falls through to the browser's bookmark dialog when
+                         no node is focused)
+Cmd/Ctrl+K               open the command palette (priority, labels, mine)
 Cmd/Ctrl+.               toggle collapse/expand
 Backspace (empty node)   delete node
+Backspace (caret at 0)   clear the node's priority (tags are plain text — backspace them directly)
 Cmd/Ctrl+Shift+Backspace delete node with subtree (undoable)
+Cmd/Ctrl+Shift+C         copy the focused node's id (as the CLI knows it) to the clipboard
+Cmd/Ctrl+/               open keyboard cheat sheet ("?" also opens it when not editing)
 Cmd/Ctrl+Z               undo
 Cmd/Ctrl+Shift+Z         redo
-Alt+1                    set priority 1 (urgent)
-Alt+2                    set priority 2
-Alt+3                    reset to default priority
-Alt+4                    set priority 4
-Alt+5                    set priority 5 (low)
 ```
 
+Modifier choice is deliberate: no Alt/Option combos (macOS Option-key character
+substitution, and tiling window managers like Aerospace bind them globally), no
+Cmd+M / Cmd+1..9 / Cmd+Shift+3-5 (OS- or browser-reserved). Node metadata that
+previously had Alt shortcuts (priority, self) lives in the command palette.
+
 Need not implement all shortcuts in first pass, but structure the code so they can be added cleanly.
+
+---
+
+## Command palette
+
+Cmd/Ctrl+K opens a command palette — including while a node is being edited. It
+acts on the last-focused node and offers, at the top level:
+
+```text
+1  Priority  ->  submenu: 1-5 set the priority (3 = back to default), current level marked
+2  Labels    ->  submenu: every #tag in the outline, checkmark if the node has it;
+                 selecting toggles the #token in the node's text (tags stay inline —
+                 key decision 7); stays open for multi-toggle
+3  Toggle mine   direct action: flips self on the task, closes
+4  Toggle done   direct action: marks the task done / reopens it, closes
+5  Copy CLI command -> submenu: ready-to-run CLI commands for this node with its
+                 real (server) id filled in — show --children always; done or
+                 reopen (by state) and a handoff template on tasks; add-child-task;
+                 delete (--recursive when the node has children). Picking one
+                 copies it to the clipboard, shows a toast, closes with focus
+                 restore.
+6  View keyboard shortcuts   opens the keyboard cheat sheet
+7  View CLI commands         opens the CLI commands sheet
+```
+
+The list is fixed: all seven items always render, in this order, with stable
+numbers — the two view sheets are always the last items. Items that don't apply
+are greyed out and disabled rather than hidden — with no node focused, 1–5 are
+disabled; on a bullet, Priority, Toggle mine, and Toggle done are disabled
+(Copy CLI command stays enabled, with task-only commands omitted from its
+submenu). Disabled items don't respond to digits, Enter, or clicks, and
+arrow navigation skips them. The CLI commands sheet mirrors `kalamu --help` —
+command names with one-line descriptions — as a reference for the developer;
+agents use `--help` itself.
+
+Key rules:
+
+* Items are numbered; a digit activates that item **only while the query is
+  empty** — so `Cmd+K 1 2` sets p2, yet typing `v2` still filters to the `#v2` tag.
+* Any other typing filters the current level's items; ArrowUp/Down + Enter select.
+* Esc steps back up a level and closes at the top; Backspace on an empty query
+  does the same. Closing returns focus to the node the palette was acting on.
+* When focus falls to the body while the window stays focused (Tab out, or an
+  extension that blurs inputs on Esc — e.g. Vimium — eating the keypress before
+  the page sees it), the palette treats the blur as Esc: step back and refocus
+  at a sublevel, close at the root. Esc therefore behaves identically with or
+  without such an extension. Focus moving to a real element outside the palette
+  closes it without refocusing; switching apps does not close it.
+* Priority and mine actions close the palette; label toggles keep it open.
 
 ---
 
@@ -1149,18 +1276,26 @@ Rules:
 * `p3` means default; omit priority from stored JSON unless explicitly choosing to store it.
 * Do not parse `p10`, `p99`, `P256`, etc.
 * Do not parse inside longer words.
-* Prefer parsing only when user finishes editing or presses Enter, not on every keystroke if that causes jumpiness.
+* A priority token always OVERRIDES an existing stored priority (typing `p2` on a `p4` task makes it `p2`).
+* Parse timing: when the user types a space, parse ONLY the just-completed token immediately before the caret (instant badge feedback, no whole-text rescans per keystroke). Commit-time parsing (Enter/blur) remains as the backstop for pasted or mid-line-edited text. This applies to `pN` and `@me` tokens; `#tags` stay in the text by design.
+
+Unlike tags, priority is NOT stored in text — `p2` is metadata, not prose, and it drives the agent-facing `next` sort, so it stays a first-class field. Rendering gives it text-like ergonomics:
+
+* The priority badge renders at the START of the row (after the checkbox, before the text) so priorities line up in a scannable column regardless of text length.
+* Backspace with the caret at position 0 of the node text clears the priority (reverts to default).
+* Clicking the badge opens a dropdown (p1–p5 + clear-to-default); tasks at default priority show a subtle ghost badge on row hover/focus that opens the same dropdown.
 
 ---
 
 ## Tags
 
-Tags are lightweight labels for scanning the outline and, later, filtering it. They are deliberately not a taxonomy: no tag CRUD commands, no tag registry, no required setup. A tag exists because a node uses it, and disappears when no node does.
+Tags are lightweight labels for scanning the outline and, later, filtering it. They are deliberately not a taxonomy: no tag CRUD commands, no tag registry, no required setup. A tag exists because text mentions it, and disappears when no text does.
 
-### Naming
+### Storage and naming
 
-* Lowercase, no whitespace: `backend`, `api-design`, `perf`.
-* Stored in the node's `tags` array; the field is omitted when empty.
+* A tag IS its inline `#token` in the node text: `Build a new #feature to do xyz`. The token can sit anywhere in the sentence and double as a word of it.
+* There is no stored `tags` field; the tag set is derived by scanning text for whole-word `#[a-z0-9][a-z0-9-]*` tokens. Derived names are lowercased for filtering and colour lookup.
+* Editing or deleting a tag is ordinary text editing — no dedicated removal UI or commands are needed.
 
 ### Colour
 
@@ -1174,22 +1309,21 @@ Every tag gets a colour with zero configuration:
 
 ### UI behaviour
 
-* Tags render as small coloured chips after the node text.
-* Inline parsing, same commit-time model as priority: typing `#backend` in a node's text stores `"tags": ["backend"]` and removes the token from `text`.
-
-  Conservative regex:
+* An UNFOCUSED node renders each `#token` as a small coloured chip in place — the chip occupies the token's position in the sentence. The FOCUSED node shows raw text (`#feature` as plain characters), so the caret, backspace, and selection treat tags like any other text. Committing/blurring re-renders chips.
+* Token recognition regex (whole words only, never inside longer words like `issue#42`):
 
   ```regex
   /(?:^|\s)#([a-z0-9][a-z0-9-]*)(?=\s|$)/i
   ```
 
-* Similarly, typing `@me` in a task's text sets `self: true` and removes the token:
+* `@me` remains an extracted token (it is state, not prose): typing it in a task's text sets `self: true` and removes the token:
 
   ```regex
   /(?:^|\s)@me(?=\s|$)/i
   ```
 
-* Clicking a chip opens a small popover showing the ~12 palette swatches plus a "default" option. Picking a swatch writes the override to `meta.json` via the server; "default" clears it, reverting to the hash-derived colour. This popover is also where a tag filter action can land later — not MVP, but don't design it out.
+* Clicking a chip (in an unfocused node) opens a small popover showing the ~12 palette swatches plus a "default" option. Picking a swatch writes the override to `meta.json` via the server; "default" clears it, reverting to the hash-derived colour. Clicking non-chip text focuses the node with the caret mapped to the equivalent source position.
+* The popover also offers **Filter by #tag**: the outline shows only matching nodes, their ancestors (structure), and their descendants (a tagged umbrella includes its contents). A dismissible pill above the outline shows the active filter; clicking it (or Esc outside editing) clears it. One tag at a time; session-only — never persisted to `ui-state.json`.
 
 ### Self tasks in the UI
 
@@ -1273,6 +1407,7 @@ Suggested API routes:
 
 ```http
 GET    /api/nodes
+PUT    /api/nodes         (replace whole outline; exists for UI undo/redo snapshot-restore; payload fully validated)
 GET    /api/nodes/:id
 POST   /api/nodes
 PATCH  /api/nodes/:id
@@ -1284,9 +1419,13 @@ POST   /api/nodes/:id/handoff
 GET    /api/search?q=...
 GET    /api/next
 GET    /api/validate
+POST   /api/assets        (raw image body; writes content-hashed file to .kalamu/assets/; returns {path, url})
+GET    /assets/:file      (serves .kalamu/assets/ files)
+GET    /api/meta          (meta.json: version + tag colour overrides)
 PUT    /api/tags/:tag     (set or clear a colour override; body: {"color": "#hex" | null})
+GET    /api/ui-state
 PUT    /api/ui-state      (replace collapse state; body: {"collapsed": ["n_..."]})
-GET    /api/events        (SSE stream: outline-changed events)
+GET    /api/events        (SSE stream: outline-changed / meta-changed events)
 ```
 
 ---
@@ -1312,50 +1451,6 @@ The server additionally:
 * Watches `.kalamu/outline.jsonl` (chokidar or `fs.watch`).
 * Pushes an `outline-changed` event over SSE whenever the file changes on disk (e.g. an agent ran `kalamu done` while the UI is open).
 * The UI reloads its state on that event, preserving focus/cursor where possible.
-
----
-
-## Agent guide
-
-Generate an agent guide later via:
-
-```bash
-kalamu init --agent-instructions
-```
-
-Suggested content:
-
-```text
-# Kalamu Agent Guide
-
-Kalamu stores repo-local brainstorming and task state.
-
-Use the CLI. Do not manually edit .kalamu/outline.jsonl unless the CLI is unavailable.
-
-Priority: p1 is most urgent, p5 is lowest. Missing priority means p3 (normal).
-
-Tasks with "self": true belong to the developer. Never work on them, even if
-they look actionable — kalamu next already excludes them.
-
-Important commands:
-
-- kalamu list --open
-- kalamu show <id> --children
-- kalamu next --format json
-- kalamu add --kind task --text "..." --p 1
-- kalamu handoff <id> --target <system> --ref <reference>
-- kalamu done <id>
-- kalamu validate
-
-Rules:
-
-1. Only work on nodes where kind is "task".
-2. Do not treat plain bullets as executable tasks.
-3. Before starting work, run kalamu next or inspect relevant task nodes.
-4. If promoting a task into another system, record it with kalamu handoff.
-5. After completing work, mark the originating Kalamu task done.
-6. Run kalamu validate before finishing.
-```
 
 ---
 
@@ -1403,7 +1498,7 @@ Expected:
 * User can mark tasks done.
 * User can delete a node and undo the deletion.
 * User can type `p1` and have priority parsed.
-* User can type `#backend` and see it become a coloured chip.
+* User can type `#backend` mid-sentence and see it render as an in-place coloured chip once the node loses focus, with the token preserved in the stored text.
 * User can click a tag chip, pick a different colour, and see it persisted to `meta.json`.
 * User can collapse a parent, restart `kalamu open`, and find it still collapsed — with zero change to `outline.jsonl`.
 * User can mark a task as self and see `kalamu next` skip it.

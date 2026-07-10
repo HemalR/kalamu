@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.tsbuildinfo
+
+.kalamu/cache.sqlite
+.kalamu/ui-state.json
+.kalamu/*.lock
+
+.DS_Store
