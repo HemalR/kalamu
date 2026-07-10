@@ -23,7 +23,7 @@
   },
   "type": "module",
   "bin": {
-    "kalamu": "./dist/index.js"
+    "kalamu": "dist/index.js"
   },
   "files": [
     "dist"

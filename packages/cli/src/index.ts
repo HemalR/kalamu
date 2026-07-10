@@ -92,7 +92,7 @@ program
   .option("--open", "open tasks only")
   .option("--done", "done tasks only")
   .option("--handoff", "handed-off tasks only")
-  .option("--self", "self tasks only")
+  .option("--assignee <who>", "tasks assigned to human or agent")
   .option("--tag <tag>", "nodes carrying a tag")
   .option("--depth <n>", "limit to the first n levels")
   .option("--format <format>", "output format (text|json)")
@@ -118,7 +118,7 @@ program
   .option("--kind <kind>", "bullet|task (default bullet)")
   .option("--p <priority>", "priority 1 (urgent) to 5 (low); omit for default 3")
   .option("--tag <tag>", "tag (repeatable)", collect, [])
-  .option("--self", "mark task as the developer's own (excluded from next)")
+  .option("--assign <who>", "assign the task: human (excluded from next) or agent")
   .option("--after <id>", "insert after this sibling")
   .option("--before <id>", "insert before this sibling")
   .option("--format <format>", "output format (text|json)")
@@ -134,8 +134,7 @@ program
   .option("--p <priority>", '1-5 or "default" to clear')
   .option("--add-tag <tag>", "add tag (repeatable)", collect, [])
   .option("--remove-tag <tag>", "remove tag (repeatable)", collect, [])
-  .option("--self", "mark as self")
-  .option("--no-self", "clear self")
+  .option("--assign <who>", "assign the task: human, agent, or none to clear")
   .option("--format <format>", "output format (text|json)")
   .action((id: string, opts: commands.UpdateOptions & { format?: string }) =>
     run(() => commands.update(process.cwd(), id, opts), opts),
@@ -163,13 +162,13 @@ program
 
 program
   .command("done <id>")
-  .description("mark a task done")
+  .description("mark an item done (on bullets: visual strikethrough only)")
   .option("--format <format>", "output format (text|json)")
   .action((id: string, opts: { format?: string }) => run(() => commands.done(process.cwd(), id), opts));
 
 program
   .command("reopen <id>")
-  .description("reopen a task")
+  .description("reopen an item")
   .option("--format <format>", "output format (text|json)")
   .action((id: string, opts: { format?: string }) => run(() => commands.reopen(process.cwd(), id), opts));
 

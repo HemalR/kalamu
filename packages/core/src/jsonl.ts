@@ -3,16 +3,19 @@ import { nodeSchema, TAG_PATTERN, type KalamuNode } from "./model.js";
 import { appendTags } from "./tokens.js";
 
 /**
- * Files written before tags moved inline (SPEC key decision 7) carry a
- * legacy `tags` array; readers merge it into the text as trailing #tokens
- * and drop the field, so the next write persists the new shape.
+ * Legacy fields readers still accept (and rewrite on the next write): a
+ * `tags` array from before tags moved inline (SPEC key decision 7) merges
+ * into the text as trailing #tokens; `self: true` from before assignment
+ * (key decision 8) reads as `assignee: "human"`.
  */
 const legacyLineSchema = nodeSchema.extend({
   tags: z.array(z.string()).optional(),
+  self: z.literal(true).optional(),
 });
 
 function normalizeLegacy(raw: z.infer<typeof legacyLineSchema>): KalamuNode {
-  const { tags, ...node } = raw;
+  const { tags, self, ...node } = raw;
+  if (self && node.assignee === undefined) node.assignee = "human";
   if (!tags?.length) return node;
   const valid = tags.map((t) => t.toLowerCase()).filter((t) => TAG_PATTERN.test(t));
   return { ...node, text: appendTags(node.text, valid) };
@@ -71,7 +74,7 @@ export function serializeNode(node: KalamuNode): string {
     handoff: node.handoff,
   };
   if (node.priority !== undefined) ordered["priority"] = node.priority;
-  if (node.self !== undefined) ordered["self"] = node.self;
+  if (node.assignee !== undefined) ordered["assignee"] = node.assignee;
   return JSON.stringify(ordered);
 }
 

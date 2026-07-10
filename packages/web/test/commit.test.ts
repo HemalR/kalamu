@@ -52,7 +52,7 @@ describe("commitPatch priority override", () => {
   });
 });
 
-describe("commitPatch text, tags, self", () => {
+describe("commitPatch text, tags, assignee", () => {
   it("keeps #tags in the text verbatim while extracting pN", () => {
     // Tags are prose (SPEC key decision 7): the token IS the tag.
     expect(commitPatch(task({ text: "" }), "Build a new #feature to do xyz")).toEqual({
@@ -68,9 +68,12 @@ describe("commitPatch text, tags, self", () => {
     expect(commitPatch(task(), "Fix upload #backend")).toEqual({ text: "Fix upload #backend" });
   });
 
-  it("@me sets self on tasks only, and is stripped", () => {
-    expect(commitPatch(task(), "Fix upload @me")).toEqual({ self: true });
-    expect(commitPatch(task({ kind: "bullet" }), "Fix upload @me")).toBeNull();
+  it("@human/@agent set the assignee on tasks only, and are stripped", () => {
+    expect(commitPatch(task(), "Fix upload @human")).toEqual({ assignee: "human" });
+    expect(commitPatch(task(), "Fix upload @agent")).toEqual({ assignee: "agent" });
+    expect(commitPatch(task({ assignee: "human" }), "Fix upload @agent")).toEqual({ assignee: "agent" });
+    expect(commitPatch(task({ assignee: "human" }), "Fix upload @human")).toBeNull();
+    expect(commitPatch(task({ kind: "bullet" }), "Fix upload @human")).toBeNull();
   });
 
   it("plain text edit patches text only", () => {
@@ -99,8 +102,9 @@ describe("tokenBeforeCaret", () => {
     expect(hit?.start).toBe(11);
   });
 
-  it("finds @me", () => {
-    expect(tokenBeforeCaret("Fix @me", 7)?.parsed.self).toBe(true);
+  it("finds @human and @agent", () => {
+    expect(tokenBeforeCaret("Fix @human", 10)?.parsed.assignee).toBe("human");
+    expect(tokenBeforeCaret("Fix @agent", 10)?.parsed.assignee).toBe("agent");
   });
 
   it("does NOT match #tags — they stay in the text", () => {

@@ -7,6 +7,7 @@
   import Toast from "./components/Toast.svelte";
   import { OutlineStore } from "./lib/outline.svelte";
   import { matches, SHORTCUTS as S } from "./lib/shortcuts";
+  import { theme } from "./lib/theme.svelte";
 
   const store = new OutlineStore();
   void store.init();
@@ -60,7 +61,33 @@
 <svelte:window onkeydown={onWindowKeydown} />
 
 <main>
-  <header>kalamu</header>
+  <header>
+    <span class="wordmark">kalamu</span>
+    <div class="actions">
+      <button class="clean-up" title="Delete completed tasks and their subtrees" onclick={() => store.clean()}>
+        Clean up
+      </button>
+      <button
+        class="theme-toggle"
+        aria-label={theme.mode === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+        title={theme.mode === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+        onclick={() => theme.toggle()}
+      >
+        {#if theme.mode === "dark"}
+          <!-- sun -->
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="4" />
+            <path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+          </svg>
+        {:else}
+          <!-- moon -->
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+          </svg>
+        {/if}
+      </button>
+    </div>
+  </header>
 
   {#if store.loadError !== null}
     <p class="notice">Couldn't load the outline: {store.loadError}</p>
@@ -120,12 +147,48 @@
   }
 
   header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    user-select: none;
+    margin-bottom: 20px;
+  }
+
+  .wordmark {
     font-size: 12px;
     font-weight: 600;
     letter-spacing: 0.08em;
     color: var(--muted);
-    user-select: none;
-    margin-bottom: 20px;
+  }
+
+  /* Right-aligned header actions; more buttons will land here later. */
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* Quiet ghost buttons, matching the wordmark's tone. */
+  .actions > button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+    border: none;
+    border-radius: 6px;
+    background: none;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .actions > button:hover {
+    color: var(--fg);
+  }
+
+  button.clean-up {
+    font: inherit;
+    font-size: 12px;
+    line-height: 1;
+    padding: 4px 7px;
   }
 
   .notice {

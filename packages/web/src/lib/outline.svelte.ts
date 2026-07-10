@@ -13,6 +13,7 @@ import {
   addNode,
   appendTags,
   buildTree,
+  cleanDone,
   deleteNode,
   deriveTags,
   markDone,
@@ -22,6 +23,7 @@ import {
   stripTags,
   subtreeIds,
   updateNode,
+  type Assignee,
   type KalamuMeta,
   type KalamuNode,
   type ParsedTokens,
@@ -296,7 +298,7 @@ export class OutlineStore {
   }
 
   /**
-   * Commit-time token parsing (SPEC key decision 9): extract p1–p5 / @me
+   * Commit-time token parsing (SPEC key decision 9): extract p1–p5 / @human/@agent
    * from the typed text; #tags stay in the text verbatim (key decision 7).
    * The delta rules — including "a typed priority token overrides the stored
    * priority" — live in commit.ts (pure, unit-tested).
@@ -308,7 +310,7 @@ export class OutlineStore {
     if (patch) this.applyPatch(id, patch);
   }
 
-  /** Parse-on-space: apply a just-typed pN/@me token; the editor handles the text. */
+  /** Parse-on-space: apply a just-typed pN/@human/@agent token; the editor handles the text. */
   applyToken(id: string, parsed: ParsedTokens): void {
     const node = this.tree.byId.get(id);
     if (!node) return;
@@ -333,9 +335,10 @@ export class OutlineStore {
     );
   }
 
+  /** Works on bullets too — done on a bullet is visual only (strikethrough). */
   toggleDone(id: string): void {
     const node = this.tree.byId.get(id);
-    if (!node || node.kind !== "task") return;
+    if (!node) return;
     const [operation, call] = node.doneAt === null ? [markDone, api.markDone] : [reopen, api.reopen];
     this.mutate(
       (nodes) => operation(nodes, id).nodes,
@@ -343,13 +346,13 @@ export class OutlineStore {
     );
   }
 
-  toggleSelf(id: string): void {
+  /** Tasks only; null clears back to unassigned. */
+  setAssignee(id: string, assignee: Assignee | null): void {
     const node = this.tree.byId.get(id);
     if (!node || node.kind !== "task") return;
-    const self = node.self !== true;
     this.mutate(
-      (nodes) => updateNode(nodes, id, { self }).nodes,
-      () => api.patchNode(this.serverId(id), { self }),
+      (nodes) => updateNode(nodes, id, { assignee }).nodes,
+      () => api.patchNode(this.serverId(id), { assignee }),
     );
   }
 
@@ -453,6 +456,29 @@ export class OutlineStore {
       if (candidate !== undefined && !doomed.has(candidate)) return candidate;
     }
     return null;
+  }
+
+  /** `kalamu clean` in the UI: delete every done task with its subtree, plus done bullets and blank nodes — undoable. */
+  clean(): void {
+    const result = cleanDone(this.nodes);
+    if (result.removed.length === 0) {
+      this.showToast("Nothing to clean.");
+      return;
+    }
+    this.mutate(
+      // mutate runs the callback synchronously, so the guard's result is still current.
+      () => result.nodes,
+      // Whole-outline replace, exactly like undo/redo's restore.
+      () => api.replaceNodes(this.serverize(result.nodes)),
+    );
+    const { removed, doneTasks, doneBullets, blankNodes } = result;
+    // Same wording as the CLI's clean output (SPEC), with proper plurals.
+    const detail = [
+      doneTasks > 0 ? `${doneTasks} done task${doneTasks === 1 ? "" : "s"}` : "",
+      doneBullets > 0 ? `${doneBullets} done bullet${doneBullets === 1 ? "" : "s"}` : "",
+      blankNodes > 0 ? `${blankNodes} blank node${blankNodes === 1 ? "" : "s"}` : "",
+    ].filter(Boolean).join(", ");
+    this.showToast(`Deleted ${removed.length} node${removed.length === 1 ? "" : "s"} (${detail})`);
   }
 
   // ---- collapse state (view state, never document content) -------------------

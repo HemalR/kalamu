@@ -47,6 +47,7 @@ const MAX_ASSET_BYTES = 20 * 1024 * 1024;
 
 const priorityValue = z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]);
 const kindValue = z.enum(["bullet", "task"]);
+const assigneeValue = z.enum(["human", "agent"]);
 
 const addBody = z.object({
   parentId: z.string().nullish(),
@@ -54,7 +55,7 @@ const addBody = z.object({
   text: z.string(),
   priority: priorityValue.optional(),
   tags: z.array(z.string()).optional(),
-  self: z.boolean().optional(),
+  assignee: assigneeValue.optional(),
   afterId: z.string().optional(),
   beforeId: z.string().optional(),
 });
@@ -65,7 +66,8 @@ const patchBody = z.object({
   priority: z.union([priorityValue, z.literal("default")]).optional(),
   addTags: z.array(z.string()).optional(),
   removeTags: z.array(z.string()).optional(),
-  self: z.boolean().optional(),
+  // null clears back to unassigned (mirrors UpdateInput).
+  assignee: assigneeValue.nullable().optional(),
 });
 
 const moveBody = z.object({
@@ -163,7 +165,7 @@ export function createServer(paths: KalamuPaths, webAssetsDir: string | null): K
         text: body.text,
         priority: body.priority,
         tags: body.tags,
-        self: body.self,
+        assignee: body.assignee,
         afterId: body.afterId,
         beforeId: body.beforeId,
       });

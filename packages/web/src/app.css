@@ -1,38 +1,31 @@
-/* Theme + base styles. Light and dark follow the system (SPEC "UI principles"). */
+/*
+ * Theme + base styles. Light and dark follow the system by default;
+ * lib/theme.svelte.ts sets data-theme on the root element to override
+ * (SPEC "UI principles").
+ */
 
 :root {
   color-scheme: light dark;
-  --bg: #ffffff;
-  --panel: #ffffff;
-  --fg: #24292f;
-  --muted: #8b939c;
-  --done: #a8afb8;
-  --bullet: #b7bec7;
-  --ring: rgba(70, 80, 90, 0.18);
-  --check-border: #aab2bb;
-  --guide: rgba(20, 30, 40, 0.09);
-  --p1: #e5484d;
-  --p2: #f76b15;
-  --toast-bg: #24292f;
-  --toast-fg: #f6f8fa;
+  --bg: light-dark(#ffffff, #17191d);
+  --panel: light-dark(#ffffff, #24272d);
+  --fg: light-dark(#24292f, #e3e6ea);
+  --muted: light-dark(#8b939c, #757e88);
+  --done: light-dark(#a8afb8, #5f6771);
+  --bullet: light-dark(#b7bec7, #5c646e);
+  --ring: light-dark(rgba(70, 80, 90, 0.18), rgba(190, 200, 210, 0.2));
+  --check-border: light-dark(#aab2bb, #5c646e);
+  --guide: light-dark(rgba(20, 30, 40, 0.09), rgba(220, 230, 240, 0.09));
+  --p1: light-dark(#e5484d, #ff6369);
+  --p2: light-dark(#f76b15, #ff8d47);
+  --toast-bg: light-dark(#24292f, #e3e6ea);
+  --toast-fg: light-dark(#f6f8fa, #17191d);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #17191d;
-    --panel: #24272d;
-    --fg: #e3e6ea;
-    --muted: #757e88;
-    --done: #5f6771;
-    --bullet: #5c646e;
-    --ring: rgba(190, 200, 210, 0.2);
-    --check-border: #5c646e;
-    --guide: rgba(220, 230, 240, 0.09);
-    --p1: #ff6369;
-    --p2: #ff8d47;
-    --toast-bg: #e3e6ea;
-    --toast-fg: #17191d;
-  }
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
 }
 
 * {

@@ -33,14 +33,25 @@ describe("nextTask", () => {
     expect(nextTask(nodes)?.node.id).toBe("n_002");
   });
 
-  it("self tasks are ignored", () => {
-    const nodes = [task("n_001", { priority: 1, self: true }), task("n_002", { priority: 5 })];
+  it("human-assigned tasks are ignored", () => {
+    const nodes = [task("n_001", { priority: 1, assignee: "human" }), task("n_002", { priority: 5 })];
     expect(nextTask(nodes)?.node.id).toBe("n_002");
+  });
+
+  it("agent-assigned and unassigned tasks are equally eligible", () => {
+    const nodes = [task("n_001", { assignee: "agent" }), task("n_002")];
+    expect(eligibleTasks(nodes).map((e) => e.node.id)).toEqual(["n_001", "n_002"]);
   });
 
   it("bullet nodes are ignored", () => {
     const nodes = [bullet("n_001"), task("n_002")];
     expect(nextTask(nodes)?.node.id).toBe("n_002");
+  });
+
+  it("blank-text tasks are ignored", () => {
+    const nodes = [task("n_001", { text: "", priority: 1 }), task("n_002", { text: "  \t" }), task("n_003", { priority: 5 })];
+    expect(nextTask(nodes)?.node.id).toBe("n_003");
+    expect(eligibleTasks(nodes).map((e) => e.node.id)).toEqual(["n_003"]);
   });
 
   it("tasks under a done parent task are ignored", () => {
@@ -67,7 +78,7 @@ describe("nextTask", () => {
   });
 
   it("returns null when nothing is eligible", () => {
-    const nodes = [bullet("n_001"), task("n_002", { self: true })];
+    const nodes = [bullet("n_001"), task("n_002", { assignee: "human" })];
     expect(nextTask(nodes)).toBeNull();
   });
 

@@ -12,7 +12,7 @@ export function markdownLine(node: KalamuNode): string {
     node.kind === "task" && effectivePriority(node) !== 3 ? `p${effectivePriority(node)} ` : "";
   let suffix = "";
   if (node.handoff) suffix += ` → ${node.handoff.target}:${node.handoff.ref}`;
-  if (node.self) suffix += " (self)";
+  if (node.assignee) suffix += ` @${node.assignee}`;
   return `${box} ${priority}${node.text}${suffix}`;
 }
 

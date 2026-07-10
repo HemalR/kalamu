@@ -6,6 +6,7 @@ import {
   deleteNode,
   markDone,
   moveNode,
+  nextTask,
   OperationError,
   reopen,
   searchNodes,
@@ -77,12 +78,14 @@ describe("updateNode", () => {
     expect(mid.node.text).toBe("Build a new #feature to do xyz");
   });
 
-  it("sets and clears self", () => {
+  it("sets and clears the assignee", () => {
     const start = [task("n_001")];
-    let result = updateNode(start, "n_001", { self: true });
-    expect(result.node.self).toBe(true);
-    result = updateNode(result.nodes, "n_001", { self: false });
-    expect(result.node.self).toBeUndefined();
+    let result = updateNode(start, "n_001", { assignee: "human" });
+    expect(result.node.assignee).toBe("human");
+    result = updateNode(result.nodes, "n_001", { assignee: "agent" });
+    expect(result.node.assignee).toBe("agent");
+    result = updateNode(result.nodes, "n_001", { assignee: null });
+    expect(result.node.assignee).toBeUndefined();
   });
 });
 
@@ -139,15 +142,22 @@ describe("deleteNode", () => {
 });
 
 describe("done / reopen / handoff", () => {
-  it("done sets doneAt on tasks only", () => {
+  it("done sets doneAt on tasks and bullets alike", () => {
     const { node } = markDone([task("n_001")], "n_001", NOW);
     expect(node.doneAt).toBe(NOW);
-    expect(() => markDone([bullet("n_001")], "n_001", NOW)).toThrow(/bullet/);
+    const struck = markDone([bullet("n_001")], "n_001", NOW);
+    expect(struck.node.doneAt).toBe(NOW);
   });
 
   it("reopen clears doneAt", () => {
     const { node } = reopen([task("n_001", { doneAt: NOW })], "n_001");
     expect(node.doneAt).toBeNull();
+    expect(reopen([bullet("n_001", { doneAt: NOW })], "n_001").node.doneAt).toBeNull();
+  });
+
+  it("a done bullet never gates eligibility: descendants stay in next", () => {
+    const nodes = [bullet("n_001", { doneAt: NOW }), task("n_002", { parentId: "n_001", priority: 1 })];
+    expect(nextTask(nodes)?.node.id).toBe("n_002");
   });
 
   it("handoff stores at/target/ref, tasks only", () => {
@@ -187,6 +197,67 @@ describe("cleanDone", () => {
     expect(result.nodes).toHaveLength(2);
     expect(result.removed).toEqual([]);
     expect(result.doneTasks).toBe(0);
+    expect(result.doneBullets).toBe(0);
+    expect(result.blankNodes).toBe(0);
+  });
+
+  it("removes done bullets, including fully-done chains", () => {
+    const nodes = [
+      bullet("n_001", { doneAt: NOW }),
+      bullet("n_002", { parentId: "n_001", doneAt: NOW }),
+      bullet("n_003"),
+    ];
+    const result = cleanDone(nodes);
+    expect(result.nodes.map((n) => n.id)).toEqual(["n_003"]);
+    expect(result.doneBullets).toBe(2);
+    expect(result.doneTasks).toBe(0);
+  });
+
+  it("keeps a done bullet whose children survive", () => {
+    const nodes = [
+      bullet("n_001", { doneAt: NOW }),
+      task("n_002", { parentId: "n_001", text: "open task stays eligible" }),
+      bullet("n_003", { parentId: "n_001", doneAt: NOW }),
+    ];
+    const result = cleanDone(nodes);
+    expect(result.nodes.map((n) => n.id)).toEqual(["n_001", "n_002"]);
+    expect(result.doneBullets).toBe(1);
+  });
+
+  it("removes a done bullet whose only children are done tasks", () => {
+    const nodes = [bullet("n_001", { doneAt: NOW }), task("n_002", { parentId: "n_001", doneAt: NOW })];
+    const result = cleanDone(nodes);
+    expect(result.nodes).toEqual([]);
+    expect(result.doneTasks).toBe(1);
+    expect(result.doneBullets).toBe(1);
+  });
+
+  it("removes blank nodes of either kind", () => {
+    const nodes = [task("n_001", { text: "" }), bullet("n_002", { text: "  " }), bullet("n_003")];
+    const result = cleanDone(nodes);
+    expect(result.nodes.map((n) => n.id)).toEqual(["n_003"]);
+    expect(result.blankNodes).toBe(2);
+    expect(result.doneTasks).toBe(0);
+  });
+
+  it("keeps a blank node whose children survive, collapses fully blank chains", () => {
+    const nodes = [
+      bullet("n_001", { text: "" }),
+      task("n_002", { parentId: "n_001", text: "real child stays" }),
+      bullet("n_003", { text: "" }),
+      bullet("n_004", { parentId: "n_003", text: "" }),
+    ];
+    const result = cleanDone(nodes);
+    expect(result.nodes.map((n) => n.id)).toEqual(["n_001", "n_002"]);
+    expect(result.blankNodes).toBe(2);
+  });
+
+  it("removes a blank node whose only children are done tasks", () => {
+    const nodes = [bullet("n_001", { text: "" }), task("n_002", { parentId: "n_001", doneAt: NOW })];
+    const result = cleanDone(nodes);
+    expect(result.nodes).toEqual([]);
+    expect(result.doneTasks).toBe(1);
+    expect(result.blankNodes).toBe(1);
   });
 
   it("counts nested done tasks inside a removed subtree", () => {

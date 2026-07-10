@@ -11,7 +11,7 @@ describe("serializeMarkdown", () => {
       bullet("n_001", { text: "Auth improvements #auth" }),
       task("n_002", { parentId: "n_001", text: "Fix redirect", priority: 1 }),
       task("n_003", { parentId: "n_002", text: "Write tests", doneAt: NOW }),
-      task("n_004", { parentId: "n_001", text: "Blog post", self: true }),
+      task("n_004", { parentId: "n_001", text: "Blog post", assignee: "human" }),
       task("n_005", {
         parentId: "n_001",
         text: "Audit logs",
@@ -25,7 +25,7 @@ describe("serializeMarkdown", () => {
         "- Auth improvements #auth",
         "  - [ ] p1 Fix redirect",
         "    - [x] Write tests",
-        "  - [ ] Blog post (self)",
+        "  - [ ] Blog post @human",
         "  - [ ] Audit logs → github:#42",
       ].join("\n"),
     );

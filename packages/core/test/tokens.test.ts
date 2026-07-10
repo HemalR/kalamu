@@ -36,14 +36,17 @@ describe("parseTokens", () => {
     expect(parseTokens("issue#42 stays")).toMatchObject({ text: "issue#42 stays", tags: [] });
   });
 
-  it("extracts @me as self, never inside words", () => {
-    expect(parseTokens("write blog post @me")).toMatchObject({ text: "write blog post", self: true });
-    expect(parseTokens("email me@example.com")).toMatchObject({ text: "email me@example.com", self: false });
-    expect(parseTokens("ping @melissa")).toMatchObject({ text: "ping @melissa", self: false });
+  it("extracts @human/@agent as the assignee, never inside words", () => {
+    expect(parseTokens("write blog post @human")).toMatchObject({ text: "write blog post", assignee: "human" });
+    expect(parseTokens("migrate config @Agent")).toMatchObject({ text: "migrate config", assignee: "agent" });
+    expect(parseTokens("last wins @human @agent")).toMatchObject({ text: "last wins", assignee: "agent" });
+    expect(parseTokens("email me@human.com")).toMatchObject({ text: "email me@human.com" });
+    expect(parseTokens("ping @humanoid")).toMatchObject({ text: "ping @humanoid" });
+    expect(parseTokens("no token here").assignee).toBeUndefined();
   });
 
   it("collapses whitespace left by removed tokens, keeping tags", () => {
-    expect(parseTokens("a p1 b #x c @me d").text).toBe("a b #x c d");
+    expect(parseTokens("a p1 b #x c @human d").text).toBe("a b #x c d");
   });
 });
 

@@ -83,7 +83,11 @@ describe("nodes API", () => {
     expect((await server.app.request("/api/nodes/n_missing")).status).toBe(404);
     expect((await post("/api/nodes/n_missing/done", {})).status).toBe(404);
     const bullet = await createNode({ text: "thought" });
-    expect((await post(`/api/nodes/${bullet.id}/done`, {})).status).toBe(400);
+    // done on a bullet is allowed (visual strikethrough); handoff is not.
+    const struck = await post(`/api/nodes/${bullet.id}/done`, {});
+    expect(struck.status).toBe(200);
+    expect(((await struck.json()) as { doneAt: string | null }).doneAt).not.toBeNull();
+    expect((await post(`/api/nodes/${bullet.id}/handoff`, { target: "github", ref: "#1" })).status).toBe(400);
   });
 
   it("done, reopen, handoff, next, validate, search", async () => {

@@ -23,13 +23,13 @@ describe("parseJsonl", () => {
     expect(errors[0]?.line).toBe(1);
   });
 
-  it("rejects unknown kind, bad priority, self:false", () => {
+  it("rejects unknown kind, bad priority, unknown assignee", () => {
     const base = '"parentId":null,"text":"x","createdAt":"2026-07-09T07:00:00.000Z","doneAt":null,"handoff":null';
     const bad = [
       `{"id":"a","kind":"note",${base}}`,
       `{"id":"b","kind":"task",${base},"priority":6}`,
       `{"id":"c","kind":"task",${base},"priority":0}`,
-      `{"id":"f","kind":"task",${base},"self":false}`,
+      `{"id":"f","kind":"task",${base},"assignee":"me"}`,
     ].join("\n");
     const { nodes, errors } = parseJsonl(bad);
     expect(nodes).toHaveLength(0);
@@ -53,6 +53,14 @@ describe("parseJsonl", () => {
     expect(nodes.every((n) => !("tags" in n))).toBe(true);
   });
 
+  it('reads legacy "self": true as assignee "human" and drops the field', () => {
+    const base = '"parentId":null,"kind":"task","createdAt":"2026-07-09T07:00:00.000Z","doneAt":null,"handoff":null';
+    const { nodes, errors } = parseJsonl(`{"id":"a","text":"Blog post",${base},"self":true}`);
+    expect(errors).toEqual([]);
+    expect(nodes[0]?.assignee).toBe("human");
+    expect(nodes.every((n) => !("self" in n))).toBe(true);
+  });
+
   it("skips blank lines", () => {
     const { nodes, errors } = parseJsonl("\n\n");
     expect(nodes).toEqual([]);
@@ -67,13 +75,13 @@ describe("serializeNode", () => {
       '{"id":"n_001","parentId":null,"kind":"task","text":"Fix it","createdAt":"2026-07-09T07:00:00.000Z","doneAt":null,"handoff":null}',
     );
     expect(line).not.toContain("priority");
-    expect(line).not.toContain("self");
+    expect(line).not.toContain("assignee");
   });
 
   it("round-trips through parse", () => {
     const nodes = [
       bullet("n_001"),
-      task("n_002", { parentId: "n_001", text: "Fix #backend upload", priority: 1, self: true }),
+      task("n_002", { parentId: "n_001", text: "Fix #backend upload", priority: 1, assignee: "human" }),
     ];
     const { nodes: parsed, errors } = parseJsonl(serializeJsonl(nodes));
     expect(errors).toEqual([]);

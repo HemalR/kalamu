@@ -1,42 +1,46 @@
 /**
  * Inline token handling (SPEC "Priority parsing in UI", "Tags").
  *
- * pN and @me are metadata, not prose: they are extracted and STRIPPED from
- * text. #tags are prose (SPEC key decision 7): they stay in the text and the
- * tag set is DERIVED by scanning for whole-word tokens. Conservative by
- * design: whole tokens only, never inside longer words.
+ * pN and @human/@agent are metadata, not prose: they are extracted and
+ * STRIPPED from text. #tags are prose (SPEC key decision 7): they stay in the
+ * text and the tag set is DERIVED by scanning for whole-word tokens.
+ * Conservative by design: whole tokens only, never inside longer words.
  */
+
+import type { Assignee } from "./model.js";
 
 const PRIORITY_TOKEN = /(?:^|\s)[pP]([1-5])(?=\s|$)/g;
 const TAG_TOKEN = /(?:^|\s)#([a-zA-Z0-9][a-zA-Z0-9-]*)(?=\s|$)/g;
-const ME_TOKEN = /(?:^|\s)@[mM][eE](?=\s|$)/g;
+const ASSIGNEE_TOKEN = /(?:^|\s)@(human|agent)(?=\s|$)/gi;
 
 export interface ParsedTokens {
-  /** Input with pN/@me tokens stripped; #tags remain in place. */
+  /** Input with pN/@human/@agent tokens stripped; #tags remain in place. */
   text: string;
   /** Only set when a token was found; p3 comes back as 3 (caller omits default). */
   priority?: 1 | 2 | 3 | 4 | 5;
   /** Derived from #tokens left in the text (lowercase, in order of appearance). */
   tags: string[];
-  self: boolean;
+  /** Only set when an @human/@agent token was found. */
+  assignee?: Assignee;
 }
 
 export function parseTokens(input: string): ParsedTokens {
   let priority: ParsedTokens["priority"];
-  let self = false;
+  let assignee: Assignee | undefined;
 
   let text = input.replace(PRIORITY_TOKEN, (_, digit: string) => {
     priority = Number(digit) as 1 | 2 | 3 | 4 | 5; // last token wins
     return " ";
   });
-  text = text.replace(ME_TOKEN, () => {
-    self = true;
+  text = text.replace(ASSIGNEE_TOKEN, (_, who: string) => {
+    assignee = who.toLowerCase() as Assignee; // last token wins
     return " ";
   });
   text = text.replace(/\s+/g, " ").trim();
 
-  const result: ParsedTokens = { text, tags: deriveTags(text), self };
+  const result: ParsedTokens = { text, tags: deriveTags(text) };
   if (priority !== undefined) result.priority = priority;
+  if (assignee !== undefined) result.assignee = assignee;
   return result;
 }
 

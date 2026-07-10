@@ -41,7 +41,7 @@ export const SHORTCUTS = {
   moveDown: { combo: { key: "ArrowDown", mod: true }, keys: "Mod+↓", does: "Move item down among its siblings" },
   // Not Mod+D: preventable while editing, but it falls through to the browser's
   // bookmark dialog when no node is focused.
-  toggleDone: { combo: { key: "Enter", mod: true, shift: true }, keys: "Mod+Shift+Enter", does: "Done / reopen (tasks)" },
+  toggleDone: { combo: { key: "Enter", mod: true, shift: true }, keys: "Mod+Shift+Enter", does: "Done / reopen" },
   toggleCollapse: { combo: { key: ".", mod: true }, keys: "Mod+.", does: "Collapse / expand children" },
   clearPriority: { keys: "Backspace", does: "At the start of the text: clear the item's priority" },
   deleteEmpty: { keys: "Backspace", does: "On an empty item: delete it" },
@@ -50,7 +50,7 @@ export const SHORTCUTS = {
   copyId: { combo: { key: "c", mod: true, shift: true }, keys: "Mod+Shift+C", does: "Copy the item's id (for CLI commands)" },
   undo: { combo: { key: "z", mod: true }, keys: "Mod+Z", does: "Undo" },
   redo: { combo: { key: "z", mod: true, shift: true }, keys: "Mod+Shift+Z", does: "Redo" },
-  palette: { combo: { key: "k", mod: true }, keys: "Mod+K", does: "Open the command palette (priority, labels, mine, done, view sheets)" },
+  palette: { combo: { key: "k", mod: true }, keys: "Mod+K", does: "Open the command palette (priority, labels, assign, done, view sheets)" },
   help: { combo: { key: "/", mod: true }, keys: "Mod+/", does: "Show this cheat sheet" },
   helpQuestion: { keys: "?", does: "Show this cheat sheet (when not editing)" },
   escape: { keys: "Esc", does: "Close this cheat sheet; clear the active tag filter (when not editing)" },
@@ -59,6 +59,7 @@ export const SHORTCUTS = {
 export const TOKEN_HINTS: readonly { token: string; does: string }[] = [
   { token: "p1 … p5", does: "Priority in text — p1 urgent, p5 low; p3 is the default and shows no badge" },
   { token: "#tag", does: "Stays in the text and renders as a coloured chip in place; click a chip to recolour, edit it like any other word" },
-  { token: "@me", does: "Marks a task as yours — agents and `kalamu next` skip it" },
+  { token: "@", does: "Opens the assign menu — pick human or agent for the task" },
+  { token: "@human / @agent", does: "Assigns the task directly — human-assigned tasks are skipped by agents and `kalamu next`" },
   { token: "![](…)", does: "Paste an image — stored in .kalamu/assets/ and shown as a thumbnail in place" },
 ];

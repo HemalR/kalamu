@@ -60,10 +60,10 @@ describe("acceptance flow (SPEC MVP criteria)", () => {
 });
 
 describe("filters and outputs", () => {
-  it("list --tasks --open --tag --self filter correctly (tags derived from inline tokens)", () => {
+  it("list --tasks --open --tag --assignee filter correctly (tags derived from inline tokens)", () => {
     const a = addTask("open one", { tag: ["backend"] });
     const b = addTask("done one");
-    addTask("mine", { self: true });
+    addTask("mine", { assign: "human" });
     commands.add(cwd, { text: "a thought" });
     commands.done(cwd, b);
 
@@ -72,14 +72,16 @@ describe("filters and outputs", () => {
     expect((commands.list(cwd, { done: true }).json as { id: string }[]).map((n) => n.id)).toEqual([b]);
     expect((commands.list(cwd, { tag: "backend" }).json as { id: string }[]).map((n) => n.id)).toEqual([a]);
     expect((commands.list(cwd, { tag: "backend" }).json as { text: string }[])[0]?.text).toBe("open one #backend");
-    expect((commands.list(cwd, { self: true }).json as { text: string }[])[0]?.text).toBe("mine");
+    expect((commands.list(cwd, { assignee: "human" }).json as { text: string }[])[0]?.text).toBe("mine");
+    expect((commands.list(cwd, { assignee: "agent" }).json as unknown[]).length).toBe(0);
+    expect(() => commands.list(cwd, { assignee: "robot" })).toThrow(/human or agent/);
   });
 
   it("next --limit and --all return the queue in order; plain next unchanged", () => {
     const p2 = addTask("second", { p: "2" });
     const p1 = addTask("first", { p: "1" });
     const p3 = addTask("third");
-    addTask("mine", { self: true, p: "1" });
+    addTask("mine", { assign: "human", p: "1" });
 
     const two = commands.next(cwd, { limit: "2" });
     expect(two.json).toMatchObject({ count: 2 });
@@ -99,10 +101,19 @@ describe("filters and outputs", () => {
     expect(commands.next(cwd, { all: true })).toMatchObject({ json: { count: 0 }, exitCode: 2 });
   });
 
-  it("self tasks are skipped by next but visible in list", () => {
-    addTask("mine urgent", { self: true, p: "1" });
+  it("human-assigned tasks are skipped by next but visible in list", () => {
+    addTask("mine urgent", { assign: "human", p: "1" });
     const other = addTask("theirs");
     expect(commands.next(cwd).json).toMatchObject({ id: other });
+  });
+
+  it("update --assign sets and clears the assignee", () => {
+    const id = addTask("swap hands");
+    commands.update(cwd, id, { assign: "agent" });
+    expect((commands.show(cwd, id, {}).json as { assignee?: string }).assignee).toBe("agent");
+    commands.update(cwd, id, { assign: "none" });
+    expect((commands.show(cwd, id, {}).json as { assignee?: string }).assignee).toBeUndefined();
+    expect(() => commands.update(cwd, id, { assign: "both" })).toThrow(/none to clear/);
   });
 
   it("show --children returns the subtree", () => {
@@ -247,7 +258,7 @@ describe("next context and scoping", () => {
 });
 
 describe("init --tour", () => {
-  it("seeds the tour: every task is self, next finds nothing, outline validates", () => {
+  it("seeds the tour: every task is human-assigned, next finds nothing, outline validates", () => {
     const dir = mkdtempSync(join(tmpdir(), "kalamu-tour-"));
     try {
       commands.init(dir);
@@ -256,9 +267,9 @@ describe("init --tour", () => {
 
       const listing = commands.list(dir, {});
       expect(listing.text).toContain("Welcome to Kalamu");
-      const nodes = commands.list(dir, {}).json as { kind: string; self?: boolean }[];
+      const nodes = commands.list(dir, {}).json as { kind: string; assignee?: string }[];
       expect(nodes.length).toBeGreaterThanOrEqual(10);
-      for (const node of nodes.filter((n) => n.kind === "task")) expect(node.self).toBe(true);
+      for (const node of nodes.filter((n) => n.kind === "task")) expect(node.assignee).toBe("human");
 
       expect(commands.next(dir).exitCode).toBe(2);
       expect(commands.validate(dir).exitCode).toBeFalsy();

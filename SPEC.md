@@ -36,12 +36,12 @@ These were deliberated and are settled. Do not relitigate them during implementa
 
 1. **Line position is canonical sibling order.** There is no `order` field. The writer always emits the file in pre-order traversal; the parser is lenient. See [Outline ordering](#outline-ordering).
 2. **`p1` is urgent, `p5` is low.** Matches P0/P1-is-highest developer convention. Missing priority means `p3` (normal). `next` sorts priority ascending.
-3. **`done` applies to tasks only.** Bullets have no done state.
-4. **A done or handed-off ancestor task closes its subtree.** Tasks under it are ineligible for `next`.
+3. **`done` carries semantics on tasks only.** (Amended 2026-07-10: bullets CAN be marked done — strikethrough in the UI — and `clean` removes a done bullet once nothing beneath it survives. A bullet's `doneAt` never affects `next` eligibility or umbrella closing; bullets remain non-work-items.)
+4. **A done or handed-off ancestor TASK closes its subtree.** Tasks under it are ineligible for `next`. Done bullets never close anything (see 3).
 5. **Live reload is not optional.** The server watches the file and pushes changes to the UI; all writers use mtime-checked atomic writes. See [Concurrency](#concurrency).
 6. **The UI ships with undo and delete.** A keyboard-first tool that moves subtrees without undo loses user data and trust.
 7. **Tags live inline in the text.** A tag IS its `#token` in the node's text ("Build a new #feature to do xyz") — there is no `tags` field; tags are derived from the text. Chips are a rendering of the token in place: unfocused nodes show chips, the focused node shows raw text, so tags are edited and deleted like any other text. Colours are derived deterministically from the tag name (overridable in `meta.json`). No tag-management commands — a tag exists because text mentions it.
-8. **Self tasks.** `self: true` marks a task the developer keeps for themselves; `next` never returns it. This is audience ("not for agents"), not assignment — Kalamu still has no concept of users.
+8. **Assignment: human or agent.** (Amended 2026-07-10: replaces the earlier `self: true` flag.) `assignee: "human"` marks a task the developer keeps for themselves — `next` never returns it. `assignee: "agent"` explicitly marks agent work; omitted means unassigned, which is agent-eligible exactly like `"agent"`. This is still audience, not people: the only two values are the developer at the keyboard and their agents — Kalamu has no concept of users. Legacy `"self": true` reads as `assignee: "human"` and is rewritten on the next write.
 9. **Per-node plain-text contenteditable, no editor library.** Each node's text is its own `contenteditable="plaintext-only"` element using Svelte's native bindings (`bind:textContent`). Structural keys (Enter, Tab, Backspace-on-empty) are intercepted — guarded by `event.isComposing` for IME — and become outline operations; token parsing writes back only on commit (Enter/blur), never mid-keystroke, since external updates to bound content reset the caret. No TipTap/ProseMirror — those are document editors, and Kalamu's structure lives in the data model, not the editor. Fallback if the spike finds trouble: a roaming single editor where only the focused node is live. The UI spike exists to validate this.
 10. **Collapse state is view state, never document content.** It lives in a gitignored `.kalamu/ui-state.json`, not in `outline.jsonl` — otherwise every fold click dirties the canonical file and pollutes Git history. Agents and the CLI always operate on the full tree regardless of what is collapsed.
 11. **Images are files referenced by inline markdown tokens.** Pasting an image stores it in `.kalamu/assets/` (content-hashed filename, COMMITTED — assets are outline content and must survive a clone) and inserts `![](.kalamu/assets/img-<hash>.<ext>)` into the node text. Same rendering model as tags: unfocused nodes show a thumbnail in place, the focused node shows the raw token. No new node field; agents see an ordinary greppable path.
@@ -120,7 +120,7 @@ Kalamu is not Linear, Jira, GitHub Issues, Backlog.md, Dex, or Todoist.
 
 Avoid:
 
-* Assignments
+* Multi-user assignments (the two-value `assignee` — human vs agent — is audience, not users)
 * Due dates
 * Comments
 * Rich task workflows
@@ -236,7 +236,7 @@ type KalamuNode = {
   doneAt: string | null;
   handoff: Handoff | null;
   priority?: 1 | 2 | 3 | 4 | 5;
-  self?: true;
+  assignee?: "human" | "agent";
 };
 ```
 
@@ -367,13 +367,21 @@ Legacy note: files written before this decision may carry a `tags` array; reader
 
 See [Tags](#tags) for colour and UI behaviour.
 
-#### `self`
+#### `assignee`
 
 Optional. Only meaningful for `kind: "task"`.
 
-`self: true` means the developer is keeping this task for themselves — agents must never pick it up, and `kalamu next` never returns it. Omit the field entirely when false — never write `"self": false`.
+Allowed values:
 
-This is audience, not assignment. Kalamu has no users; a task is either agent-eligible (default) or the developer's own.
+```ts
+"human" | "agent"
+```
+
+`"human"` means the developer is keeping this task for themselves — agents must never pick it up, and `kalamu next` never returns it. `"agent"` explicitly marks the task as agent work. Omitted means unassigned: agent-eligible, exactly like `"agent"`, just not explicitly claimed. Omit the field when unassigned — never write a null/empty assignee.
+
+This is audience, not users. Kalamu has no user accounts; the only two parties are the developer at the keyboard and their agents.
+
+Legacy note: files written before this decision may carry `"self": true`; readers treat it as `assignee: "human"` and drop the field on the next write.
 
 ---
 
@@ -386,7 +394,7 @@ This is audience, not assignment. Kalamu has no users; a task is either agent-el
 {"id":"n_004","parentId":"n_002","kind":"task","text":"Add SAML config screen","createdAt":"2026-07-09T07:03:00.000Z","doneAt":null,"handoff":null}
 {"id":"n_005","parentId":"n_001","kind":"bullet","text":"Login UX","createdAt":"2026-07-09T07:04:00.000Z","doneAt":null,"handoff":null}
 {"id":"n_006","parentId":"n_005","kind":"task","text":"Fix password reset redirect","createdAt":"2026-07-09T07:05:00.000Z","doneAt":null,"handoff":null,"priority":1}
-{"id":"n_007","parentId":null,"kind":"task","text":"Write launch blog post #publishing","createdAt":"2026-07-09T07:06:00.000Z","doneAt":null,"handoff":null,"self":true}
+{"id":"n_007","parentId":null,"kind":"task","text":"Write launch blog post #publishing","createdAt":"2026-07-09T07:06:00.000Z","doneAt":null,"handoff":null,"assignee":"human"}
 ```
 
 Note the file is in pre-order traversal: each node's descendants immediately follow it. The writer always emits this shape.
@@ -419,15 +427,20 @@ Eligibility — a node is eligible when all of the following hold:
 
 ```ts
 node.kind === "task"
+node.text.trim() !== ""
 node.doneAt === null
 node.handoff === null
-node.self !== true
+node.assignee !== "human"
 // AND no ancestor task of the node is done or handed off
 ```
 
+Blank tasks (whitespace-only text, typically stray empty nodes from the web
+UI) are never returned — an agent cannot act on a task with no text.
+`kalamu clean` removes them.
+
 The ancestor rule: marking a parent task done (or handing it off) closes the whole umbrella. Agents should never pick up work under a closed parent. Bullet ancestors never affect eligibility.
 
-Self tasks (`self: true`) are never returned — they belong to the developer, not the agent queue.
+Human-assigned tasks (`assignee: "human"`) are never returned — they belong to the developer, not the agent queue. Unassigned and `"agent"` tasks are equally eligible.
 
 Sorting:
 
@@ -513,8 +526,8 @@ Should not overwrite existing data.
 
 `init --tour` seeds a self-guided onboarding outline into a **fresh, empty**
 outline only (it refuses otherwise). The tour teaches the UI by being an
-outline: checkbox/done, priorities, tag chips, self, collapse, the palette, and
-the cheat sheet. Every tour task is `self: true` AND says in prose that it is a
+outline: checkbox/done, priorities, tag chips, assignment, collapse, the palette,
+and the cheat sheet. Every tour task is `assignee: "human"` AND says in prose that it is a
 demo — agents must never treat tour items as work; `kalamu next` on a
 tour-only outline exits 2.
 
@@ -585,7 +598,7 @@ kalamu list --open
 kalamu list --done
 kalamu list --handoff
 kalamu list --tag <tag>
-kalamu list --self
+kalamu list --assignee <human|agent>
 kalamu list --depth 2
 kalamu list --format json
 ```
@@ -623,10 +636,10 @@ Handed-off task:
 n_008      ☐ Add audit logs → backlog:backlog/tasks/add-audit-logs.md
 ```
 
-Self task:
+Assigned task (`@human` or `@agent`):
 
 ```text
-n_009      ☐ Write launch blog post #publishing (self)
+n_009      ☐ Write launch blog post #publishing @human
 ```
 
 ---
@@ -672,13 +685,13 @@ Options:
 --text <text>
 --p <1-5>
 --tag <tag>
---self
+--assign <human|agent>
 --after <id>
 --before <id>
 --format json
 ```
 
-`--tag` is repeatable and appends the `#tag` token to the text (tags live inline in text). `--self` marks a task as the developer's own (excluded from `kalamu next`).
+`--tag` is repeatable and appends the `#tag` token to the text (tags live inline in text). `--assign human` marks a task as the developer's own (excluded from `kalamu next`); `--assign agent` explicitly claims it for agents.
 
 If `--parent` is omitted, add as top-level.
 
@@ -725,13 +738,12 @@ Options:
 --p <1-5|default>
 --add-tag <tag>
 --remove-tag <tag>
---self
---no-self
+--assign <human|agent|none>
 ```
 
 `--p default` removes the stored priority (reverting to implicit `p3`).
 
-`--add-tag` and `--remove-tag` are repeatable text surgery: add appends the `#tag` token, remove strips the token(s) from the text. `--self` / `--no-self` set and clear the developer's-own flag.
+`--add-tag` and `--remove-tag` are repeatable text surgery: add appends the `#tag` token, remove strips the token(s) from the text. `--assign` sets the assignee; `--assign none` clears it back to unassigned.
 
 Converting a `task` back to `bullet` preserves `doneAt`, `handoff`, and `priority`. They are inert on bullets and are restored if the node is converted back to a task.
 
@@ -798,7 +810,7 @@ Deleted n_002 (3 nodes)
 
 ### `kalamu done <id>`
 
-Marks a task done.
+Marks an item done.
 
 ```bash
 kalamu done n_003
@@ -810,7 +822,12 @@ Sets:
 doneAt = now
 ```
 
-Only valid for `kind: "task"`. Running it on a bullet is an error — bullets have no done state.
+Valid for both kinds, with different meanings. On a **task** it is a state
+change with full semantics (excluded from `next`, closes its umbrella, removed
+by `clean`). On a **bullet** it is strikethrough styling plus cleanup: a done
+bullet never gates its descendants' eligibility for `next`, but `clean`
+removes it once nothing beneath it survives. Bullets stay non-work-items
+regardless of `doneAt`.
 
 Potential option later (not MVP):
 
@@ -907,9 +924,10 @@ const closedAncestor = (n: KalamuNode) =>
 
 const eligible = nodes.filter(n =>
   n.kind === "task" &&
+  n.text.trim() !== "" &&
   n.doneAt === null &&
   n.handoff === null &&
-  n.self !== true &&
+  n.assignee !== "human" &&
   !closedAncestor(n)
 );
 
@@ -973,7 +991,7 @@ When no task is eligible, exit with a non-zero status and output `{"id": null}` 
 
 ### `kalamu clean`
 
-Deletes completed items from the outline.
+Deletes done items and blank nodes from the outline.
 
 ```bash
 kalamu clean
@@ -984,20 +1002,20 @@ kalamu clean --format json
 Rules:
 
 * Removes every task with `doneAt !== null`, together with its entire subtree — consistent with key decision 4: a done parent task closes its umbrella, so anything beneath it is moot.
+* Removes done bullets and blank nodes (whitespace-only text, either kind) — but only when they have no surviving children. A done bullet does not close its umbrella and a blank node is structural, so either stays while real content beneath it survives. Chains of removable nodes collapse in one pass (children are decided before parents).
 * Handed-off tasks that are not done are NOT removed (handed off is not completed).
-* Bullets are never removed directly (they have no done state), only as part of a removed subtree.
 * `--dry-run` lists what would be deleted without writing.
 
 Example output:
 
 ```text
-Deleted 4 nodes (3 done tasks)
+Deleted 6 node(s) (3 done task(s), 1 done bullet(s), 1 blank node(s))
 ```
 
 JSON:
 
 ```json
-{"deleted": 4, "doneTasks": 3, "ids": ["n_007", "n_008", "n_009", "n_010"]}
+{"deleted": 6, "doneTasks": 3, "doneBullets": 1, "blankNodes": 1, "ids": ["n_007", "n_008", "n_009", "n_010", "n_011", "n_012"]}
 ```
 
 ---
@@ -1017,7 +1035,7 @@ Check:
 * `doneAt` is either `null` or a valid ISO timestamp.
 * `handoff` is either `null` or has `at`, `target`, and `ref`.
 * `priority`, if present, is an integer 1–5.
-* `self`, if present, is `true` and the node is a task.
+* `assignee`, if present, is `"human"` or `"agent"` and the node is a task.
 
 Warn (not error):
 
@@ -1104,8 +1122,9 @@ The UI should feel like Workflowy:
 * Done tasks greyed out and struck through
 * Priority visible only when useful, as a badge at the START of the row (scannable column)
 * Tags as small coloured chips rendered IN PLACE within the text (raw `#token` text while the node is focused)
-* Self tasks visibly distinct from agent-eligible tasks
+* Assigned tasks visibly distinct: a small user icon marks human-assigned tasks, a robot icon marks agent-assigned ones; unassigned tasks show neither
 * Minimal visual clutter
+* Light/dark theme follows the system by default; an explicit switcher (navbar button, or the palette's "Activate dark/light mode") overrides it, persisted in the browser's localStorage — per-browser view state, never in the repo
 
 Undo is a hard MVP requirement, not polish: a keyboard-first tool that moves and deletes subtrees without undo loses user data and trust.
 
@@ -1149,10 +1168,11 @@ Tagged task (chip renders in place, mid-sentence when the token sits mid-sentenc
 ☐ Build a new [feature] to do xyz
 ```
 
-Self task:
+Assigned task (user icon for human, robot icon for agent, rendered after the text):
 
 ```text
-☐ Write launch blog post  (me)
+☐ Write launch blog post  [user icon]
+☐ Migrate the config loader  [robot icon]
 ```
 
 ---
@@ -1173,10 +1193,11 @@ ArrowUp/ArrowDown        move focus (goal column preserved: the caret keeps aimi
 Cmd/Ctrl+ArrowUp         move node up
 Cmd/Ctrl+ArrowDown       move node down
 Cmd/Ctrl+Enter           toggle bullet/task
-Cmd/Ctrl+Shift+Enter     mark task done/reopen (not Cmd+D — it works while editing
+Cmd/Ctrl+Shift+Enter     mark item done/reopen — visual-only strikethrough on
+                         bullets (not Cmd+D — it works while editing
                          but falls through to the browser's bookmark dialog when
                          no node is focused)
-Cmd/Ctrl+K               open the command palette (priority, labels, mine)
+Cmd/Ctrl+K               open the command palette (priority, labels, assign)
 Cmd/Ctrl+.               toggle collapse/expand
 Backspace (empty node)   delete node
 Backspace (caret at 0)   clear the node's priority (tags are plain text — backspace them directly)
@@ -1190,7 +1211,7 @@ Cmd/Ctrl+Shift+Z         redo
 Modifier choice is deliberate: no Alt/Option combos (macOS Option-key character
 substitution, and tiling window managers like Aerospace bind them globally), no
 Cmd+M / Cmd+1..9 / Cmd+Shift+3-5 (OS- or browser-reserved). Node metadata that
-previously had Alt shortcuts (priority, self) lives in the command palette.
+previously had Alt shortcuts (priority, assignee) lives in the command palette.
 
 Need not implement all shortcuts in first pass, but structure the code so they can be added cleanly.
 
@@ -1206,7 +1227,8 @@ acts on the last-focused node and offers, at the top level:
 2  Labels    ->  submenu: every #tag in the outline, checkmark if the node has it;
                  selecting toggles the #token in the node's text (tags stay inline —
                  key decision 7); stays open for multi-toggle
-3  Toggle mine   direct action: flips self on the task, closes
+3  Assign    ->  submenu: Human / Agent / Unassigned, current value marked;
+                 selecting sets the task's assignee (Unassigned clears it), closes
 4  Toggle done   direct action: marks the task done / reopens it, closes
 5  Copy CLI command -> submenu: ready-to-run CLI commands for this node with its
                  real (server) id filled in — show --children always; done or
@@ -1214,16 +1236,26 @@ acts on the last-focused node and offers, at the top level:
                  delete (--recursive when the node has children). Picking one
                  copies it to the clipboard, shows a toast, closes with focus
                  restore.
-6  View keyboard shortcuts   opens the keyboard cheat sheet
-7  View CLI commands         opens the CLI commands sheet
+6  Activate dark mode       direct action: switches the theme, closes; the label
+                 reads "Activate light mode" when the current mode is dark
+7  Clean up                 direct action: deletes every done task with its
+                 subtree, plus done bullets and blank nodes (same as
+                 `kalamu clean`), applied through the UI's undo stack so it
+                 is undoable in-session; toasts the result ("Deleted 4 nodes
+                 (3 done tasks)" / "Nothing to clean."), closes
+8  View keyboard shortcuts   opens the keyboard cheat sheet
+9  View CLI commands         opens the CLI commands sheet
 ```
 
-The list is fixed: all seven items always render, in this order, with stable
+The list is fixed: all nine items always render, in this order, with stable
 numbers — the two view sheets are always the last items. Items that don't apply
 are greyed out and disabled rather than hidden — with no node focused, 1–5 are
-disabled; on a bullet, Priority, Toggle mine, and Toggle done are disabled
-(Copy CLI command stays enabled, with task-only commands omitted from its
-submenu). Disabled items don't respond to digits, Enter, or clicks, and
+disabled (the theme, clean and view items need no target and are always
+enabled — Clean up with nothing to clean just toasts "Nothing to clean."); on a
+bullet, only Priority and Assign are disabled — Toggle done
+works on bullets as a visual-only strikethrough (Copy CLI command stays
+enabled, with task-only commands omitted from its submenu; done/reopen appear
+for bullets too). Disabled items don't respond to digits, Enter, or clicks, and
 arrow navigation skips them. The CLI commands sheet mirrors `kalamu --help` —
 command names with one-line descriptions — as a reference for the developer;
 agents use `--help` itself.
@@ -1241,7 +1273,7 @@ Key rules:
   at a sublevel, close at the root. Esc therefore behaves identically with or
   without such an extension. Focus moving to a real element outside the palette
   closes it without refocusing; switching apps does not close it.
-* Priority and mine actions close the palette; label toggles keep it open.
+* Priority and assign actions close the palette; label toggles keep it open.
 
 ---
 
@@ -1277,7 +1309,7 @@ Rules:
 * Do not parse `p10`, `p99`, `P256`, etc.
 * Do not parse inside longer words.
 * A priority token always OVERRIDES an existing stored priority (typing `p2` on a `p4` task makes it `p2`).
-* Parse timing: when the user types a space, parse ONLY the just-completed token immediately before the caret (instant badge feedback, no whole-text rescans per keystroke). Commit-time parsing (Enter/blur) remains as the backstop for pasted or mid-line-edited text. This applies to `pN` and `@me` tokens; `#tags` stay in the text by design.
+* Parse timing: when the user types a space, parse ONLY the just-completed token immediately before the caret (instant badge feedback, no whole-text rescans per keystroke). Commit-time parsing (Enter/blur) remains as the backstop for pasted or mid-line-edited text. This applies to `pN` and `@human`/`@agent` tokens; `#tags` stay in the text by design.
 
 Unlike tags, priority is NOT stored in text — `p2` is metadata, not prose, and it drives the agent-facing `next` sort, so it stays a first-class field. Rendering gives it text-like ergonomics:
 
@@ -1316,19 +1348,21 @@ Every tag gets a colour with zero configuration:
   /(?:^|\s)#([a-z0-9][a-z0-9-]*)(?=\s|$)/i
   ```
 
-* `@me` remains an extracted token (it is state, not prose): typing it in a task's text sets `self: true` and removes the token:
+* `@human` and `@agent` are extracted tokens (assignment is state, not prose): typing one in a task's text sets `assignee` and removes the token:
 
   ```regex
-  /(?:^|\s)@me(?=\s|$)/i
+  /(?:^|\s)@(human|agent)(?=\s|$)/i
   ```
+
+* Typing a bare `@` in the editor opens a small assign dropdown at the caret — the same interaction shape as a slash-command menu. It offers **Human** (user icon) and **Agent** (robot icon); continuing to type filters the two, Enter/click assigns (removing the typed `@…` from the text), Esc or a non-matching word dismisses it and the text stays as typed.
 
 * Clicking a chip (in an unfocused node) opens a small popover showing the ~12 palette swatches plus a "default" option. Picking a swatch writes the override to `meta.json` via the server; "default" clears it, reverting to the hash-derived colour. Clicking non-chip text focuses the node with the caret mapped to the equivalent source position.
 * The popover also offers **Filter by #tag**: the outline shows only matching nodes, their ancestors (structure), and their descendants (a tagged umbrella includes its contents). A dismissible pill above the outline shows the active filter; clicking it (or Esc outside editing) clears it. One tag at a time; session-only — never persisted to `ui-state.json`.
 
-### Self tasks in the UI
+### Assignment in the UI
 
-* Self tasks show a subtle `me` marker (small chip or muted glyph next to the checkbox) so they scan differently from agent-eligible tasks.
-* `Cmd/Ctrl+M` toggles self on the focused task.
+* Assigned tasks show a subtle icon after the text — a user icon for `"human"`, a robot icon for `"agent"` — so they scan differently from unassigned tasks. The icons match the @ dropdown's.
+* Assignment is set from the @ dropdown, `@human`/`@agent` tokens, or the palette's Assign submenu (no dedicated shortcut — Cmd+M is OS-reserved).
 
 ---
 
@@ -1501,7 +1535,7 @@ Expected:
 * User can type `#backend` mid-sentence and see it render as an in-place coloured chip once the node loses focus, with the token preserved in the stored text.
 * User can click a tag chip, pick a different colour, and see it persisted to `meta.json`.
 * User can collapse a parent, restart `kalamu open`, and find it still collapsed — with zero change to `outline.jsonl`.
-* User can mark a task as self and see `kalamu next` skip it.
+* User can assign a task to themselves (human) and see `kalamu next` skip it.
 * JSONL file updates.
 * Running `kalamu done <id>` in a terminal while the UI is open updates the UI without a manual refresh.
 
@@ -1544,7 +1578,7 @@ The outliner UI is the hardest part of this project and its biggest risk. Prove 
 17. CLI `validate`
 18. Local server (API + file watching + SSE)
 19. Real Svelte UI, carrying over learnings from the spike
-20. Inline token parsing in UI (`p1`–`p5`, `#tag`, `@me`)
+20. Inline token parsing in UI (`p1`–`p5`, `#tag`, `@human`/`@agent`)
 21. Keyboard shortcuts, undo/redo
 22. Polish
 
@@ -1572,8 +1606,8 @@ Add tests for:
 * mtime conflict detection and single retry
 * Regex parsing of `p1`–`p5`
 * Not parsing invalid priority strings
-* Regex parsing of `#tag` and `@me` tokens
-* Not parsing `#` or `@me` inside longer words
+* Regex parsing of `#tag` and `@human`/`@agent` tokens
+* Not parsing `#` or `@human`/`@agent` inside longer words
 * Tag validation (lowercase, no whitespace, unique, no empty array)
 * Deterministic tag colour assignment
 
@@ -1585,7 +1619,7 @@ p2 task beats default (p3) task
 two p1 tasks preserve outline order
 done tasks are ignored
 handed-off tasks are ignored
-self tasks are ignored
+human-assigned tasks are ignored; agent-assigned and unassigned are equal
 tasks under a done parent task are ignored
 tasks under a handed-off parent task are ignored
 tasks under done/handed-off bullet ancestors are NOT affected (bullets have no done state)

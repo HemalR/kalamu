@@ -2,7 +2,7 @@
  * Typed client for the local Kalamu server. The browser never touches files;
  * every read/write goes through these endpoints (SPEC "Local server").
  */
-import type { KalamuMeta, KalamuNode, NodeKind, UiState } from "@kalamu/core";
+import type { Assignee, KalamuMeta, KalamuNode, NodeKind, UiState } from "@kalamu/core";
 
 export type Priority = 1 | 2 | 3 | 4 | 5;
 
@@ -12,7 +12,7 @@ export interface CreateNodeBody {
   text: string;
   priority?: Priority;
   tags?: string[];
-  self?: boolean;
+  assignee?: Assignee;
   afterId?: string;
   beforeId?: string;
 }
@@ -21,7 +21,8 @@ export interface PatchNodeBody {
   text?: string;
   kind?: NodeKind;
   priority?: Priority | "default";
-  self?: boolean;
+  /** "human" | "agent" assigns; null clears back to unassigned. */
+  assignee?: Assignee | null;
 }
 
 export interface MoveNodeBody {

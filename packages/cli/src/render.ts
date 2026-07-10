@@ -21,7 +21,7 @@ export function prefixFor(node: KalamuNode): string {
 export function suffixFor(node: KalamuNode): string {
   let out = "";
   if (node.handoff) out += ` → ${node.handoff.target}:${node.handoff.ref}`;
-  if (node.self) out += " (self)";
+  if (node.assignee) out += ` @${node.assignee}`;
   return out;
 }
 

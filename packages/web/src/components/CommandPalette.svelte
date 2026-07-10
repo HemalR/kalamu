@@ -4,6 +4,7 @@
   import { writeClipboard } from "../lib/copy";
   import type { OutlineStore } from "../lib/outline.svelte";
   import { digitPick, filterItems, snapSelection, stepSelection } from "../lib/palette";
+  import { theme } from "../lib/theme.svelte";
   import Overlay from "./Overlay.svelte";
 
   interface Props {
@@ -16,10 +17,11 @@
 
   let { store, onclose, onshowshortcuts, onshowcli }: Props = $props();
 
-  type Level = "root" | "priority" | "labels" | "cli";
+  type Level = "root" | "priority" | "assign" | "labels" | "cli";
 
   const CRUMBS: Record<Exclude<Level, "root">, string> = {
     priority: "Priority",
+    assign: "Assign",
     labels: "Labels",
     cli: "Copy CLI",
   };
@@ -72,6 +74,25 @@
         },
       }));
     }
+    if (level === "assign") {
+      if (!target || target.kind !== "task") return [];
+      const task = target;
+      // Same wording as AssignMenu, so the two assign surfaces read alike.
+      const picks = [
+        { id: "assign-human", label: "Human — agents skip the task", value: "human" },
+        { id: "assign-agent", label: "Agent", value: "agent" },
+        { id: "assign-none", label: "Unassigned", value: null },
+      ] as const;
+      return picks.map(({ id, label, value }) => ({
+        id,
+        label,
+        checked: (task.assignee ?? null) === value,
+        run: () => {
+          store.setAssignee(task.id, value);
+          close();
+        },
+      }));
+    }
     if (level === "labels") {
       if (!target) return [];
       const present = deriveTags(target.text);
@@ -96,37 +117,44 @@
         run: () => void copyCommand(command),
       }));
     }
-    // Root level: a fixed seven-item list with stable numbers (SPEC). Items
-    // that don't apply — node actions without a target, task-only actions on
-    // a bullet — are disabled rather than hidden.
+    // Root level: a fixed nine-item list with stable numbers (SPEC). Items
+    // that don't apply — node actions without a target, or Priority / Assign
+    // on a bullet — are disabled rather than hidden.
     const task = target?.kind === "task" ? target : undefined;
     return [
       { id: "priority", label: "Priority…", disabled: !task, run: () => enter("priority") },
       { id: "labels", label: "Labels…", disabled: !target, run: () => enter("labels") },
+      { id: "assign", label: "Assign…", disabled: !task, run: () => enter("assign") },
       {
-        id: "mine",
-        label: "Toggle mine — agents skip the task",
-        checked: task?.self === true,
-        disabled: !task,
-        run: () => {
-          if (!task) return;
-          store.toggleSelf(task.id);
-          close();
-        },
-      },
-      {
+        // Done works on bullets too — visual-only strikethrough (SPEC).
         id: "done",
         label: "Toggle done",
-        checked: task !== undefined && task.doneAt !== null,
-        disabled: !task,
+        checked: target !== undefined && target.doneAt !== null,
+        disabled: !target,
         run: () => {
-          if (!task) return;
-          store.toggleDone(task.id);
+          if (!target) return;
+          store.toggleDone(target.id);
           close();
         },
       },
       // Copy CLI command works on bullets too — only a target is required.
       { id: "copy-cli", label: "Copy CLI command…", disabled: !target, run: () => enter("cli") },
+      {
+        id: "theme",
+        label: theme.mode === "dark" ? "Activate light mode" : "Activate dark mode",
+        run: () => {
+          theme.toggle();
+          close();
+        },
+      },
+      {
+        id: "clean",
+        label: "Clean up",
+        run: () => {
+          store.clean();
+          close();
+        },
+      },
       // The view sheets always come last (SPEC).
       { id: "view-shortcuts", label: "View keyboard shortcuts", run: onshowshortcuts },
       { id: "view-cli", label: "View CLI commands", run: onshowcli },

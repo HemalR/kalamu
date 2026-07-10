@@ -6,8 +6,8 @@ const agentInstructions = `Set up Kalamu (repo-local task outliner — https://k
 
 1. Run: npx kalamu init --tour
    It creates .kalamu/ and seeds a self-guided onboarding outline for me, the human.
-   Every tour item is marked self — it is a demo for me, never work for you. Do not
-   act on, complete, or delete any of it.
+   Every tour item is assigned to the human — it is a demo for me, never work for you.
+   Do not act on, complete, or delete any of it.
    init prints suggested .gitignore entries — add them to .gitignore.
 2. Install the Kalamu agent skill so coding agents in this repo know how to use it.
    Detect which agents are in use here (config dirs like .claude/, .cursor/, .agents/, .windsurf/), then run:
@@ -20,7 +20,7 @@ const agentInstructions = `Set up Kalamu (repo-local task outliner — https://k
    127.0.0.1 and opens my browser on the tour outline.
 
 Then explain to me how to use Kalamu:
-- The tour in my browser walks the UI: Enter/Tab/Shift+Tab to outline, Cmd/Ctrl+K for the command palette, ? for the keyboard cheat sheet. Typing p1–p5 in a task sets priority, #words become tags, @me keeps a task for myself so agents skip it.
+- The tour in my browser walks the UI: Enter/Tab/Shift+Tab to outline, Cmd/Ctrl+K for the command palette, ? for the keyboard cheat sheet. Typing p1–p5 in a task sets priority, #words become tags, and typing @ in a task assigns it to human or agent — @human tasks are mine, so agents skip them.
 - Todos I write become tasks agents can execute: they pick up work with kalamu next and mark it done with kalamu done.`;
 ---
 

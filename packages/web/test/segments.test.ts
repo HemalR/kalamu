@@ -94,7 +94,7 @@ describe("tagSpans (live highlight ranges)", () => {
 
   it("returns nothing without tags or for near-tokens", () => {
     expect(tagSpans("plain text")).toEqual([]);
-    expect(tagSpans("issue#42 p1 @me")).toEqual([]);
+    expect(tagSpans("issue#42 p1 @human")).toEqual([]);
     expect(tagSpans("")).toEqual([]);
   });
 });

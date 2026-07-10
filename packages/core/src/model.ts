@@ -2,6 +2,9 @@ import { z } from "zod";
 
 export type NodeKind = "bullet" | "task";
 
+/** Audience, not users: the developer at the keyboard or their agents. */
+export type Assignee = "human" | "agent";
+
 export interface Handoff {
   at: string;
   target: string;
@@ -17,7 +20,7 @@ export interface KalamuNode {
   doneAt: string | null;
   handoff: Handoff | null;
   priority?: 1 | 2 | 3 | 4 | 5;
-  self?: true;
+  assignee?: Assignee;
 }
 // No tags field: a tag IS its inline #token in text; the set is derived
 // (SPEC key decision 7). No collapsed field: view state (key decision 10).
@@ -48,7 +51,7 @@ export const nodeSchema = z.object({
   priority: z
     .union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)])
     .optional(),
-  self: z.literal(true).optional(),
+  assignee: z.enum(["human", "agent"]).optional(),
 }) satisfies z.ZodType<KalamuNode>;
 
 export interface KalamuMeta {

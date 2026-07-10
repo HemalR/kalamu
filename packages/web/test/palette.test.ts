@@ -2,15 +2,17 @@ import { describe, expect, it } from "vitest";
 import { nodeCommands } from "../src/lib/cli-commands";
 import { digitPick, filterItems, snapSelection, stepSelection } from "../src/lib/palette";
 
-const items = [{ label: "Priority" }, { label: "Labels" }, { label: "Toggle mine" }, { label: "#v2" }];
+const items = [{ label: "Priority" }, { label: "Labels" }, { label: "Assign" }, { label: "#v2" }];
 
-// The fixed root list with no node focused: items 1-5 disabled, view items enabled.
+// The fixed root list with no node focused: items 1-5 disabled, the rest enabled.
 const noFocusRoot = [
   { label: "Priority…", disabled: true },
   { label: "Labels…", disabled: true },
-  { label: "Toggle mine", disabled: true },
+  { label: "Assign…", disabled: true },
   { label: "Toggle done", disabled: true },
   { label: "Copy CLI command…", disabled: true },
+  { label: "Activate dark mode" },
+  { label: "Clean up" },
   { label: "View keyboard shortcuts" },
   { label: "View CLI commands" },
 ];
@@ -24,7 +26,7 @@ describe("filterItems", () => {
   it("matches case-insensitive substrings of the label", () => {
     expect(filterItems(items, "LAB")).toEqual([{ label: "Labels" }]);
     expect(filterItems(items, "Ri")).toEqual([{ label: "Priority" }]);
-    expect(filterItems(items, "i")).toEqual([{ label: "Priority" }, { label: "Toggle mine" }]);
+    expect(filterItems(items, "i")).toEqual([{ label: "Priority" }, { label: "Assign" }]);
   });
 
   it("keeps disabled items listed — they grey out, never vanish", () => {
@@ -62,8 +64,8 @@ describe("stepSelection", () => {
 
   it("skips disabled items in both directions", () => {
     expect(stepSelection(noFocusRoot, 5, 1)).toBe(6);
-    expect(stepSelection(noFocusRoot, 6, 1)).toBe(5); // wraps past 0-4
-    expect(stepSelection(noFocusRoot, 5, -1)).toBe(6); // wraps backwards past 4-0
+    expect(stepSelection(noFocusRoot, 8, 1)).toBe(5); // wraps past 0-4
+    expect(stepSelection(noFocusRoot, 5, -1)).toBe(8); // wraps backwards past 4-0
   });
 
   it("stays put when nothing else is enabled", () => {
@@ -75,13 +77,13 @@ describe("stepSelection", () => {
 describe("digitPick", () => {
   it("activates the Nth (1-based) filtered item when the query is empty", () => {
     expect(digitPick(items, "", 1)).toEqual({ kind: "activate", item: { label: "Priority" } });
-    expect(digitPick(items, "", 3)).toEqual({ kind: "activate", item: { label: "Toggle mine" } });
+    expect(digitPick(items, "", 3)).toEqual({ kind: "activate", item: { label: "Assign" } });
   });
 
   it("swallows digits that point at disabled items", () => {
     expect(digitPick(noFocusRoot, "", 1)).toEqual({ kind: "swallow" });
     expect(digitPick(noFocusRoot, "", 5)).toEqual({ kind: "swallow" });
-    expect(digitPick(noFocusRoot, "", 6)).toEqual({ kind: "activate", item: { label: "View keyboard shortcuts" } });
+    expect(digitPick(noFocusRoot, "", 6)).toEqual({ kind: "activate", item: { label: "Activate dark mode" } });
   });
 
   it("treats digits as query text once anything is typed", () => {
@@ -111,12 +113,19 @@ describe("nodeCommands", () => {
     expect(commands.some((command) => command.startsWith("kalamu done"))).toBe(false);
   });
 
-  it("omits task-only commands on a bullet", () => {
+  it("offers done (visual-only) but not handoff on a bullet", () => {
     expect(nodeCommands({ serverId: "n_3", kind: "bullet", done: false, hasChildren: false })).toEqual([
       'kalamu show n_3 --children',
+      'kalamu done n_3',
       'kalamu add --parent n_3 --kind task --text ""',
       'kalamu delete n_3',
     ]);
+  });
+
+  it("offers reopen on a done bullet", () => {
+    const commands = nodeCommands({ serverId: "n_5", kind: "bullet", done: true, hasChildren: false });
+    expect(commands).toContain("kalamu reopen n_5");
+    expect(commands.some((command) => command.startsWith("kalamu handoff"))).toBe(false);
   });
 
   it("deletes recursively when the node has children", () => {

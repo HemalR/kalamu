@@ -22,6 +22,7 @@ import {
   subtreeIds,
   updateNode,
   validateOutline,
+  type Assignee,
   type KalamuNode,
   type NextOptions,
   type NodeKind,
@@ -46,6 +47,14 @@ export function parsePriority(value: string, allowDefault: boolean): Priority | 
 
 export function parseKind(value: string): NodeKind {
   if (value !== "bullet" && value !== "task") throw new CliError(`invalid kind "${value}" — use bullet or task`);
+  return value;
+}
+
+export function parseAssignee(value: string, allowNone: boolean): Assignee | null {
+  if (allowNone && value === "none") return null;
+  if (value !== "human" && value !== "agent") {
+    throw new CliError(`invalid assignee "${value}" — use human or agent${allowNone ? " (or none to clear)" : ""}`);
+  }
   return value;
 }
 
@@ -84,7 +93,7 @@ export interface AddOptions {
   text: string;
   p?: string;
   tag?: string[];
-  self?: boolean;
+  assign?: string;
   after?: string;
   before?: string;
 }
@@ -98,7 +107,7 @@ export function add(cwd: string, options: AddOptions): CommandResult {
       text: options.text,
       priority: options.p !== undefined ? (parsePriority(options.p, false) as Priority) : undefined,
       tags: options.tag,
-      self: options.self,
+      assignee: options.assign !== undefined ? (parseAssignee(options.assign, false) as Assignee) : undefined,
       afterId: options.after,
       beforeId: options.before,
     });
@@ -113,7 +122,7 @@ export interface UpdateOptions {
   p?: string;
   addTag?: string[];
   removeTag?: string[];
-  self?: boolean;
+  assign?: string;
 }
 
 export function update(cwd: string, id: string, options: UpdateOptions): CommandResult {
@@ -125,7 +134,7 @@ export function update(cwd: string, id: string, options: UpdateOptions): Command
       priority: options.p !== undefined ? parsePriority(options.p, true) : undefined,
       addTags: options.addTag,
       removeTags: options.removeTag,
-      self: options.self,
+      assignee: options.assign !== undefined ? parseAssignee(options.assign, true) : undefined,
     });
     return { nodes: result.nodes, result: result.node };
   });
@@ -210,7 +219,7 @@ export interface ListOptions {
   open?: boolean;
   done?: boolean;
   handoff?: boolean;
-  self?: boolean;
+  assignee?: string;
   tag?: string;
   depth?: string;
 }
@@ -227,7 +236,7 @@ function listFilter(options: ListOptions): (node: KalamuNode) => boolean {
     if (options.open && !(node.kind === "task" && node.doneAt === null)) return false;
     if (options.done && !(node.kind === "task" && node.doneAt !== null)) return false;
     if (options.handoff && node.handoff === null) return false;
-    if (options.self && node.self !== true) return false;
+    if (options.assignee !== undefined && node.assignee !== parseAssignee(options.assignee, false)) return false;
     if (options.tag !== undefined && !deriveTags(node.text).includes(options.tag.toLowerCase())) return false;
     return true;
   };
@@ -366,10 +375,25 @@ export function clean(cwd: string, options: { dryRun?: boolean }): CommandResult
   const report = (result: ReturnType<typeof cleanDone>, dry: boolean): CommandResult => {
     const ids = result.removed.map((n) => n.id);
     const verb = dry ? "Would delete" : "Deleted";
-    const text = ids.length
-      ? `${verb} ${ids.length} node(s) (${result.doneTasks} done task(s))`
-      : "Nothing to clean.";
-    return { text, json: { deleted: ids.length, doneTasks: result.doneTasks, ids, dryRun: dry } };
+    const detail = [
+      result.doneTasks > 0 ? `${result.doneTasks} done task(s)` : "",
+      result.doneBullets > 0 ? `${result.doneBullets} done bullet(s)` : "",
+      result.blankNodes > 0 ? `${result.blankNodes} blank node(s)` : "",
+    ]
+      .filter(Boolean)
+      .join(", ");
+    const text = ids.length ? `${verb} ${ids.length} node(s) (${detail})` : "Nothing to clean.";
+    return {
+      text,
+      json: {
+        deleted: ids.length,
+        doneTasks: result.doneTasks,
+        doneBullets: result.doneBullets,
+        blankNodes: result.blankNodes,
+        ids,
+        dryRun: dry,
+      },
+    };
   };
   if (options.dryRun) {
     return report(cleanDone(readOutline(paths.outline).nodes), true);

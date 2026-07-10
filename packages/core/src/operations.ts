@@ -1,5 +1,5 @@
 import { newId } from "./ids.js";
-import { effectivePriority, TAG_PATTERN, type KalamuNode, type NodeKind } from "./model.js";
+import { effectivePriority, TAG_PATTERN, type Assignee, type KalamuNode, type NodeKind } from "./model.js";
 import { appendTags, stripTags } from "./tokens.js";
 import { ancestors, buildTree, isDescendant, pathOf, preorder, subtreeIds, type Tree } from "./tree.js";
 
@@ -40,7 +40,7 @@ export interface AddInput {
   text: string;
   priority?: 1 | 2 | 3 | 4 | 5 | undefined;
   tags?: string[] | undefined;
-  self?: boolean | undefined;
+  assignee?: Assignee | undefined;
   afterId?: string | undefined;
   beforeId?: string | undefined;
   now?: string | undefined;
@@ -63,7 +63,7 @@ export function addNode(nodes: readonly KalamuNode[], input: AddInput): { nodes:
   };
   // Missing priority means default (p3); never store the default.
   if (input.priority !== undefined && input.priority !== 3) node.priority = input.priority;
-  if (input.self) node.self = true;
+  if (input.assignee !== undefined) node.assignee = input.assignee;
 
   const siblings = tree.children.get(parentId) ?? [];
   tree.children.set(parentId, insertAmongSiblings(siblings, node, input));
@@ -87,7 +87,8 @@ export interface UpdateInput {
   priority?: 1 | 2 | 3 | 4 | 5 | "default" | undefined;
   addTags?: string[] | undefined;
   removeTags?: string[] | undefined;
-  self?: boolean | undefined;
+  /** "human" | "agent" assigns; null clears back to unassigned. */
+  assignee?: Assignee | null | undefined;
 }
 
 export function updateNode(nodes: readonly KalamuNode[], id: string, input: UpdateInput): { nodes: KalamuNode[]; node: KalamuNode } {
@@ -106,9 +107,9 @@ export function updateNode(nodes: readonly KalamuNode[], id: string, input: Upda
   // Tag add/remove is text surgery: tags are inline #tokens (key decision 7).
   if (input.removeTags?.length) updated.text = stripTags(updated.text, input.removeTags);
   if (input.addTags?.length) updated.text = appendTags(updated.text, validTags(input.addTags));
-  if (input.self !== undefined) {
-    if (input.self) updated.self = true;
-    else delete updated.self;
+  if (input.assignee !== undefined) {
+    if (input.assignee === null) delete updated.assignee;
+    else updated.assignee = input.assignee;
   }
 
   return replace(tree, updated);
@@ -167,17 +168,18 @@ export function deleteNode(nodes: readonly KalamuNode[], id: string, options: { 
   return { nodes: remaining, deletedCount: doomed.size };
 }
 
+// Done on a BULLET is strikethrough plus cleanup: it never affects
+// next/eligibility or umbrella closing, but cleanDone removes it once
+// nothing beneath it survives (SPEC "done").
 export function markDone(nodes: readonly KalamuNode[], id: string, now?: string): { nodes: KalamuNode[]; node: KalamuNode } {
   const tree = buildTree(nodes);
   const node = requireNode(tree, id);
-  if (node.kind !== "task") throw new OperationError(`${id} is a bullet; only tasks can be done`);
   return replace(tree, { ...node, doneAt: now ?? new Date().toISOString() });
 }
 
 export function reopen(nodes: readonly KalamuNode[], id: string): { nodes: KalamuNode[]; node: KalamuNode } {
   const tree = buildTree(nodes);
   const node = requireNode(tree, id);
-  if (node.kind !== "task") throw new OperationError(`${id} is a bullet; only tasks can be reopened`);
   return replace(tree, { ...node, doneAt: null });
 }
 
@@ -210,11 +212,11 @@ export interface NextOptions {
 }
 
 /**
- * The full agent queue. Eligibility: open, unhanded-off, non-self task with
- * no done/handed-off ancestor TASK (a closed parent task closes its umbrella;
- * bullets never affect eligibility). Sort: priority ascending (p1 first,
- * missing = p3), then outline order. Sort is stable, so outline order is the
- * tie-breaker for free.
+ * The full agent queue. Eligibility: open, unhanded-off task not assigned to
+ * the human, with non-blank text and no done/handed-off ancestor TASK (a
+ * closed parent task closes its umbrella; bullets never affect eligibility).
+ * Sort: priority ascending (p1 first, missing = p3), then outline order.
+ * Sort is stable, so outline order is the tie-breaker for free.
  */
 export function eligibleTasks(
   nodes: readonly KalamuNode[],
@@ -227,9 +229,10 @@ export function eligibleTasks(
     .filter(
       (n) =>
         n.kind === "task" &&
+        n.text.trim() !== "" &&
         n.doneAt === null &&
         (!handedOffCounts || n.handoff === null) &&
-        n.self !== true &&
+        n.assignee !== "human" &&
         (scope === null || scope.has(n.id)) &&
         !ancestors(tree, n).some(
           (a) => a.kind === "task" && (a.doneAt !== null || (handedOffCounts && a.handoff !== null)),
@@ -255,11 +258,17 @@ export interface CleanResult {
   nodes: KalamuNode[];
   removed: KalamuNode[];
   doneTasks: number;
+  doneBullets: number;
+  blankNodes: number;
 }
 
 /**
  * Remove every done task together with its subtree (a done parent closes its
- * umbrella — key decision 4). Handed-off-but-open tasks and bullets stay.
+ * umbrella — key decision 4), plus done bullets and blank (whitespace-only
+ * text) nodes. Handed-off-but-open tasks stay. Done bullets and blank nodes
+ * never take surviving children with them: a done bullet doesn't close its
+ * subtree and a blank node is structural, so either stays while anything
+ * beneath it survives.
  */
 export function cleanDone(nodes: readonly KalamuNode[]): CleanResult {
   const tree = buildTree(nodes);
@@ -272,10 +281,27 @@ export function cleanDone(nodes: readonly KalamuNode[]): CleanResult {
     }
   }
   const ordered = preorder(tree);
+  let doneBullets = 0;
+  let blankNodes = 0;
+  // Reverse pre-order visits every child before its parent, so a chain of
+  // removable nodes collapses in one pass.
+  for (let i = ordered.length - 1; i >= 0; i--) {
+    const node = ordered[i]!;
+    if (doomed.has(node.id)) continue;
+    const doneBullet = node.kind === "bullet" && node.doneAt !== null;
+    if (!doneBullet && node.text.trim() !== "") continue;
+    const children = tree.children.get(node.id) ?? [];
+    if (!children.every((c) => doomed.has(c.id))) continue;
+    doomed.add(node.id);
+    if (doneBullet) doneBullets += 1;
+    else blankNodes += 1;
+  }
   return {
     nodes: ordered.filter((n) => !doomed.has(n.id)),
     removed: ordered.filter((n) => doomed.has(n.id)),
     doneTasks,
+    doneBullets,
+    blankNodes,
   };
 }
 

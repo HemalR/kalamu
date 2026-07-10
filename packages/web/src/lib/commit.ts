@@ -1,17 +1,17 @@
 /**
  * Pure token-commit logic (SPEC "Priority parsing in UI", "Tags").
  *
- * pN and @me are metadata: extracted and stripped on commit. #tags are prose
- * (SPEC key decision 7): they stay in the text verbatim and are only rendered
- * as chips. Kept free of runes/DOM so the delta rules — especially "a typed
- * priority token OVERRIDES the stored priority" — are unit-testable.
+ * pN and @human/@agent are metadata: extracted and stripped on commit. #tags
+ * are prose (SPEC key decision 7): they stay in the text verbatim and are only
+ * rendered as chips. Kept free of runes/DOM so the delta rules — especially "a
+ * typed priority token OVERRIDES the stored priority" — are unit-testable.
  */
 import { parseTokens, type KalamuNode, type ParsedTokens } from "@kalamu/core";
 import type { PatchNodeBody } from "./api";
 
-export type CommitPatch = Pick<PatchNodeBody, "text" | "priority" | "self">;
+export type CommitPatch = Pick<PatchNodeBody, "text" | "priority" | "assignee">;
 
-/** Full commit of edited text: extract pN/@me, diff against the node. Null = nothing to do. */
+/** Full commit of edited text: extract pN/@human/@agent, diff against the node. Null = nothing to do. */
 export function commitPatch(node: KalamuNode, raw: string): CommitPatch | null {
   const parsed = parseTokens(raw);
   const patch = tokenPatch(node, parsed);
@@ -24,7 +24,7 @@ export function commitPatch(node: KalamuNode, raw: string): CommitPatch | null {
  * handles the text itself). Rules:
  * - a priority token always overrides the stored priority; `p3` clears it
  *   back to default (stored priority removed)
- * - `@me` sets self on tasks only (self is invalid on bullets)
+ * - `@human`/`@agent` sets the assignee on tasks only (invalid on bullets)
  * - #tags are NOT metadata — they live in the text and never patch anything
  */
 export function tokenPatch(node: KalamuNode, parsed: ParsedTokens): CommitPatch {
@@ -33,14 +33,16 @@ export function tokenPatch(node: KalamuNode, parsed: ParsedTokens): CommitPatch 
     const target = parsed.priority === 3 ? undefined : parsed.priority;
     if (target !== node.priority) patch.priority = target ?? "default";
   }
-  if (parsed.self && node.kind === "task" && node.self !== true) patch.self = true;
+  if (parsed.assignee !== undefined && node.kind === "task" && node.assignee !== parsed.assignee) {
+    patch.assignee = parsed.assignee;
+  }
   return patch;
 }
 
 /**
  * The word immediately before `offset` in `text`, if it is a single complete
- * pN/@me token. #tags deliberately do not match — they stay in the text and
- * become chips on blur. Never re-scans the rest of the text.
+ * pN/@human/@agent token. #tags deliberately do not match — they stay in the
+ * text and become chips on blur. Never re-scans the rest of the text.
  */
 export function tokenBeforeCaret(
   text: string,
@@ -50,6 +52,6 @@ export function tokenBeforeCaret(
   const word = match?.[1];
   if (word === undefined) return null;
   const parsed = parseTokens(word);
-  const isToken = parsed.text === "" && (parsed.priority !== undefined || parsed.self);
+  const isToken = parsed.text === "" && (parsed.priority !== undefined || parsed.assignee !== undefined);
   return isToken ? { parsed, start: offset - word.length } : null;
 }

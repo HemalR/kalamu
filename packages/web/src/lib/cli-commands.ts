@@ -17,11 +17,14 @@ export interface NodeCommandInput {
   hasChildren: boolean;
 }
 
-/** Ready-to-run CLI commands for one node, real id filled in. */
+/**
+ * Ready-to-run CLI commands for one node, real id filled in. Done/reopen
+ * apply to bullets too (visual-only strikethrough); handoff stays task-only.
+ */
 export function nodeCommands({ serverId, kind, done, hasChildren }: NodeCommandInput): string[] {
   const commands = [`kalamu show ${serverId} --children`];
+  commands.push(done ? `kalamu reopen ${serverId}` : `kalamu done ${serverId}`);
   if (kind === "task") {
-    commands.push(done ? `kalamu reopen ${serverId}` : `kalamu done ${serverId}`);
     commands.push(`kalamu handoff ${serverId} --target backlog --ref ""`);
   }
   commands.push(`kalamu add --parent ${serverId} --kind task --text ""`);
@@ -39,8 +42,8 @@ export const CLI_COMMANDS: readonly CliCommand[] = [
   { name: "update", does: "Update a node" },
   { name: "move", does: "Move a node — subtree moves with it" },
   { name: "delete", does: "Delete a node" },
-  { name: "done", does: "Mark a task done" },
-  { name: "reopen", does: "Reopen a task" },
+  { name: "done", does: "Mark an item done — visual strikethrough on bullets" },
+  { name: "reopen", does: "Reopen an item" },
   { name: "handoff", does: "Record that a task was promoted into another system" },
   { name: "unhandoff", does: "Clear a task's handoff record" },
   { name: "search", does: "Search node text" },
