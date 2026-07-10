@@ -543,11 +543,17 @@ which agents to install for and owns every agent's skills directory. `--skill`
 forces the install, `--no-skill` suppresses the offer, and a non-TTY run (an
 agent or script) never prompts.
 
+Finally, an interactive `init` launches `kalamu open` so the human lands in the
+UI. `--no-open` suppresses this, `--open` forces it even non-interactively.
+Non-TTY runs (agents, scripts) and `--format json` never auto-open — an agent
+must never end up holding a server.
+
 The skill itself lives at `skills/kalamu/SKILL.md`, follows the agent-agnostic
 Agent Skills spec (agentskills.io: frontmatter `name` matching the directory +
-keyword-rich `description`; body < 500 lines), and is published simply by this
-repo being public on GitHub — skills.sh indexes discoverable `skills/<name>/`
-layouts automatically; there is no separate publish step. The skill teaches any
+keyword-rich `description`; body < 500 lines). Publishing needs the repo public
+on GitHub, but skills.sh does not crawl: a skill appears in its directory via
+anonymous install telemetry, i.e. only after someone runs
+`npx skills add <owner/repo>`, and ranks by install count. The skill teaches any
 coding agent the CLI workflow and rules; it must never assume a specific agent.
 
 ---

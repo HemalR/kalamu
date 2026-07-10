@@ -54,8 +54,10 @@ program
   .option("--no-tour", "never offer the tour")
   .option("--skill", "install the Kalamu agent skill via skills.sh (asks which agents)")
   .option("--no-skill", "never offer the agent-skill install")
+  .option("--open", "open the web UI when done (default when run interactively)")
+  .option("--no-open", "do not open the web UI")
   .option("--format <format>", "output format (text|json)")
-  .action(async (opts: { tour?: boolean; skill?: boolean; format?: string }) => {
+  .action(async (opts: { tour?: boolean; skill?: boolean; open?: boolean; format?: string }) => {
     const result = run(() => commands.init(process.cwd()), opts);
     if (!result || process.exitCode) return;
     // Humans get offers; agents and scripts (no TTY, JSON mode, or --no-*) never block.
@@ -72,6 +74,10 @@ program
     }
     if (opts.skill === true) installSkill();
     else if (opts.skill !== false && interactive) await offerSkillInstall();
+    // Humans land in the UI; agents and scripts must never end up holding a server.
+    if (opts.open === true || (opts.open !== false && interactive)) {
+      await open(process.cwd(), {});
+    }
   });
 
 program
