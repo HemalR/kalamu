@@ -51,3 +51,10 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
 }
+
+/* Experiment: monospace for the outline text only (editing and display —
+   chips, badges, and the rest of the chrome keep the UI font). */
+.node .text {
+  font-family: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  font-size: 13.5px;
+}

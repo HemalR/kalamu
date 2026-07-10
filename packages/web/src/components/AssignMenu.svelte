@@ -3,13 +3,23 @@
 
   /**
    * Assignees whose name starts with `filter` (case-insensitive). Shared with
-   * OutlineNode's @ dropdown so its close-on-non-match rule and this menu's
-   * option list can never disagree.
+   * OutlineNode's @ dropdown so its close-on-non-match rule and its option
+   * list can never disagree.
    */
   export function matchAssignees(filter: string): Assignee[] {
     const query = filter.toLowerCase();
     return (["human", "agent"] as const).filter((option) => option.startsWith(query));
   }
+
+  export function isAssignee(value: string): value is Assignee {
+    return value === "human" || value === "agent";
+  }
+
+  /** Same wording as the palette's Assign level, so all assign surfaces read alike. */
+  export const ASSIGNEE_LABELS: Record<Assignee, string> = {
+    human: "Human — agents skip the task",
+    agent: "Agent",
+  };
 
   export { assigneeIcon };
 </script>
@@ -18,25 +28,11 @@
   interface Props {
     /** Current assignee; null = unassigned. */
     current?: Assignee | null;
-    /** null = clear back to unassigned (only offered when `showClear`). */
+    /** null = clear back to unassigned. */
     onpick: (assignee: Assignee | null) => void;
-    /** Prefix typed after `@` — narrows the options (@ dropdown). */
-    filter?: string;
-    /** Show the "clear (unassigned)" row (assignee-marker menu). */
-    showClear?: boolean;
-    /** Keyboard-highlighted index while focus stays in the editor (@ dropdown). */
-    highlighted?: number;
   }
 
-  let { current = null, onpick, filter = "", showClear = false, highlighted = -1 }: Props = $props();
-
-  const options = $derived(matchAssignees(filter));
-
-  // Same wording as the palette's Assign level, so the two surfaces read alike.
-  const LABELS: Record<Assignee, string> = {
-    human: "Human — agents skip the task",
-    agent: "Agent",
-  };
+  let { current = null, onpick }: Props = $props();
 </script>
 
 {#snippet assigneeIcon(kind: Assignee)}
@@ -56,23 +52,16 @@
   {/if}
 {/snippet}
 
-<!-- pointerdown preventDefault keeps focus (and the caret) in the editor while clicking -->
+<!-- The assignee-marker menu (the @ caret dropdown renders through ComboMenu instead). -->
 <div class="menu" role="menu" aria-label="Assign" tabindex="-1" onpointerdown={(event) => event.preventDefault()}>
-  {#each options as option, index (option)}
-    <button
-      class={["item", { active: index === highlighted }]}
-      role="menuitemradio"
-      aria-checked={current === option}
-      onclick={() => onpick(option)}
-    >
+  {#each matchAssignees("") as option (option)}
+    <button class="item" role="menuitemradio" aria-checked={current === option} onclick={() => onpick(option)}>
       <span class="icon" aria-hidden="true">{@render assigneeIcon(option)}</span>
-      <span class="label">{LABELS[option]}</span>
+      <span class="label">{ASSIGNEE_LABELS[option]}</span>
       {#if current === option}<span class="tick" aria-hidden="true">✓</span>{/if}
     </button>
   {/each}
-  {#if showClear}
-    <button class="clear" role="menuitem" onclick={() => onpick(null)}>clear (unassigned)</button>
-  {/if}
+  <button class="clear" role="menuitem" onclick={() => onpick(null)}>clear (unassigned)</button>
 </div>
 
 <style>
@@ -105,8 +94,7 @@
     cursor: pointer;
     white-space: nowrap;
   }
-  .item:hover,
-  .item.active {
+  .item:hover {
     background: color-mix(in srgb, var(--fg) 7%, transparent);
   }
 

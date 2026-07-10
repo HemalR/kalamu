@@ -58,7 +58,7 @@ export const SHORTCUTS = {
 
 export const TOKEN_HINTS: readonly { token: string; does: string }[] = [
   { token: "p1 … p5", does: "Priority in text — p1 urgent, p5 low; p3 is the default and shows no badge" },
-  { token: "#tag", does: "Stays in the text and renders as a coloured chip in place; click a chip to recolour, edit it like any other word" },
+  { token: "#tag", does: "Stays in the text and renders as a coloured chip in place; typing # suggests existing tags; click a chip to recolour, edit it like any other word" },
   { token: "@", does: "Opens the assign menu — pick human or agent for the task" },
   { token: "@human / @agent", does: "Assigns the task directly — human-assigned tasks are skipped by agents and `kalamu next`" },
   { token: "![](…)", does: "Paste an image — stored in .kalamu/assets/ and shown as a thumbnail in place" },

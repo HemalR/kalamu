@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { effectivePriority, tagColor, type Assignee, type KalamuNode } from "@kalamu/core";
+  import { effectivePriority, tagColor, type KalamuNode } from "@kalamu/core";
   import { tick } from "svelte";
   import {
     caretHit,
@@ -19,7 +19,8 @@
   import type { FocusTarget, OutlineStore } from "../lib/outline.svelte";
   import { assetUrl, segmentText } from "../lib/segments";
   import { matches, SHORTCUTS as S } from "../lib/shortcuts";
-  import AssignMenu, { assigneeIcon, matchAssignees } from "./AssignMenu.svelte";
+  import AssignMenu, { ASSIGNEE_LABELS, assigneeIcon, isAssignee, matchAssignees } from "./AssignMenu.svelte";
+  import ComboMenu from "./ComboMenu.svelte";
   import Self from "./OutlineNode.svelte";
   import PriorityMenu from "./PriorityMenu.svelte";
   import TagChip from "./TagChip.svelte";
@@ -104,47 +105,61 @@
   }
 
   function onEditableBlur(): void {
-    closeAt();
+    closeCombo();
     commit();
     editing = false;
     clearTagHighlights();
   }
 
-  // ---- @ assign dropdown (tasks only) ----------------------------------------
-  // Opens when `@` is typed at a word boundary; tracks the letters typed after
-  // it as a prefix filter. It never edits the text itself — the characters
-  // insert natively, and only an explicit pick removes the typed `@…` fragment.
+  // ---- caret combobox: @ assignees (tasks only) and # tag completion ---------
+  // Opens when the trigger is typed at a word boundary; the letters typed
+  // after it form a prefix filter. It never edits the text itself — the
+  // characters insert natively, and only an explicit pick touches the draft.
 
-  let atOpen = $state(false);
-  let atFilter = $state("");
-  let atIndex = $state(0);
+  type ComboKind = "assign" | "tag";
+
+  let combo = $state<ComboKind | null>(null);
+  let comboFilter = $state("");
+  let comboIndex = $state(0);
   /** Menu position relative to the row; null until the caret rect is measured. */
-  let atPos = $state<{ left: number; top: number } | null>(null);
-  /** Draft offset of the typed `@` — where the caret returns after a pick. */
-  let atStart = 0;
+  let comboPos = $state<{ left: number; top: number } | null>(null);
+  /** Draft offset of the typed trigger — where a pick edits from. */
+  let comboStart = 0;
 
-  const atMatches = $derived(matchAssignees(atFilter));
-
-  function closeAt(): void {
-    atOpen = false;
-    atFilter = "";
-    atIndex = 0;
-    atPos = null;
+  function comboOptions(kind: ComboKind, filter: string): string[] {
+    if (kind === "assign") return matchAssignees(filter);
+    const query = filter.toLowerCase();
+    return store.allTags.filter((tag) => tag.toLowerCase().startsWith(query));
   }
 
-  function openAt(offset: number): void {
-    atStart = offset;
-    atFilter = "";
-    atIndex = 0;
-    atPos = null;
-    atOpen = true;
-    // Measure after the browser inserts the @, so the caret rect exists.
+  const comboMatches = $derived(combo === null ? [] : comboOptions(combo, comboFilter));
+
+  function closeCombo(): void {
+    combo = null;
+    comboFilter = "";
+    comboIndex = 0;
+    comboPos = null;
+  }
+
+  /** Open on the trigger keydown when it lands at a word boundary. */
+  function maybeOpenCombo(kind: ComboKind): void {
+    if (kind === "assign" && node.kind !== "task") return; // bullets have tags, not assignees
+    if (comboOptions(kind, "").length === 0) return; // no existing tags: plain typing
+    if (!el || window.getSelection()?.isCollapsed !== true) return;
+    const offset = caretOffset(el);
+    if (offset !== 0 && !/\s/.test(draft.charAt(offset - 1))) return;
+    comboStart = offset;
+    comboFilter = "";
+    comboIndex = 0;
+    comboPos = null;
+    combo = kind;
+    // Measure after the browser inserts the trigger, so the caret rect exists.
     requestAnimationFrame(() => {
-      if (!atOpen || !rowEl) return;
+      if (combo === null || !rowEl) return;
       const row = rowEl.getBoundingClientRect();
       const selection = window.getSelection();
       const rect = selection && selection.rangeCount > 0 ? selection.getRangeAt(0).getBoundingClientRect() : null;
-      atPos =
+      comboPos =
         rect && (rect.left !== 0 || rect.bottom !== 0)
           ? { left: rect.left - row.left, top: rect.bottom - row.top }
           : { left: 0, top: row.height }; // collapsed-range rect unavailable: fall back to the row
@@ -152,66 +167,73 @@
   }
 
   /**
-   * Keys while the @ dropdown is open. True = fully consumed here; false =
-   * fall through to the normal handling (possibly after closing the dropdown).
+   * Keys while the combobox is open. True = fully consumed here; false =
+   * fall through to the normal handling (possibly after closing the menu).
    */
-  function handleAtKey(event: KeyboardEvent): boolean {
+  function handleComboKey(event: KeyboardEvent): boolean {
+    if (combo === null) return false;
     const mod = event.metaKey || event.ctrlKey;
     // Bare modifier presses (e.g. Shift for a capital letter) mean nothing here.
     if (event.key === "Shift" || event.key === "Alt" || event.key === "Control" || event.key === "Meta") return true;
     if (event.key === "Escape") {
       event.preventDefault();
-      closeAt(); // leave the text exactly as typed
+      closeCombo(); // leave the text exactly as typed
       return true;
     }
     if ((event.key === "ArrowDown" || event.key === "ArrowUp") && !mod && !event.altKey) {
       event.preventDefault();
-      const count = atMatches.length;
-      if (count > 0) atIndex = (atIndex + (event.key === "ArrowDown" ? 1 : count - 1)) % count;
+      const count = comboMatches.length;
+      if (count > 0) comboIndex = (comboIndex + (event.key === "ArrowDown" ? 1 : count - 1)) % count;
       return true;
     }
     if (event.key === "Enter" && !mod && !event.shiftKey && !event.altKey) {
-      const choice = atMatches[atIndex];
+      const choice = comboMatches[comboIndex];
       if (choice !== undefined) {
         event.preventDefault();
-        pickAssignee(choice);
+        pickCombo(choice);
         return true;
       }
-      closeAt();
+      closeCombo();
       return false;
     }
     if (event.key === "Backspace" && !mod && !event.altKey) {
-      if (atFilter === "") closeAt(); // this press deletes the @ itself
+      if (comboFilter === "") closeCombo(); // this press deletes the trigger itself
       else {
-        atFilter = atFilter.slice(0, -1);
-        atIndex = 0;
+        comboFilter = comboFilter.slice(0, -1);
+        comboIndex = 0;
       }
       return false; // the deletion happens natively either way
     }
     if (event.key.length === 1 && !mod && !event.altKey) {
-      if (event.key !== " " && matchAssignees(atFilter + event.key).length > 0) {
-        atFilter += event.key;
-        atIndex = 0;
+      if (event.key !== " " && comboOptions(combo, comboFilter + event.key).length > 0) {
+        comboFilter += event.key;
+        comboIndex = 0;
         return false; // the character types natively and narrows the filter
       }
-      closeAt(); // space or non-matching character: leave the text as typed
-      return false; // a space still falls through to parse-on-space for a fully-typed token
+      closeCombo(); // space or non-matching character: leave the text as typed
+      return false; // a space still falls through to parse-on-space; a new #tag just keeps typing
     }
     // Structural/navigation keys (Tab, mod combos, caret moves…) close it.
-    closeAt();
+    closeCombo();
     return false;
   }
 
-  /** Pick from the @ dropdown: remove the typed `@…` fragment and assign. */
-  function pickAssignee(choice: Assignee): void {
-    if (!el) return;
+  /**
+   * Pick: @ removes the typed `@…` fragment and patches the assignee
+   * (metadata); # completes the fragment to the full `#tag` — a pure text
+   * edit, the token stays in the text and chips on blur (SPEC key decision 7).
+   */
+  function pickCombo(choice: string): void {
+    if (!el || combo === null) return;
+    const kind = combo;
     const offset = caretOffset(el);
-    const start = atStart;
-    closeAt();
-    draft = draft.slice(0, start) + draft.slice(offset);
-    store.setAssignee(node.id, choice);
+    const start = comboStart;
+    closeCombo();
+    const replacement = kind === "tag" ? `#${choice}` : "";
+    draft = draft.slice(0, start) + replacement + draft.slice(offset);
+    if (kind === "assign" && isAssignee(choice)) store.setAssignee(node.id, choice);
     const element = el;
-    void tick().then(() => placeCaret(element, start));
+    void tick().then(() => placeCaret(element, start + replacement.length));
     refreshHighlights(); // token positions shifted
   }
 
@@ -320,7 +342,7 @@
 
   /** Pasted images upload to .kalamu/assets/ and insert their markdown token. */
   function onPaste(event: ClipboardEvent): void {
-    closeAt(); // pasted text would desync the @ filter
+    closeCombo(); // pasted text would desync the filter
     const items = event.clipboardData?.items;
     if (!items) return;
     const files: File[] = [];
@@ -369,16 +391,13 @@
     // Anything other than plain vertical navigation ends a goal-column run.
     if (event.key !== "ArrowUp" && event.key !== "ArrowDown") store.goalColumn = null;
 
-    if (atOpen && handleAtKey(event)) return;
-    // `@` at a word boundary opens the assign dropdown (tasks only); the
-    // character itself still types — only a pick edits the text. Meta stays
-    // excluded, but Ctrl/Alt are allowed for AltGr/Option layouts where they
-    // are part of typing "@".
-    if (!atOpen && event.key === "@" && !event.metaKey && node.kind === "task") {
-      if (el && window.getSelection()?.isCollapsed === true) {
-        const offset = caretOffset(el);
-        if (offset === 0 || /\s/.test(draft.charAt(offset - 1))) openAt(offset);
-      }
+    if (combo !== null && handleComboKey(event)) return;
+    // `@` (tasks only) / `#` at a word boundary opens a completion dropdown;
+    // the character itself still types — only a pick edits the text. Meta
+    // stays excluded, but Ctrl/Alt are allowed for AltGr/Option layouts where
+    // they are part of typing the symbol.
+    if (combo === null && !event.metaKey && (event.key === "@" || event.key === "#")) {
+      maybeOpenCombo(event.key === "@" ? "assign" : "tag");
       return;
     }
 
@@ -586,21 +605,29 @@
           onblur={onEditableBlur}
           onpointerdown={() => {
             store.goalColumn = null;
-            closeAt(); // a caret move invalidates the tracked @ fragment
+            closeCombo(); // a caret move invalidates the tracked fragment
           }}
           {@attach registerEditable}
         ></div>
-        {#if atOpen && atPos}
+        {#if combo !== null && comboPos !== null}
           <!-- 0×0 anchor at the caret; the menu hangs below it (relative to .row) -->
-          <span class="at-anchor" style="left: {atPos.left}px; top: {atPos.top}px">
-            <AssignMenu
-              current={node.assignee ?? null}
-              filter={atFilter}
-              highlighted={atIndex}
-              onpick={(picked) => {
-                if (picked !== null) pickAssignee(picked);
-              }}
-            />
+          <span class="combo-anchor" style="left: {comboPos.left}px; top: {comboPos.top}px">
+            <ComboMenu
+              options={comboMatches}
+              highlighted={comboIndex}
+              label={combo === "assign" ? "Assign" : "Tags"}
+              onpick={pickCombo}
+            >
+              {#snippet item(option)}
+                {#if combo === "assign" && isAssignee(option)}
+                  <span class="combo-icon" aria-hidden="true">{@render assigneeIcon(option)}</span>
+                  <span class="combo-label">{ASSIGNEE_LABELS[option]}</span>
+                  {#if node.assignee === option}<span class="combo-tick" aria-hidden="true">✓</span>{/if}
+                {:else}
+                  <span class="combo-chip" style:--tag-color={tagColor(option, store.meta.tags)}>#{option}</span>
+                {/if}
+              {/snippet}
+            </ComboMenu>
           </span>
         {/if}
       {:else}
@@ -656,7 +683,6 @@
           {#if assignOpen}
             <AssignMenu
               current={node.assignee}
-              showClear
               onpick={(picked) => {
                 store.setAssignee(node.id, picked);
                 assignOpen = false;
@@ -888,10 +914,33 @@
     color: var(--fg);
   }
 
-  .at-anchor {
+  .combo-anchor {
     position: absolute;
     width: 0;
     height: 0;
+  }
+
+  /* Option content for the caret combobox (rendered into ComboMenu rows). */
+  .combo-icon {
+    display: flex;
+    color: var(--muted);
+  }
+  .combo-label {
+    flex: 1;
+  }
+  .combo-tick {
+    font-size: 11px;
+    color: var(--muted);
+  }
+  /* Same recipe as TagChip, so options preview exactly how the tag will chip. */
+  .combo-chip {
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1;
+    padding: 2.5px 7px;
+    border-radius: 999px;
+    color: var(--tag-color);
+    background: color-mix(in srgb, var(--tag-color) 15%, transparent);
   }
 
   .handoff {
