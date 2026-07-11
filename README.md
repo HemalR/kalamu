@@ -1,5 +1,7 @@
 # Kalamu
 
+[![skills.sh](https://skills.sh/b/hemalr/kalamu)](https://skills.sh/hemalr/kalamu)
+
 A repo-local, keyboard-first outliner for turning developer thoughts into agent-ready tasks. — [kalamu.dev](https://kalamu.dev)
 
 Your outline lives in your repository as one diffable file — `.kalamu/outline.jsonl` — with no cloud, no account, and no daemon. You brainstorm in a fast keyboard-first web UI; your coding agents consume the same outline through a CLI built for them.
