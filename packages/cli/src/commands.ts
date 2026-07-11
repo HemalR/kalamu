@@ -29,6 +29,7 @@ import {
 } from "@kalamu/core";
 import { initKalamu, readOutline, withOutline } from "@kalamu/core/store";
 import { readFileSync } from "node:fs";
+import { ensureAgentDocs } from "./agent-docs.js";
 import { CliError, resolvePaths, type CommandResult } from "./context.js";
 import { renderOutline } from "./render.js";
 import { seedTour } from "./tour.js";
@@ -58,20 +59,26 @@ export function parseAssignee(value: string, allowNone: boolean): Assignee | nul
   return value;
 }
 
-export function init(cwd: string): CommandResult {
+export function init(cwd: string, options: { agentDocs?: boolean } = {}): CommandResult {
   const { created, paths } = initKalamu(cwd);
+  const docs = options.agentDocs === false ? [] : ensureAgentDocs(cwd);
+  const docsLine = docs.length ? [`Added the agent standing instruction to ${docs.join(" and ")}.`] : [];
   if (!created) {
-    return { text: `Already initialised (${paths.dir})`, json: { created: false, dir: paths.dir } };
+    return {
+      text: [`Already initialised (${paths.dir})`, ...docsLine].join("\n"),
+      json: { created: false, dir: paths.dir, agentDocs: docs },
+    };
   }
   const text = [
     `Initialised Kalamu in ${paths.dir}`,
+    ...docsLine,
     "",
     "Suggested .gitignore entries:",
     "  .kalamu/cache.sqlite",
     "  .kalamu/ui-state.json",
     "  .kalamu/*.lock",
   ].join("\n");
-  return { text, json: { created: true, dir: paths.dir } };
+  return { text, json: { created: true, dir: paths.dir, agentDocs: docs } };
 }
 
 export function tour(cwd: string): CommandResult {

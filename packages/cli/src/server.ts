@@ -33,7 +33,7 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, watch, writeFileSync, type FSWatcher } from "node:fs";
-import { basename, extname, join, normalize } from "node:path";
+import { basename, dirname, extname, join, normalize } from "node:path";
 import { z } from "zod";
 
 const IMAGE_TYPES: Record<string, string> = {
@@ -95,6 +95,19 @@ const CONTENT_TYPES: Record<string, string> = {
 export interface KalamuServer {
   app: Hono;
   close: () => void;
+}
+
+/** Project name for the UI title: package.json `name` if present, else the root directory's name. */
+function projectName(root: string): string {
+  try {
+    const pkg: unknown = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+    if (pkg !== null && typeof pkg === "object" && "name" in pkg && typeof pkg.name === "string" && pkg.name.trim() !== "") {
+      return pkg.name;
+    }
+  } catch {
+    // no package.json (or unreadable/invalid) — fall back to the directory name
+  }
+  return basename(root);
 }
 
 export function createServer(paths: KalamuPaths, webAssetsDir: string | null): KalamuServer {
@@ -283,6 +296,8 @@ export function createServer(paths: KalamuPaths, webAssetsDir: string | null): K
     const type = Object.entries(IMAGE_TYPES).find(([, e]) => e === extname(file))?.[0];
     return c.body(readFileSync(full), 200, { "Content-Type": type ?? "application/octet-stream" });
   });
+
+  app.get("/api/project", (c) => c.json({ name: projectName(dirname(paths.dir)) }));
 
   app.get("/api/meta", (c) => c.json(readMeta(paths.meta)));
 

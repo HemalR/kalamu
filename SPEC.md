@@ -349,6 +349,8 @@ Default priority is `3`.
 
 Do not write `"priority": 3` unless there is a strong reason. Missing priority means default priority.
 
+Setting a priority (1–5) on a `bullet` — via `add`, `update`, or the UI — converts it into a `task`, unless a kind is passed explicitly in the same call. Priorities are never silently inert on bullets you just prioritized; clearing back to default (`--p default` or `3`) never converts.
+
 Semantics — **lower number is more urgent**, matching P0/P1 developer convention:
 
 ```text
@@ -470,6 +472,8 @@ kalamu next --all
 
 `--limit <n>` / `--all` return the next n (or all) eligible tasks in queue order, so an agent can load several tasks into context at once. Plain `next` keeps its single-task output; batch JSON is `{"count": N, "tasks": [{id, text, priority, path}, ...]}`. Exit code 2 with `{"count": 0, "tasks": []}` when nothing is eligible.
 
+`kalamu all` is an alias for `kalamu next --all` (same options apart from `--all`/`--limit`).
+
 There is no `--explain` flag — the default text output already includes the reason line.
 
 Later (not MVP):
@@ -536,6 +540,15 @@ outline to learn the UI? [Y/n]" instead of requiring the flag; `--tour` forces,
 `--no-tour` suppresses the question. Non-TTY runs (agents, scripts) are never
 prompted and never seeded — a fresh non-interactive init just prints a one-line
 hint that `init --tour` exists.
+
+`init` also plants a standing instruction in the project's **agent docs**: a
+marked block telling agents that work requiring the human (a decision, a
+credential, a manual step) must be recorded as a task via
+`kalamu add ... --assign human`, not just mentioned in chat. The block is
+appended to every `CLAUDE.md`/`AGENTS.md` that exists at the root, or a new
+`AGENTS.md` is created when neither does. Idempotent (the `<!-- kalamu:agents -->`
+marker is the already-installed check), so it also runs on re-init — existing
+projects adopt it by re-running `kalamu init`. `--no-agent-docs` skips it.
 
 When run interactively (TTY), `init` then offers to install the **Kalamu agent
 skill** by delegating to `npx skills add <owner/repo>` — the skills.sh CLI asks
@@ -748,6 +761,8 @@ Options:
 ```
 
 `--p default` removes the stored priority (reverting to implicit `p3`).
+
+`--p 1-5` on a bullet also converts it to a task (see the `priority` field), unless `--kind` is given in the same call.
 
 `--add-tag` and `--remove-tag` are repeatable text surgery: add appends the `#tag` token, remove strips the token(s) from the text. `--assign` sets the assignee; `--assign none` clears it back to unassigned.
 
@@ -1042,6 +1057,8 @@ Check:
 * `handoff` is either `null` or has `at`, `target`, and `ref`.
 * `priority`, if present, is an integer 1–5.
 * `assignee`, if present, is `"human"` or `"agent"` and the node is a task.
+
+Unknown node fields are NOT an error: readers must preserve fields they don't recognize through parse → operate → write, so an older build can never erase what a newer one wrote. Writers emit unknown fields after the known keys, sorted by name.
 
 Warn (not error):
 

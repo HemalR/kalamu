@@ -30,7 +30,7 @@ import {
 } from "@kalamu/core";
 import { tick } from "svelte";
 import { SvelteSet } from "svelte/reactivity";
-import { api, type Priority } from "./api";
+import { api, ApiError, type Priority } from "./api";
 import type { CaretPosition } from "./caret";
 import { commitPatch, tokenPatch, type CommitPatch } from "./commit";
 import { serializeSubtree, writeClipboard } from "./copy";
@@ -58,6 +58,13 @@ export class OutlineStore {
   loaded = $state(false);
   loadError = $state<string | null>(null);
   toast = $state<string | null>(null);
+
+  /**
+   * Server reachability. While false, every mutation refuses (mutate/restore/
+   * enqueue callers early-return) and the UI drops into read-only mode — an
+   * optimistic edit the server never sees would vanish on reload.
+   */
+  connected = $state(true);
 
   /** Active tag filter — session-only view state, never persisted (SPEC "Tags"). */
   filterTag = $state<string | null>(null);
@@ -125,8 +132,23 @@ export class OutlineStore {
       return;
     }
     const events = new EventSource("/api/events");
+    // EventSource retries on its own: onerror means the server is gone,
+    // onopen fires again once it comes back.
+    events.onopen = () => this.setConnected(true);
+    events.onerror = () => this.setConnected(false);
     events.addEventListener("outline-changed", () => void this.refetchNodes());
     events.addEventListener("meta-changed", () => void this.refetchMeta());
+  }
+
+  private setConnected(value: boolean): void {
+    if (value === this.connected) return;
+    this.connected = value;
+    if (value) {
+      this.showToast("Reconnected");
+      // Anything that changed while the SSE stream was down went unannounced.
+      void this.refetchNodes();
+      void this.refetchMeta();
+    }
   }
 
   // ---- persistence plumbing -------------------------------------------------
@@ -136,7 +158,9 @@ export class OutlineStore {
     this.queue = this.queue
       .then(persist)
       .catch((err: unknown) => {
-        this.showToast(err instanceof Error ? err.message : "failed to save");
+        // A network-level failure means disconnected; the banner says so.
+        if (err instanceof ApiError && err.status === 0) this.setConnected(false);
+        else this.showToast(err instanceof Error ? err.message : "failed to save");
         this.needsRefetch = true;
       })
       .finally(() => {
@@ -181,6 +205,7 @@ export class OutlineStore {
    * Returns false when the operation is a no-op/refused (e.g. invalid move).
    */
   private mutate(local: (nodes: readonly KalamuNode[]) => KalamuNode[], persist: () => Promise<unknown>): boolean {
+    if (!this.connected) return false; // read-only while the server is unreachable
     let next: KalamuNode[];
     try {
       next = local(this.nodes);
@@ -240,6 +265,7 @@ export class OutlineStore {
   }
 
   private restore(from: KalamuNode[][], to: KalamuNode[][]): void {
+    if (!this.connected) return;
     const target = from.pop();
     if (!target) return;
     to.push(this.nodes);
@@ -460,6 +486,7 @@ export class OutlineStore {
 
   /** `kalamu clean` in the UI: delete every done task with its subtree, plus done bullets and blank nodes — undoable. */
   clean(): void {
+    if (!this.connected) return;
     const result = cleanDone(this.nodes);
     if (result.removed.length === 0) {
       this.showToast("Nothing to clean.");
@@ -521,6 +548,7 @@ export class OutlineStore {
   }
 
   setTagColor(tag: string, color: string | null): void {
+    if (!this.connected) return;
     const overrides = { ...this.meta.tags };
     if (color === null) delete overrides[tag];
     else overrides[tag] = color;

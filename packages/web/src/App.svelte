@@ -5,12 +5,23 @@
   import CommandPalette from "./components/CommandPalette.svelte";
   import OutlineNode from "./components/OutlineNode.svelte";
   import Toast from "./components/Toast.svelte";
+  import { api } from "./lib/api";
   import { OutlineStore } from "./lib/outline.svelte";
   import { matches, SHORTCUTS as S } from "./lib/shortcuts";
   import { theme } from "./lib/theme.svelte";
 
   const store = new OutlineStore();
   void store.init();
+
+  /** Name of the project this instance serves; null until (and unless) it loads. */
+  let projectName = $state<string | null>(null);
+  void api
+    .getProject()
+    .then(({ name }) => {
+      projectName = name;
+      document.title = `Kalamu | ${name}`;
+    })
+    .catch(() => {});
 
   /** At most one overlay at a time; Overlay.svelte owns Escape while one is open. */
   let overlay = $state<"palette" | "help" | "cli" | null>(null);
@@ -62,7 +73,7 @@
 
 <main>
   <header>
-    <span class="wordmark">kalamu</span>
+    <span class="wordmark">kalamu{#if projectName !== null}<span class="project">| {projectName}</span>{/if}</span>
     <div class="actions">
       <button class="clean-up" title="Delete completed tasks and their subtrees" onclick={() => store.clean()}>
         Clean up
@@ -88,6 +99,12 @@
       </button>
     </div>
   </header>
+
+  {#if !store.connected}
+    <div class="offline" role="alert">
+      Kalamu server unreachable — editing is paused so you don't lose work. Waiting to reconnect…
+    </div>
+  {/if}
 
   {#if store.loadError !== null}
     <p class="notice">Couldn't load the outline: {store.loadError}</p>
@@ -161,6 +178,12 @@
     color: var(--muted);
   }
 
+  /* Project name stays in the wordmark's muted tone, just less bold. */
+  .wordmark .project {
+    margin-left: 0.4em;
+    font-weight: 400;
+  }
+
   /* Right-aligned header actions; more buttons will land here later. */
   .actions {
     display: flex;
@@ -194,6 +217,17 @@
   .notice {
     color: var(--muted);
     font-size: 14px;
+  }
+
+  /* Amber warning tones, local to the banner (app.css has no warn token). */
+  .offline {
+    margin-bottom: 16px;
+    padding: 8px 12px;
+    border: 1px solid light-dark(rgba(154, 103, 0, 0.35), rgba(227, 179, 65, 0.35));
+    border-radius: 6px;
+    background: light-dark(#fff8e5, rgba(227, 179, 65, 0.12));
+    color: light-dark(#9a6700, #e3b341);
+    font-size: 13px;
   }
 
   .outline {

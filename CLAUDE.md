@@ -8,7 +8,8 @@ This repo uses Kalamu itself. Any deferred todo — including todos for the huma
 
 - Once the CLI builds, use it: `node packages/cli/dist/index.js add --kind task --text "..."` (or the `kalamu` bin when linked).
 - Before the CLI exists/builds, append a line to `.kalamu/outline.jsonl` by hand following SPEC.md's data model exactly.
-- Tasks for the human (not for agents) get `"self": true`. Agents must never work on self tasks.
+- Tasks for the human (not for agents) get `--assign human` (`"assignee": "human"`). Agents must never work on human-assigned tasks.
+- When your work needs the human to do something (a decision, a credential, a manual step), don't just say so in chat — also record it as a human-assigned task so it survives the conversation.
 - Do NOT use TODO comments, a TODO.md, or other task systems for deferred work in this repo.
 
 ## Structure
@@ -29,7 +30,7 @@ pnpm monorepo:
 ## Conventions
 
 - TypeScript strict everywhere; never `any` (prefer `unknown` + narrowing).
-- Priority: p1 = urgent … p5 = low; missing = p3. Never write `"priority": 3` or `"self": false` — omit defaults.
+- Priority: p1 = urgent … p5 = low; missing = p3. Never write `"priority": 3` or a null/empty `assignee` — omit defaults.
 - Tags live inline in node text as `#tokens` (no `tags` field); the tag set is derived from text. Priority stays a field.
 - `outline.jsonl` line order IS sibling order; writer emits pre-order traversal; all file writes are temp-file + atomic rename with mtime conflict check.
 - Svelte work goes through the svelte-developer agent with the svelte-code-writer skill.

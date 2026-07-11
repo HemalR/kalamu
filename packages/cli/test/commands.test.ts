@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -56,6 +56,42 @@ describe("acceptance flow (SPEC MVP criteria)", () => {
     const again = commands.init(cwd);
     expect(again.json).toMatchObject({ created: false });
     expect(commands.list(cwd, {}).text).toContain("keep me");
+  });
+});
+
+describe("init agent docs", () => {
+  it("creates AGENTS.md when no agent docs exist; re-init never duplicates", () => {
+    const content = readFileSync(join(cwd, "AGENTS.md"), "utf8");
+    expect(content).toContain("--assign human");
+    const again = commands.init(cwd);
+    expect((again.json as { agentDocs: string[] }).agentDocs).toEqual([]);
+    expect(readFileSync(join(cwd, "AGENTS.md"), "utf8")).toBe(content);
+  });
+
+  it("appends to every existing agent doc instead of creating a new one", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kalamu-docs-"));
+    try {
+      writeFileSync(join(dir, "CLAUDE.md"), "# My project");
+      writeFileSync(join(dir, "AGENTS.md"), "# Agents\n");
+      const result = commands.init(dir);
+      expect((result.json as { agentDocs: string[] }).agentDocs).toEqual(["AGENTS.md", "CLAUDE.md"]);
+      const claude = readFileSync(join(dir, "CLAUDE.md"), "utf8");
+      expect(claude.startsWith("# My project\n\n<!-- kalamu:agents -->")).toBe(true);
+      expect(readFileSync(join(dir, "AGENTS.md"), "utf8")).toContain("--assign human");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("agentDocs: false (--no-agent-docs) touches nothing", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kalamu-nodocs-"));
+    try {
+      commands.init(dir, { agentDocs: false });
+      expect(existsSync(join(dir, "AGENTS.md"))).toBe(false);
+      expect(existsSync(join(dir, "CLAUDE.md"))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

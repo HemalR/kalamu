@@ -29,6 +29,7 @@ kalamu show <id> --children    # one node with its subtree
 
 ```bash
 kalamu add --kind task --text "Found while fixing X" --p 2 --parent <id>
+kalamu add --kind task --text "<what the human must do>" --assign human
 kalamu done <id>                                   # after completing the task
 kalamu handoff <id> --target github --ref <url>    # promoted into another system
 kalamu unhandoff <id>                              # external plan fell through
@@ -36,6 +37,8 @@ kalamu validate                                    # before finishing (exit 1 = 
 ```
 
 Defer work you discover but don't do: add it as a task rather than leaving TODO comments — in a Kalamu repo, the outline is the task system.
+
+When your work needs the human to do something (a decision, a credential, a manual step outside the repo), don't just say so in chat — also record it as a human-assigned task so it survives the conversation.
 
 ## Rules
 

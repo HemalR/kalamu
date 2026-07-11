@@ -78,3 +78,4 @@ run("npm publish", { cwd: cliDir });
 run("git push --follow-tags");
 
 console.log(`\nDone: kalamu v${version} is on npm and main is pushed.`);
+console.log(`Global installs are frozen snapshots — update each machine with: npm i -g kalamu`);

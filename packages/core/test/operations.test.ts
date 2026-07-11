@@ -37,6 +37,14 @@ describe("addNode", () => {
     expect(first.nodes.map((n) => n.text)).toEqual(["parent", "first", "a", "mid", "b"]);
   });
 
+  it("an explicit priority makes the new node a task unless a kind is given", () => {
+    const { node } = addNode([], { text: "urgent thing", priority: 1, now: NOW });
+    expect(node.kind).toBe("task");
+    const explicit = addNode([], { kind: "bullet", text: "note", priority: 1, now: NOW });
+    expect(explicit.node.kind).toBe("bullet");
+    expect(explicit.node.priority).toBe(1);
+  });
+
   it("rejects unknown parent; --tag appends inline #tokens, lowercased and deduped", () => {
     expect(() => addNode([], { parentId: "nope", text: "x" })).toThrow(OperationError);
     const { node } = addNode([], { kind: "task", text: "x", tags: ["Backend", "backend", "api"], now: NOW });
@@ -56,6 +64,16 @@ describe("updateNode", () => {
     expect(result.node.priority).toBeUndefined();
     result = updateNode(result.nodes, "n_001", { priority: 5 });
     expect(result.node.priority).toBe(5);
+  });
+
+  it("setting a priority converts a bullet into a task; clearing or an explicit kind does not", () => {
+    const converted = updateNode([bullet("n_001")], "n_001", { priority: 1 });
+    expect(converted.node.kind).toBe("task");
+    expect(converted.node.priority).toBe(1);
+    const cleared = updateNode([bullet("n_002")], "n_002", { priority: "default" });
+    expect(cleared.node.kind).toBe("bullet");
+    const explicit = updateNode([bullet("n_003")], "n_003", { priority: 2, kind: "bullet" });
+    expect(explicit.node.kind).toBe("bullet");
   });
 
   it("preserves doneAt/handoff/priority when converting task to bullet", () => {

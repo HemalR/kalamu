@@ -42,6 +42,18 @@
   let el: HTMLElement | undefined;
   let displayEl: HTMLElement | undefined;
 
+  // Losing the server drops the node back to the display rendering (the
+  // editable unmounts, so typing is impossible); focusAt refuses to re-enter
+  // editing until the connection returns. The uncommitted draft is discarded —
+  // it could not have been saved anyway.
+  $effect(() => {
+    if (!store.connected && editing) {
+      closeCombo();
+      editing = false;
+      clearTagHighlights();
+    }
+  });
+
   let prioOpen = $state(false);
   let prioWrap: HTMLElement | undefined = $state();
 
@@ -60,6 +72,10 @@
   /** Mount the editable (if needed), then place the caret. */
   async function focusAt(target: FocusTarget): Promise<void> {
     if (!editing) {
+      if (!store.connected) {
+        displayEl?.focus(); // read-only while the server is unreachable
+        return;
+      }
       draft = node.text;
       editing = true;
       await tick();
@@ -386,6 +402,9 @@
 
   function onkeydown(event: KeyboardEvent): void {
     if (event.isComposing) return;
+    // Disconnected mid-edit: the store refuses mutations anyway, but local
+    // draft edits (parse-on-space) must not desync the never-saved text.
+    if (!store.connected) return;
     const mod = event.metaKey || event.ctrlKey;
 
     // Anything other than plain vertical navigation ends a goal-column run.

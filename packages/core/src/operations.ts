@@ -64,6 +64,9 @@ export function addNode(nodes: readonly KalamuNode[], input: AddInput): { nodes:
   // Missing priority means default (p3); never store the default.
   if (input.priority !== undefined && input.priority !== 3) node.priority = input.priority;
   if (input.assignee !== undefined) node.assignee = input.assignee;
+  // A priority marks actionable work: it makes the node a task unless the
+  // caller explicitly chose a kind.
+  if (node.priority !== undefined && input.kind === undefined) node.kind = "task";
 
   const siblings = tree.children.get(parentId) ?? [];
   tree.children.set(parentId, insertAmongSiblings(siblings, node, input));
@@ -102,7 +105,12 @@ export function updateNode(nodes: readonly KalamuNode[], id: string, input: Upda
   if (input.kind !== undefined) updated.kind = input.kind;
   if (input.priority !== undefined) {
     if (input.priority === "default" || input.priority === 3) delete updated.priority;
-    else updated.priority = input.priority;
+    else {
+      updated.priority = input.priority;
+      // Setting a real priority converts a bullet into a task (priorities only
+      // mean something on tasks); an explicit kind in the same update wins.
+      if (input.kind === undefined) updated.kind = "task";
+    }
   }
   // Tag add/remove is text surgery: tags are inline #tokens (key decision 7).
   if (input.removeTags?.length) updated.text = stripTags(updated.text, input.removeTags);

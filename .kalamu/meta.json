@@ -3,6 +3,7 @@
   "tags": {
     "agents": "#0090ff",
     "cli": "#12a594",
-    "nanana": "#e5484d"
+    "nanana": "#e5484d",
+    "gui": "#46a758"
   }
 }

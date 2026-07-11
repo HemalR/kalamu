@@ -82,6 +82,7 @@ export const api = {
     request<KalamuNode>(`/api/nodes/${encodeURIComponent(id)}/move`, json("POST", body)),
   markDone: (id: string) => request<KalamuNode>(`/api/nodes/${encodeURIComponent(id)}/done`, { method: "POST" }),
   reopen: (id: string) => request<KalamuNode>(`/api/nodes/${encodeURIComponent(id)}/reopen`, { method: "POST" }),
+  getProject: () => request<{ name: string }>("/api/project"),
   getMeta: () => request<KalamuMeta>("/api/meta"),
   setTagColor: (tag: string, color: string | null) =>
     request<KalamuMeta>(`/api/tags/${encodeURIComponent(tag)}`, json("PUT", { color })),

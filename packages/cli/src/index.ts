@@ -54,11 +54,12 @@ program
   .option("--no-tour", "never offer the tour")
   .option("--skill", "install the Kalamu agent skill via skills.sh (asks which agents)")
   .option("--no-skill", "never offer the agent-skill install")
+  .option("--no-agent-docs", "do not add the standing instruction to CLAUDE.md/AGENTS.md")
   .option("--open", "open the web UI when done (default when run interactively)")
   .option("--no-open", "do not open the web UI")
   .option("--format <format>", "output format (text|json)")
-  .action(async (opts: { tour?: boolean; skill?: boolean; open?: boolean; format?: string }) => {
-    const result = run(() => commands.init(process.cwd()), opts);
+  .action(async (opts: { tour?: boolean; skill?: boolean; agentDocs?: boolean; open?: boolean; format?: string }) => {
+    const result = run(() => commands.init(process.cwd(), { agentDocs: opts.agentDocs }), opts);
     if (!result || process.exitCode) return;
     // Humans get offers; agents and scripts (no TTY, JSON mode, or --no-*) never block.
     const interactive = isInteractive() && opts.format !== "json";
@@ -221,6 +222,16 @@ program
   .option("--format <format>", "output format (text|json)")
   .action((opts: commands.NextCommandOptions & { format?: string }) => {
     run(() => commands.next(process.cwd(), opts), opts);
+  });
+
+program
+  .command("all")
+  .description('print every eligible task in queue order (alias for "next --all")')
+  .option("--under <id>", "only consider tasks inside this node's subtree")
+  .option("--include-handed-off", "also consider tasks already handed off to another system")
+  .option("--format <format>", "output format (text|json)")
+  .action((opts: Omit<commands.NextCommandOptions, "all" | "limit"> & { format?: string }) => {
+    run(() => commands.next(process.cwd(), { ...opts, all: true }), opts);
   });
 
 program

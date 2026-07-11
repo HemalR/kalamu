@@ -48,6 +48,7 @@ export const CLI_COMMANDS: readonly CliCommand[] = [
   { name: "unhandoff", does: "Clear a task's handoff record" },
   { name: "search", does: "Search node text" },
   { name: "next", does: "Print the next task for an agent" },
+  { name: "all", does: "Print every eligible task (alias for next --all)" },
   { name: "clean", does: "Delete completed tasks and their subtrees" },
   { name: "validate", does: "Validate the outline file" },
 ];

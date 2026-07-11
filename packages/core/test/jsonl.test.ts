@@ -36,6 +36,19 @@ describe("parseJsonl", () => {
     expect(errors).toHaveLength(4);
   });
 
+  it("keeps fields from a newer build through a parse/serialize round-trip", () => {
+    const line =
+      '{"id":"n_001","parentId":null,"kind":"task","text":"A","createdAt":"2026-07-09T07:00:00.000Z","doneAt":null,"handoff":null,"zeta":1,"alpha":"x"}';
+    const { nodes, errors } = parseJsonl(`${line}\n`);
+    expect(errors).toEqual([]);
+    const node = nodes[0];
+    expect(node && (node as unknown as Record<string, unknown>)["alpha"]).toBe("x");
+    // Extras serialize after the known keys, sorted, so output stays stable.
+    expect(node && serializeNode(node)).toBe(
+      '{"id":"n_001","parentId":null,"kind":"task","text":"A","createdAt":"2026-07-09T07:00:00.000Z","doneAt":null,"handoff":null,"alpha":"x","zeta":1}',
+    );
+  });
+
   it("merges legacy tags arrays into the text and drops the field", () => {
     const base = '"parentId":null,"kind":"task","createdAt":"2026-07-09T07:00:00.000Z","doneAt":null,"handoff":null';
     const legacy = [

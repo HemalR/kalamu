@@ -1,7 +1,7 @@
 import { initKalamu, readUiState, type KalamuPaths } from "@kalamu/core/store";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createServer, type KalamuServer } from "../src/server.js";
 
@@ -77,6 +77,20 @@ describe("nodes API", () => {
       headers: { "Content-Type": "application/json" },
     });
     expect(bad.status).toBe(400);
+  });
+
+  it("whole-outline PUT keeps node fields this build doesn't know", async () => {
+    await createNode({ text: "keep me", kind: "task" });
+    const listed = (await (await server.app.request("/api/nodes")).json()) as { nodes: Record<string, unknown>[] };
+    const withExtra = listed.nodes.map((n) => ({ ...n, futureField: "yes" }));
+    const put = await server.app.request("/api/nodes", {
+      method: "PUT",
+      body: JSON.stringify({ nodes: withExtra }),
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(put.status).toBe(200);
+    const after = (await put.json()) as { nodes: Record<string, unknown>[] };
+    expect(after.nodes[0]?.["futureField"]).toBe("yes");
   });
 
   it("404s unknown ids and 400s bad operations", async () => {
@@ -169,6 +183,15 @@ describe("meta and ui-state API", () => {
       headers: { "Content-Type": "application/json" },
     });
     expect(bad.status).toBe(400);
+  });
+
+  it("project name falls back to the root directory name, prefers package.json", async () => {
+    const fromDir = (await (await server.app.request("/api/project")).json()) as { name: string };
+    expect(fromDir.name).toBe(basename(root));
+
+    writeFileSync(join(root, "package.json"), JSON.stringify({ name: "my-project" }));
+    const fromPkg = (await (await server.app.request("/api/project")).json()) as { name: string };
+    expect(fromPkg.name).toBe("my-project");
   });
 
   it("ui-state persists collapse sets", async () => {

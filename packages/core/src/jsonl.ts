@@ -64,17 +64,14 @@ export function parseJsonl(content: string): ParseResult {
 
 /** Stable key order so unchanged nodes serialize byte-identically across writes. */
 export function serializeNode(node: KalamuNode): string {
-  const ordered: Record<string, unknown> = {
-    id: node.id,
-    parentId: node.parentId,
-    kind: node.kind,
-    text: node.text,
-    createdAt: node.createdAt,
-    doneAt: node.doneAt,
-    handoff: node.handoff,
-  };
-  if (node.priority !== undefined) ordered["priority"] = node.priority;
-  if (node.assignee !== undefined) ordered["assignee"] = node.assignee;
+  const { id, parentId, kind, text, createdAt, doneAt, handoff, priority, assignee, ...extras } = node;
+  const ordered: Record<string, unknown> = { id, parentId, kind, text, createdAt, doneAt, handoff };
+  if (priority !== undefined) ordered["priority"] = priority;
+  if (assignee !== undefined) ordered["assignee"] = assignee;
+  // Fields from a newer build ride along after the known keys, sorted for stable output.
+  for (const key of Object.keys(extras).sort()) {
+    ordered[key] = (extras as Record<string, unknown>)[key];
+  }
   return JSON.stringify(ordered);
 }
 

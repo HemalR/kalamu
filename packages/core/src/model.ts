@@ -40,19 +40,24 @@ export const handoffSchema = z.object({
   ref: z.string().min(1),
 });
 
-export const nodeSchema = z.object({
-  id: z.string().min(1),
-  parentId: z.string().min(1).nullable(),
-  kind: z.enum(["bullet", "task"]),
-  text: z.string(),
-  createdAt: isoTimestamp,
-  doneAt: isoTimestamp.nullable(),
-  handoff: handoffSchema.nullable(),
-  priority: z
-    .union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)])
-    .optional(),
-  assignee: z.enum(["human", "agent"]).optional(),
-}) satisfies z.ZodType<KalamuNode>;
+// Passthrough: fields this build doesn't know (written by a newer CLI/server)
+// must survive parse → operate → write, so a stale process can never erase
+// them (2026-07-10: a pre-assignee server's whole-outline PUT dropped assignee).
+export const nodeSchema = z
+  .object({
+    id: z.string().min(1),
+    parentId: z.string().min(1).nullable(),
+    kind: z.enum(["bullet", "task"]),
+    text: z.string(),
+    createdAt: isoTimestamp,
+    doneAt: isoTimestamp.nullable(),
+    handoff: handoffSchema.nullable(),
+    priority: z
+      .union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)])
+      .optional(),
+    assignee: z.enum(["human", "agent"]).optional(),
+  })
+  .passthrough() satisfies z.ZodType<KalamuNode>;
 
 export interface KalamuMeta {
   version: number;
