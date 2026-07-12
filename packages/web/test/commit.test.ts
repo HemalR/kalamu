@@ -95,6 +95,18 @@ describe("tokenPatch (parse-on-space)", () => {
   });
 });
 
+describe("discussions (SPEC key decision 12)", () => {
+  it("a priority token patches priority alone — never the kind", () => {
+    expect(commitPatch(task({ kind: "discussion" }), "Fix upload p2")).toEqual({ priority: 2 });
+    expect(tokenPatch(task({ kind: "discussion", priority: 4 }), parseTokens("p1"))).toEqual({ priority: 1 });
+  });
+
+  it("@human/@agent are dropped on discussions, exactly like bullets", () => {
+    expect(commitPatch(task({ kind: "discussion" }), "Fix upload @human")).toBeNull();
+    expect(tokenPatch(task({ kind: "discussion" }), parseTokens("@agent"))).toEqual({});
+  });
+});
+
 describe("tokenBeforeCaret", () => {
   it("finds a priority token before the caret", () => {
     const hit = tokenBeforeCaret("Fix upload p2", 13);

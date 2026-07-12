@@ -24,6 +24,8 @@ const BLOCK = [
   "```",
   "",
   "Human-assigned tasks never surface in `kalamu next`, so agents won't pick them up.",
+  "",
+  'Nodes with `kind: "discussion"` are conversations to have with the human, never coding work — `kalamu next` never returns them and you must never implement one unprompted. When the human brings one to you (a pasted discussion prompt, or a topic to raise with `kalamu add --kind discussion`), discuss only: make no code changes, record the outcome as child bullets under the discussion node, then mark it done.',
   "<!-- /kalamu:agents -->",
   "",
 ].join("\n");

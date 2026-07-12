@@ -33,7 +33,7 @@ import { SvelteSet } from "svelte/reactivity";
 import { api, apiBase, ApiError, type Priority } from "./api";
 import type { CaretPosition } from "./caret";
 import { commitPatch, tokenPatch, type CommitPatch } from "./commit";
-import { serializeSubtree, writeClipboard } from "./copy";
+import { discussionPrompt, serializeSubtree, writeClipboard } from "./copy";
 import { filterVisibleIds } from "./filter";
 
 const UNDO_LIMIT = 100;
@@ -351,10 +351,10 @@ export class OutlineStore {
     );
   }
 
-  toggleKind(id: string): void {
+  cycleKind(id: string): void {
     const node = this.tree.byId.get(id);
     if (!node) return;
-    const kind = node.kind === "task" ? "bullet" : "task";
+    const kind = node.kind === "bullet" ? "task" : node.kind === "task" ? "discussion" : "bullet";
     this.mutate(
       (nodes) => updateNode(nodes, id, { kind }).nodes,
       () => api.patchNode(this.serverId(id), { kind }),
@@ -382,9 +382,10 @@ export class OutlineStore {
     );
   }
 
+  /** Work items only — priority on a discussion never converts it (SPEC key decision 12). */
   setPriority(id: string, priority: Priority): void {
     const node = this.tree.byId.get(id);
-    if (!node || node.kind !== "task") return;
+    if (!node || node.kind === "bullet") return;
     const value = priority === 3 ? "default" : priority;
     this.mutate(
       (nodes) => updateNode(nodes, id, { priority: value }).nodes,
@@ -461,6 +462,16 @@ export class OutlineStore {
     );
   }
 
+  /** A discussion's "Copy prompt": topic + subtree + a do-not-code instruction, ready for an agent. */
+  copyDiscussionPrompt(id: string): void {
+    const prompt = discussionPrompt(this.tree, id, this.serverId(id));
+    if (prompt === null) return;
+    writeClipboard(prompt).then(
+      () => this.showToast("Discussion prompt copied — paste it into your agent."),
+      () => this.showToast("could not access the clipboard"),
+    );
+  }
+
   private deleteAndRefocus(id: string, recursive: boolean): void {
     if (!this.tree.byId.has(id)) return;
     const fallback = this.neighborOf(id);
@@ -484,7 +495,7 @@ export class OutlineStore {
     return null;
   }
 
-  /** `kalamu clean` in the UI: delete every done task with its subtree, plus done bullets and blank nodes — undoable. */
+  /** `kalamu clean` in the UI: delete every done task with its subtree, plus done bullets, done discussions, and blank nodes — undoable. */
   clean(): void {
     if (!this.connected) return;
     const result = cleanDone(this.nodes);
@@ -498,11 +509,12 @@ export class OutlineStore {
       // Whole-outline replace, exactly like undo/redo's restore.
       () => api.replaceNodes(this.serverize(result.nodes)),
     );
-    const { removed, doneTasks, doneBullets, blankNodes } = result;
+    const { removed, doneTasks, doneBullets, doneDiscussions, blankNodes } = result;
     // Same wording as the CLI's clean output (SPEC), with proper plurals.
     const detail = [
       doneTasks > 0 ? `${doneTasks} done task${doneTasks === 1 ? "" : "s"}` : "",
       doneBullets > 0 ? `${doneBullets} done bullet${doneBullets === 1 ? "" : "s"}` : "",
+      doneDiscussions > 0 ? `${doneDiscussions} done discussion${doneDiscussions === 1 ? "" : "s"}` : "",
       blankNodes > 0 ? `${blankNodes} blank node${blankNodes === 1 ? "" : "s"}` : "",
     ].filter(Boolean).join(", ");
     this.showToast(`Deleted ${removed.length} node${removed.length === 1 ? "" : "s"} (${detail})`);

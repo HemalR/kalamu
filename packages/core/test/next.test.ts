@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { eligibleTasks, nextTask } from "../src/operations.js";
-import { bullet, task } from "./helpers.js";
+import { bullet, discussion, task } from "./helpers.js";
 
 describe("nextTask", () => {
   it("p1 task beats p2 task regardless of outline position", () => {
@@ -146,5 +146,29 @@ describe("nextTask options", () => {
       task("n_004", { parentId: "n_002", priority: 5 }),
     ];
     expect(nextTask(nodes, { under: "n_002", includeHandedOff: true })?.node.id).toBe("n_003");
+  });
+
+  it("kind: discussion queues discussions with the same sort, skipping tasks entirely", () => {
+    const nodes = [
+      task("n_001", { priority: 1 }),
+      discussion("n_002", { priority: 4 }),
+      discussion("n_003", { priority: 2 }),
+      discussion("n_004", { doneAt: "2026-07-09T08:00:00.000Z" }),
+      discussion("n_005", { text: "  " }),
+    ];
+    expect(eligibleTasks(nodes, { kind: "discussion" }).map((e) => e.node.id)).toEqual(["n_003", "n_002"]);
+    const result = nextTask(nodes, { kind: "discussion" });
+    expect(result?.node.id).toBe("n_003");
+    expect(result?.reason).toBe("highest-priority open discussion");
+  });
+
+  it("kind: discussion respects closed task umbrellas but ignores inert handoff/assignee", () => {
+    const nodes = [
+      task("n_001", { doneAt: "2026-07-09T08:00:00.000Z" }),
+      discussion("n_002", { parentId: "n_001", priority: 1 }),
+      // leftovers from a past life as a task are inert on discussions
+      discussion("n_003", { priority: 2, handoff: HANDOFF, assignee: "human" }),
+    ];
+    expect(eligibleTasks(nodes, { kind: "discussion" }).map((e) => e.node.id)).toEqual(["n_003"]);
   });
 });

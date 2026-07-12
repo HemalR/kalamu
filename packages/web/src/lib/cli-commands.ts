@@ -3,6 +3,7 @@
  * per-node command builder behind the palette's "Copy CLI command" submenu.
  * Maintained by hand — must track packages/cli's command table and flags.
  */
+import type { NodeKind } from "@kalamu/core";
 
 export interface CliCommand {
   name: string;
@@ -12,14 +13,15 @@ export interface CliCommand {
 export interface NodeCommandInput {
   /** The id as the server/CLI knows it — never the optimistic local alias. */
   serverId: string;
-  kind: "task" | "bullet";
+  kind: NodeKind;
   done: boolean;
   hasChildren: boolean;
 }
 
 /**
  * Ready-to-run CLI commands for one node, real id filled in. Done/reopen
- * apply to bullets too (visual-only strikethrough); handoff stays task-only.
+ * apply to bullets and discussions too; handoff stays task-only (discussions
+ * are never handed off — SPEC key decision 12).
  */
 export function nodeCommands({ serverId, kind, done, hasChildren }: NodeCommandInput): string[] {
   const commands = [`kalamu show ${serverId} --children`];

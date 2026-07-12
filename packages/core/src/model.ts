@@ -1,6 +1,9 @@
 import { z } from "zod";
 
-export type NodeKind = "bullet" | "task";
+// "discussion" is a work item whose deliverable is a conversation between the
+// developer and an agent: never eligible for `next`, never assignable
+// (it involves both parties by definition), priority allowed for ordering.
+export type NodeKind = "bullet" | "task" | "discussion";
 
 /** Audience, not users: the developer at the keyboard or their agents. */
 export type Assignee = "human" | "agent";
@@ -47,7 +50,7 @@ export const nodeSchema = z
   .object({
     id: z.string().min(1),
     parentId: z.string().min(1).nullable(),
-    kind: z.enum(["bullet", "task"]),
+    kind: z.enum(["bullet", "task", "discussion"]),
     text: z.string(),
     createdAt: isoTimestamp,
     doneAt: isoTimestamp.nullable(),

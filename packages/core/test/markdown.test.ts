@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { serializeMarkdown } from "../src/markdown.js";
 import { buildTree } from "../src/tree.js";
-import { bullet, task } from "./helpers.js";
+import { bullet, discussion, task } from "./helpers.js";
 
 const NOW = "2026-07-09T09:00:00.000Z";
 
@@ -17,6 +17,8 @@ describe("serializeMarkdown", () => {
         text: "Audit logs",
         handoff: { at: NOW, target: "github", ref: "#42" },
       }),
+      discussion("n_006", { parentId: "n_001", text: "WorkOS or Auth0?", priority: 2 }),
+      discussion("n_007", { parentId: "n_006", text: "Settled: WorkOS", doneAt: NOW }),
     ];
     const tree = buildTree(nodes);
     const root = tree.byId.get("n_001");
@@ -27,6 +29,8 @@ describe("serializeMarkdown", () => {
         "    - [x] Write tests",
         "  - [ ] Blog post @human",
         "  - [ ] Audit logs → github:#42",
+        "  - [?] p2 WorkOS or Auth0?",
+        "    - [x?] Settled: WorkOS",
       ].join("\n"),
     );
   });

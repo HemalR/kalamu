@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { serializeJsonl } from "../src/jsonl.js";
 import { validateOutline } from "../src/validate.js";
-import { bullet, task } from "./helpers.js";
+import { bullet, discussion, task } from "./helpers.js";
 
 describe("validateOutline", () => {
   it("passes a valid pre-order file", () => {
@@ -9,8 +9,9 @@ describe("validateOutline", () => {
       bullet("n_001"),
       task("n_002", { parentId: "n_001", priority: 1 }),
       bullet("n_003"),
+      discussion("n_004", { parentId: "n_003", priority: 2 }),
     ]);
-    expect(validateOutline(content)).toEqual({ valid: true, nodes: 3, errors: [], warnings: [] });
+    expect(validateOutline(content)).toEqual({ valid: true, nodes: 4, errors: [], warnings: [] });
   });
 
   it("detects duplicate ids", () => {

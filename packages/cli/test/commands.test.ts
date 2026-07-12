@@ -62,6 +62,56 @@ describe("acceptance flow (SPEC MVP criteria)", () => {
   });
 });
 
+describe("discussions", () => {
+  it("adds, lists, renders, and completes a discussion without ever entering the agent queue", () => {
+    const added = commands.add(cwd, { text: "WorkOS or Auth0?", kind: "discussion", p: "2" });
+    const id = (added.json as { id: string }).id;
+    addTask("Real agent work");
+
+    // next skips discussions even at higher priority
+    expect((commands.next(cwd).json as { text: string }).text).toBe("Real agent work");
+
+    const listing = commands.list(cwd, { discussions: true });
+    expect(listing.text).toContain("? p2 WorkOS or Auth0?");
+    expect((listing.json as unknown[]).length).toBe(1);
+
+    // discussions cannot be assigned or handed off
+    expect(() => commands.update(cwd, id, { assign: "human" })).toThrow(/only tasks can be assigned/);
+    expect(() => commands.handoff(cwd, id, { target: "github", ref: "#1" })).toThrow(/only tasks/);
+
+    // done, then clean removes it (no surviving children) and reports it
+    commands.done(cwd, id);
+    expect(commands.list(cwd, { discussions: true }).text).toContain("✓ p2 WorkOS or Auth0?");
+    const cleaned = commands.clean(cwd, {});
+    expect(cleaned.text).toContain("1 done discussion(s)");
+    expect(commands.validate(cwd).json).toMatchObject({ valid: true });
+  });
+
+  it("next --discussion queues discussions by priority; plain next never returns them", () => {
+    commands.add(cwd, { text: "Later topic", kind: "discussion" });
+    commands.add(cwd, { text: "Urgent topic", kind: "discussion", p: "1" });
+    const taskId = addTask("Agent work", { p: "2" });
+
+    expect((commands.next(cwd).json as { id: string }).id).toBe(taskId);
+
+    const next = commands.next(cwd, { discussion: true });
+    expect(next.json).toMatchObject({ text: "Urgent topic", priority: 1, reason: "highest-priority open discussion" });
+    expect(next.text).toContain("? p1 Urgent topic");
+
+    const all = commands.next(cwd, { discussion: true, all: true });
+    expect((all.json as { tasks: { text: string }[] }).tasks.map((t) => t.text)).toEqual([
+      "Urgent topic",
+      "Later topic",
+    ]);
+    expect(all.text).toContain("2 discussion(s); sorted by priority");
+
+    commands.done(cwd, (next.json as { id: string }).id);
+    commands.done(cwd, (all.json as { tasks: { id: string }[] }).tasks[1]!.id);
+    const empty = commands.next(cwd, { discussion: true });
+    expect(empty).toMatchObject({ text: "No eligible discussions.", json: { id: null }, exitCode: 2 });
+  });
+});
+
 describe("init agent docs", () => {
   it("creates AGENTS.md when no agent docs exist; re-init never duplicates", () => {
     const content = readFileSync(join(cwd, "AGENTS.md"), "utf8");
@@ -198,7 +248,7 @@ describe("filters and outputs", () => {
 
   it("rejects invalid priority and kind with friendly errors", () => {
     expect(() => commands.add(cwd, { text: "x", p: "9" })).toThrow(/1 \(urgent\) to 5 \(low\)/);
-    expect(() => commands.add(cwd, { text: "x", kind: "note" })).toThrow(/bullet or task/);
+    expect(() => commands.add(cwd, { text: "x", kind: "note" })).toThrow(/bullet, task or discussion/);
   });
 
   it("list --depth and show --depth limit levels; show --format markdown matches copy format", () => {

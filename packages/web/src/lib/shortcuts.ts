@@ -31,9 +31,9 @@ export function matches(event: KeyboardEvent, shortcut: Shortcut): boolean {
 }
 
 export const SHORTCUTS = {
-  newSibling: { combo: { key: "Enter" }, keys: "Enter", does: "New item below — on an empty item it toggles bullet/task instead" },
+  newSibling: { combo: { key: "Enter" }, keys: "Enter", does: "New item below — on an empty item it cycles the kind instead" },
   lineBreak: { keys: "Shift+Enter", does: "Line break inside the item" },
-  toggleKind: { combo: { key: "Enter", mod: true }, keys: "Mod+Enter", does: "Toggle bullet / task" },
+  cycleKind: { combo: { key: "Enter", mod: true }, keys: "Mod+Enter", does: "Cycle bullet / task / discussion" },
   indent: { combo: { key: "Tab" }, keys: "Tab", does: "Indent (become child of the previous sibling)" },
   outdent: { combo: { key: "Tab", shift: true }, keys: "Shift+Tab", does: "Outdent" },
   focusMove: { keys: "↑ / ↓", does: "Move focus between items (at the first/last line), keeping your column" },
@@ -47,7 +47,7 @@ export const SHORTCUTS = {
   deleteEmpty: { keys: "Backspace", does: "On an empty item: delete it" },
   deleteSubtree: { combo: { key: "Backspace", mod: true, shift: true }, keys: "Mod+Shift+Backspace", does: "Delete item with its subtree (undoable)" },
   copySubtree: { combo: { key: "c", mod: true }, keys: "Mod+C", does: "Copy item and its sub-items (when nothing is selected)" },
-  copyId: { combo: { key: "c", mod: true, shift: true }, keys: "Mod+Shift+C", does: "Copy the item's id (for CLI commands)" },
+  copyId: { combo: { key: "c", mod: true, shift: true }, keys: "Mod+Shift+C", does: "Copy the item's id (for CLI commands) — on a discussion: its agent prompt" },
   undo: { combo: { key: "z", mod: true }, keys: "Mod+Z", does: "Undo" },
   redo: { combo: { key: "z", mod: true, shift: true }, keys: "Mod+Shift+Z", does: "Redo" },
   palette: { combo: { key: "k", mod: true }, keys: "Mod+K", does: "Open the command palette (priority, labels, assign, done, view sheets)" },

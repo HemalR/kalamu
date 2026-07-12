@@ -63,7 +63,12 @@ export function addNode(nodes: readonly KalamuNode[], input: AddInput): { nodes:
   };
   // Missing priority means default (p3); never store the default.
   if (input.priority !== undefined && input.priority !== 3) node.priority = input.priority;
-  if (input.assignee !== undefined) node.assignee = input.assignee;
+  if (input.assignee !== undefined) {
+    if (node.kind === "discussion") {
+      throw new OperationError("discussions involve both parties; only tasks can be assigned");
+    }
+    node.assignee = input.assignee;
+  }
   // A priority marks actionable work: it makes the node a task unless the
   // caller explicitly chose a kind.
   if (node.priority !== undefined && input.kind === undefined) node.kind = "task";
@@ -100,16 +105,17 @@ export function updateNode(nodes: readonly KalamuNode[], id: string, input: Upda
   const updated: KalamuNode = { ...node };
 
   if (input.text !== undefined) updated.text = input.text;
-  // Converting task -> bullet preserves doneAt/handoff/priority: inert on
-  // bullets, restored if converted back (SPEC "kalamu update").
+  // Converting away from task preserves doneAt/handoff/priority/assignee:
+  // inert on other kinds, restored if converted back (SPEC "kalamu update").
   if (input.kind !== undefined) updated.kind = input.kind;
   if (input.priority !== undefined) {
     if (input.priority === "default" || input.priority === 3) delete updated.priority;
     else {
       updated.priority = input.priority;
-      // Setting a real priority converts a bullet into a task (priorities only
-      // mean something on tasks); an explicit kind in the same update wins.
-      if (input.kind === undefined) updated.kind = "task";
+      // Setting a real priority converts a bullet into a task; an explicit
+      // kind in the same update wins, and discussions keep their kind
+      // (priority orders them without making them agent work).
+      if (input.kind === undefined && updated.kind === "bullet") updated.kind = "task";
     }
   }
   // Tag add/remove is text surgery: tags are inline #tokens (key decision 7).
@@ -117,7 +123,9 @@ export function updateNode(nodes: readonly KalamuNode[], id: string, input: Upda
   if (input.addTags?.length) updated.text = appendTags(updated.text, validTags(input.addTags));
   if (input.assignee !== undefined) {
     if (input.assignee === null) delete updated.assignee;
-    else updated.assignee = input.assignee;
+    else if (updated.kind === "discussion") {
+      throw new OperationError("discussions involve both parties; only tasks can be assigned");
+    } else updated.assignee = input.assignee;
   }
 
   return replace(tree, updated);
@@ -194,14 +202,14 @@ export function reopen(nodes: readonly KalamuNode[], id: string): { nodes: Kalam
 export function setHandoff(nodes: readonly KalamuNode[], id: string, target: string, ref: string, now?: string): { nodes: KalamuNode[]; node: KalamuNode } {
   const tree = buildTree(nodes);
   const node = requireNode(tree, id);
-  if (node.kind !== "task") throw new OperationError(`${id} is a bullet; only tasks can be handed off`);
+  if (node.kind !== "task") throw new OperationError(`${id} is a ${node.kind}; only tasks can be handed off`);
   return replace(tree, { ...node, handoff: { at: now ?? new Date().toISOString(), target, ref } });
 }
 
 export function clearHandoff(nodes: readonly KalamuNode[], id: string): { nodes: KalamuNode[]; node: KalamuNode } {
   const tree = buildTree(nodes);
   const node = requireNode(tree, id);
-  if (node.kind !== "task") throw new OperationError(`${id} is a bullet; only tasks can be handed off`);
+  if (node.kind !== "task") throw new OperationError(`${id} is a ${node.kind}; only tasks can be handed off`);
   if (node.handoff === null) throw new OperationError(`${id} has no handoff to clear`);
   return replace(tree, { ...node, handoff: null });
 }
@@ -213,34 +221,40 @@ export interface NextResult {
 }
 
 export interface NextOptions {
-  /** Only consider tasks inside this node's subtree (the node itself included). */
+  /** Only consider nodes inside this node's subtree (the node itself included). */
   under?: string;
   /** Keep tasks whose own or ancestor handoff is set (done exclusions still apply). */
   includeHandedOff?: boolean;
+  /** Which queue to draw from; default "task" (the agent work queue). */
+  kind?: "task" | "discussion";
 }
 
 /**
- * The full agent queue. Eligibility: open, unhanded-off task not assigned to
- * the human, with non-blank text and no done/handed-off ancestor TASK (a
- * closed parent task closes its umbrella; bullets never affect eligibility).
- * Sort: priority ascending (p1 first, missing = p3), then outline order.
- * Sort is stable, so outline order is the tie-breaker for free.
+ * The full queue for one kind (default: the agent task queue). Eligibility:
+ * open node of that kind with non-blank text and no done/handed-off ancestor
+ * TASK (a closed parent task closes its umbrella; bullets and discussions
+ * never affect eligibility). Tasks must additionally be unhanded-off and not
+ * assigned to the human; on discussions handoff/assignee are inert leftovers
+ * from a past life as a task and never gate. Sort: priority ascending (p1
+ * first, missing = p3), then outline order. Sort is stable, so outline order
+ * is the tie-breaker for free.
  */
 export function eligibleTasks(
   nodes: readonly KalamuNode[],
   options: NextOptions = {},
 ): { node: KalamuNode; path: string[] }[] {
   const tree = buildTree(nodes);
+  const kind = options.kind ?? "task";
   const scope = options.under !== undefined ? subtreeIds(tree, requireNode(tree, options.under).id) : null;
   const handedOffCounts = options.includeHandedOff !== true;
   return preorder(tree)
     .filter(
       (n) =>
-        n.kind === "task" &&
+        n.kind === kind &&
         n.text.trim() !== "" &&
         n.doneAt === null &&
-        (!handedOffCounts || n.handoff === null) &&
-        n.assignee !== "human" &&
+        (kind === "discussion" ||
+          ((!handedOffCounts || n.handoff === null) && n.assignee !== "human")) &&
         (scope === null || scope.has(n.id)) &&
         !ancestors(tree, n).some(
           (a) => a.kind === "task" && (a.doneAt !== null || (handedOffCounts && a.handoff !== null)),
@@ -255,10 +269,8 @@ export function nextTask(nodes: readonly KalamuNode[], options: NextOptions = {}
   const first = queue[0];
   if (!first) return null;
   const ties = queue.filter((e) => effectivePriority(e.node) === effectivePriority(first.node));
-  const reason =
-    ties.length > 1
-      ? "highest-priority open task; tie-breaker: outline order"
-      : "highest-priority open task";
+  const what = `highest-priority open ${options.kind ?? "task"}`;
+  const reason = ties.length > 1 ? `${what}; tie-breaker: outline order` : what;
   return { ...first, reason };
 }
 
@@ -267,16 +279,18 @@ export interface CleanResult {
   removed: KalamuNode[];
   doneTasks: number;
   doneBullets: number;
+  doneDiscussions: number;
   blankNodes: number;
 }
 
 /**
  * Remove every done task together with its subtree (a done parent closes its
- * umbrella — key decision 4), plus done bullets and blank (whitespace-only
- * text) nodes. Handed-off-but-open tasks stay. Done bullets and blank nodes
- * never take surviving children with them: a done bullet doesn't close its
- * subtree and a blank node is structural, so either stays while anything
- * beneath it survives.
+ * umbrella — key decision 4), plus done bullets, done discussions, and blank
+ * (whitespace-only text) nodes. Handed-off-but-open tasks stay. Done
+ * bullets/discussions and blank nodes never take surviving children with
+ * them: neither closes its subtree (a done discussion's children are its
+ * recorded outcome) and a blank node is structural, so each stays while
+ * anything beneath it survives.
  */
 export function cleanDone(nodes: readonly KalamuNode[]): CleanResult {
   const tree = buildTree(nodes);
@@ -290,25 +304,28 @@ export function cleanDone(nodes: readonly KalamuNode[]): CleanResult {
   }
   const ordered = preorder(tree);
   let doneBullets = 0;
+  let doneDiscussions = 0;
   let blankNodes = 0;
   // Reverse pre-order visits every child before its parent, so a chain of
   // removable nodes collapses in one pass.
   for (let i = ordered.length - 1; i >= 0; i--) {
     const node = ordered[i]!;
     if (doomed.has(node.id)) continue;
-    const doneBullet = node.kind === "bullet" && node.doneAt !== null;
-    if (!doneBullet && node.text.trim() !== "") continue;
+    const doneNonTask = node.kind !== "task" && node.doneAt !== null;
+    if (!doneNonTask && node.text.trim() !== "") continue;
     const children = tree.children.get(node.id) ?? [];
     if (!children.every((c) => doomed.has(c.id))) continue;
     doomed.add(node.id);
-    if (doneBullet) doneBullets += 1;
-    else blankNodes += 1;
+    if (!doneNonTask) blankNodes += 1;
+    else if (node.kind === "discussion") doneDiscussions += 1;
+    else doneBullets += 1;
   }
   return {
     nodes: ordered.filter((n) => !doomed.has(n.id)),
     removed: ordered.filter((n) => doomed.has(n.id)),
     doneTasks,
     doneBullets,
+    doneDiscussions,
     blankNodes,
   };
 }

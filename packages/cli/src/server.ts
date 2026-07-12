@@ -47,7 +47,7 @@ const IMAGE_TYPES: Record<string, string> = {
 const MAX_ASSET_BYTES = 20 * 1024 * 1024;
 
 const priorityValue = z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]);
-const kindValue = z.enum(["bullet", "task"]);
+const kindValue = z.enum(["bullet", "task", "discussion"]);
 const assigneeValue = z.enum(["human", "agent"]);
 
 const addBody = z.object({

@@ -45,7 +45,8 @@ These were deliberated and are settled. Do not relitigate them during implementa
 9. **Per-node plain-text contenteditable, no editor library.** Each node's text is its own `contenteditable="plaintext-only"` element using Svelte's native bindings (`bind:textContent`). Structural keys (Enter, Tab, Backspace-on-empty) are intercepted — guarded by `event.isComposing` for IME — and become outline operations; token parsing writes back only on commit (Enter/blur), never mid-keystroke, since external updates to bound content reset the caret. No TipTap/ProseMirror — those are document editors, and Kalamu's structure lives in the data model, not the editor. Fallback if the spike finds trouble: a roaming single editor where only the focused node is live. The UI spike exists to validate this.
 10. **Collapse state is view state, never document content.** It lives in a gitignored `.kalamu/ui-state.json`, not in `outline.jsonl` — otherwise every fold click dirties the canonical file and pollutes Git history. Agents and the CLI always operate on the full tree regardless of what is collapsed.
 11. **Images are files referenced by inline markdown tokens.** Pasting an image stores it in `.kalamu/assets/` (content-hashed filename, COMMITTED — assets are outline content and must survive a clone) and inserts `![](.kalamu/assets/img-<hash>.<ext>)` into the node text. Same rendering model as tags: unfocused nodes show a thumbnail in place, the focused node shows the raw token. No new node field; agents see an ordinary greppable path.
-12. **One hub, many projects.** (Added 2026-07-12.) `kalamu hub` runs a single machine-global server (default port 4400, still `127.0.0.1`-only) that mounts every registered project behind one UI with a project sidebar — no per-project server spin-up, no per-project ports. Projects are identified in hub URLs by a human-readable slug derived from `package.json` `name` (scope stripped) or the directory name, deduplicated with numeric suffixes and **stable once assigned**. The registry lives at `~/.kalamu/projects.json` — machine-global plumbing, never canonical outline data. The hub is human UI convenience only; agents and the CLI contract never depend on it. See [Hub](#hub-multi-project-dashboard).
+12. **Discussions are a third node kind.** (Added 2026-07-12.) `kind: "discussion"` marks a work item whose deliverable is a conversation between the developer and an agent — "talk this through with me" rather than "go build this". Discussions are never mixed into the agent task queue — `next` never returns them (agents must never treat them as coding work); `next --discussion` queries the discussion queue explicitly, with the same eligibility and sort. They can never be assigned (they involve both parties by definition) and can never be handed off. Priority is allowed purely as human-facing ordering — setting one never converts the node to a task. A done discussion never closes its umbrella — its children are the recorded outcome, often follow-up tasks that must stay eligible — and `clean` treats it like a done bullet (removed only once nothing beneath it survives). The flow is human-initiated: the UI renders a discussion with a speech-bubble glyph and a "Copy prompt" affordance that copies the topic plus a do-not-code instruction for pasting into an agent session; the agent discusses, records the outcome as child bullets, and marks the discussion done.
+13. **One hub, many projects.** (Added 2026-07-12.) `kalamu hub` runs a single machine-global server (default port 4400, still `127.0.0.1`-only) that mounts every registered project behind one UI with a project sidebar — no per-project server spin-up, no per-project ports. Projects are identified in hub URLs by a human-readable slug derived from `package.json` `name` (scope stripped) or the directory name, deduplicated with numeric suffixes and **stable once assigned**. The registry lives at `~/.kalamu/projects.json` — machine-global plumbing, never canonical outline data. The hub is human UI convenience only; agents and the CLI contract never depend on it. See [Hub](#hub-multi-project-dashboard).
 
 ---
 
@@ -220,7 +221,7 @@ Each line in `outline.jsonl` is one node.
 Use this model for each node:
 
 ```ts
-type NodeKind = "bullet" | "task";
+type NodeKind = "bullet" | "task" | "discussion";
 
 type Handoff = {
   at: string;
@@ -270,11 +271,12 @@ IDs must not change when nodes move.
 Allowed values:
 
 ```ts
-"bullet" | "task"
+"bullet" | "task" | "discussion"
 ```
 
 * `bullet` means thought/text/heading
 * `task` means agent-executable work item
+* `discussion` means a conversation to have with an agent (key decision 12) — never coding work, never returned by `next`
 
 Agents should only work on `task` nodes.
 
@@ -338,7 +340,7 @@ Do not use `handoffAt` alone because the system needs to know where the task wen
 
 Optional.
 
-Only meaningful for `kind: "task"`.
+Only meaningful for `kind: "task"` and `kind: "discussion"` (where it is purely human-facing ordering — discussions never reach `next`).
 
 Allowed values:
 
@@ -350,7 +352,7 @@ Default priority is `3`.
 
 Do not write `"priority": 3` unless there is a strong reason. Missing priority means default priority.
 
-Setting a priority (1–5) on a `bullet` — via `add`, `update`, or the UI — converts it into a `task`, unless a kind is passed explicitly in the same call. Priorities are never silently inert on bullets you just prioritized; clearing back to default (`--p default` or `3`) never converts.
+Setting a priority (1–5) on a `bullet` — via `add`, `update`, or the UI — converts it into a `task`, unless a kind is passed explicitly in the same call. Priorities are never silently inert on bullets you just prioritized; clearing back to default (`--p default` or `3`) never converts. Setting a priority on a `discussion` never converts it — priority is meaningful there (key decision 12).
 
 Semantics — **lower number is more urgent**, matching P0/P1 developer convention:
 
@@ -381,6 +383,8 @@ Allowed values:
 ```
 
 `"human"` means the developer is keeping this task for themselves — agents must never pick it up, and `kalamu next` never returns it. `"agent"` explicitly marks the task as agent work. Omitted means unassigned: agent-eligible, exactly like `"agent"`, just not explicitly claimed. Omit the field when unassigned — never write a null/empty assignee.
+
+Discussions can never be assigned — they involve both parties by definition; `add`/`update` reject `--assign` on a discussion.
 
 This is audience, not users. Kalamu has no user accounts; the only two parties are the developer at the keyboard and their agents.
 
@@ -619,6 +623,7 @@ kalamu list --done
 kalamu list --handoff
 kalamu list --tag <tag>
 kalamu list --assignee <human|agent>
+kalamu list --discussions
 kalamu list --depth 2
 kalamu list --format json
 ```
@@ -662,6 +667,13 @@ Assigned task (`@human` or `@agent`):
 n_009      ☐ Write launch blog post #publishing @human
 ```
 
+Discussion (open `?`, done `✓`):
+
+```text
+n_010      ? p2 WorkOS or Auth0 for SSO
+n_011      ✓ Settled: auth stays cookie-based
+```
+
 ---
 
 ### `kalamu show <id>`
@@ -701,7 +713,7 @@ Options:
 
 ```bash
 --parent <id>
---kind bullet|task
+--kind bullet|task|discussion
 --text <text>
 --p <1-5>
 --tag <tag>
@@ -754,7 +766,7 @@ Options:
 
 ```bash
 --text <text>
---kind bullet|task
+--kind bullet|task|discussion
 --p <1-5|default>
 --add-tag <tag>
 --remove-tag <tag>
@@ -844,12 +856,15 @@ Sets:
 doneAt = now
 ```
 
-Valid for both kinds, with different meanings. On a **task** it is a state
+Valid for all kinds, with different meanings. On a **task** it is a state
 change with full semantics (excluded from `next`, closes its umbrella, removed
 by `clean`). On a **bullet** it is strikethrough styling plus cleanup: a done
 bullet never gates its descendants' eligibility for `next`, but `clean`
 removes it once nothing beneath it survives. Bullets stay non-work-items
-regardless of `doneAt`.
+regardless of `doneAt`. On a **discussion** it means the conversation
+happened: like a done bullet it never closes its umbrella (its children are
+the recorded outcome) and `clean` removes it once nothing beneath it
+survives.
 
 Potential option later (not MVP):
 
@@ -964,6 +979,9 @@ Flags:
 kalamu next --under <id>           # only consider tasks inside this node's subtree
 kalamu next --include-handed-off   # readmit handed-off tasks/umbrellas (done exclusions still apply)
 kalamu next --limit <n> | --all    # batch mode: the queue in next-order
+kalamu next --discussion           # queue discussions instead of tasks: same sort, same
+                                   # output shapes; open discussions with no closed task
+                                   # ancestor (handoff/assignee are inert on discussions)
 ```
 
 Example:
@@ -1024,7 +1042,7 @@ kalamu clean --format json
 Rules:
 
 * Removes every task with `doneAt !== null`, together with its entire subtree — consistent with key decision 4: a done parent task closes its umbrella, so anything beneath it is moot.
-* Removes done bullets and blank nodes (whitespace-only text, either kind) — but only when they have no surviving children. A done bullet does not close its umbrella and a blank node is structural, so either stays while real content beneath it survives. Chains of removable nodes collapse in one pass (children are decided before parents).
+* Removes done bullets, done discussions, and blank nodes (whitespace-only text, any kind) — but only when they have no surviving children. A done bullet or discussion does not close its umbrella (a discussion's children are its recorded outcome) and a blank node is structural, so each stays while real content beneath it survives. Chains of removable nodes collapse in one pass (children are decided before parents).
 * Handed-off tasks that are not done are NOT removed (handed off is not completed).
 * `--dry-run` lists what would be deleted without writing.
 
@@ -1037,7 +1055,7 @@ Deleted 6 node(s) (3 done task(s), 1 done bullet(s), 1 blank node(s))
 JSON:
 
 ```json
-{"deleted": 6, "doneTasks": 3, "doneBullets": 1, "blankNodes": 1, "ids": ["n_007", "n_008", "n_009", "n_010", "n_011", "n_012"]}
+{"deleted": 6, "doneTasks": 3, "doneBullets": 1, "doneDiscussions": 0, "blankNodes": 1, "ids": ["n_007", "n_008", "n_009", "n_010", "n_011", "n_012"]}
 ```
 
 ---
@@ -1053,11 +1071,11 @@ Check:
 * IDs are unique.
 * `parentId` is either `null` or points to an existing node.
 * No cycles.
-* `kind` is either `bullet` or `task`.
+* `kind` is `bullet`, `task`, or `discussion`.
 * `doneAt` is either `null` or a valid ISO timestamp.
 * `handoff` is either `null` or has `at`, `target`, and `ref`.
 * `priority`, if present, is an integer 1–5.
-* `assignee`, if present, is `"human"` or `"agent"` and the node is a task.
+* `assignee`, if present, is `"human"` or `"agent"` and the node is not a discussion (setting one is rejected at the operation level; a stale value inherited from a past life as a task is inert).
 
 Unknown node fields are NOT an error: readers must preserve fields they don't recognize through parse → operate → write, so an older build can never erase what a newer one wrote. Writers emit unknown fields after the known keys, sorted by name.
 
@@ -1147,6 +1165,7 @@ The UI should feel like Workflowy:
 * Priority visible only when useful, as a badge at the START of the row (scannable column)
 * Tags as small coloured chips rendered IN PLACE within the text (raw `#token` text while the node is focused)
 * Assigned tasks visibly distinct: a small user icon marks human-assigned tasks, a robot icon marks agent-assigned ones; unassigned tasks show neither
+* Discussions marked with a speech-bubble glyph in place of the checkbox (clicking it toggles done, like a task's checkbox); an unfocused discussion shows a subtle "Copy prompt" affordance at the end of its text that copies the topic plus its subtree and a "discussion only — no code changes yet" instruction, then toasts that the prompt is ready to paste into an agent. Cmd/Ctrl+Shift+C is the keyboard path: on a discussion it copies the same prompt instead of the node id (Cmd/Ctrl+C stays uniform markdown copy on every kind)
 * Minimal visual clutter
 * Light/dark theme follows the system by default; an explicit switcher (navbar button, or the palette's "Activate dark/light mode") overrides it, persisted in the browser's localStorage — per-browser view state, never in the repo
 
@@ -1186,6 +1205,12 @@ Handed-off task:
 ☐ Add audit logs → backlog
 ```
 
+Discussion (speech-bubble glyph in the UI; `?` in CLI output, `✓` when done):
+
+```text
+🗩 WorkOS or Auth0 for SSO   Copy prompt
+```
+
 Tagged task (chip renders in place, mid-sentence when the token sits mid-sentence):
 
 ```text
@@ -1206,7 +1231,7 @@ Assigned task (user icon for human, robot icon for agent, rendered after the tex
 Suggested MVP keyboard shortcuts:
 
 ```text
-Enter                    create new sibling; on an EMPTY node it toggles bullet/task
+Enter                    create new sibling; on an EMPTY node it cycles the kind
                          instead (never creates below an empty one; outdenting an
                          empty node is Shift+Tab's job)
 Tab                      indent
@@ -1216,7 +1241,7 @@ ArrowUp/ArrowDown        move focus (goal column preserved: the caret keeps aimi
                          clamped to line length; any other key resets it)
 Cmd/Ctrl+ArrowUp         move node up
 Cmd/Ctrl+ArrowDown       move node down
-Cmd/Ctrl+Enter           toggle bullet/task
+Cmd/Ctrl+Enter           cycle kind: bullet → task → discussion → bullet
 Cmd/Ctrl+Shift+Enter     mark item done/reopen — visual-only strikethrough on
                          bullets (not Cmd+D — it works while editing
                          but falls through to the browser's bookmark dialog when
@@ -1226,7 +1251,11 @@ Cmd/Ctrl+.               toggle collapse/expand
 Backspace (empty node)   delete node
 Backspace (caret at 0)   clear the node's priority (tags are plain text — backspace them directly)
 Cmd/Ctrl+Shift+Backspace delete node with subtree (undoable)
-Cmd/Ctrl+Shift+C         copy the focused node's id (as the CLI knows it) to the clipboard
+Cmd/Ctrl+C               (nothing selected) copy the item and its sub-items as
+                         markdown — uniform across kinds
+Cmd/Ctrl+Shift+C         copy the focused node's id (as the CLI knows it) to the
+                         clipboard; on a discussion it copies the agent prompt
+                         instead (same as the row's Copy prompt link)
 Cmd/Ctrl+/               open keyboard cheat sheet ("?" also opens it when not editing)
 Cmd/Ctrl+Z               undo
 Cmd/Ctrl+Shift+Z         redo
@@ -1279,7 +1308,9 @@ enabled — Clean up with nothing to clean just toasts "Nothing to clean."); on 
 bullet, only Priority and Assign are disabled — Toggle done
 works on bullets as a visual-only strikethrough (Copy CLI command stays
 enabled, with task-only commands omitted from its submenu; done/reopen appear
-for bullets too). Disabled items don't respond to digits, Enter, or clicks, and
+for bullets too). On a discussion, only Assign is disabled (discussions are
+never assigned); Priority, Toggle done, and Copy CLI command all apply —
+handoff is omitted from the copy submenu. Disabled items don't respond to digits, Enter, or clicks, and
 arrow navigation skips them. The CLI commands sheet mirrors `kalamu --help` —
 command names with one-line descriptions — as a reference for the developer;
 agents use `--help` itself.
@@ -1311,7 +1342,7 @@ If user types:
 Fix broken upload p1
 ```
 
-and the node is a task, store:
+and the node is a task (or discussion — priority applies without converting the kind), store:
 
 ```json
 "text": "Fix broken upload",
@@ -1565,6 +1596,7 @@ kalamu hub --port 4500
 kalamu hub --no-browser
 kalamu hub install        # launchd user agent (macOS): start at login
 kalamu hub uninstall
+kalamu hub restart        # restart the installed hub (picks up updated code)
 ```
 
 Routes:

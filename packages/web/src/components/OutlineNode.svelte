@@ -68,6 +68,9 @@
   // Done bullets are visual only (strikethrough) — they stay non-work-items.
   const isDone = $derived(node.doneAt !== null);
   const segments = $derived(segmentText(node.text));
+  const textLabel = $derived(
+    node.kind === "task" ? "Task text" : node.kind === "discussion" ? "Discussion text" : "Bullet text",
+  );
 
   /** Mount the editable (if needed), then place the caret. */
   async function focusAt(target: FocusTarget): Promise<void> {
@@ -424,18 +427,18 @@
       extractTokenAtCaret(event); // without a token, the space inserts normally
       return;
     }
-    if (matches(event, S.toggleKind)) {
+    if (matches(event, S.cycleKind)) {
       event.preventDefault();
       commit();
-      store.toggleKind(node.id);
+      store.cycleKind(node.id);
       return;
     }
     if (matches(event, S.newSibling)) {
       event.preventDefault();
       if (draft === "") {
-        // Never create a sibling below an empty node; toggle its kind instead
+        // Never create a sibling below an empty node; cycle its kind instead
         // (outdenting an empty node is Shift+Tab's job).
-        store.toggleKind(node.id);
+        store.cycleKind(node.id);
         return;
       }
       commit();
@@ -478,7 +481,7 @@
     if (event.key === "Backspace" && !mod && !event.altKey) {
       const atStart = window.getSelection()?.isCollapsed === true && el !== undefined && caretOffset(el) === 0;
       // At the start of the text, one press clears the priority back to default.
-      if (atStart && node.kind === "task" && node.priority !== undefined) {
+      if (atStart && node.kind !== "bullet" && node.priority !== undefined) {
         event.preventDefault();
         store.setPriority(node.id, 3);
         return;
@@ -493,6 +496,11 @@
       // Chrome binds this combo to DevTools inspect, but pages may claim it
       // (Google Docs precedent) — preventDefault suffices.
       event.preventDefault();
+      if (node.kind === "discussion") {
+        // Keyboard twin of the row's "Copy prompt" link.
+        store.copyDiscussionPrompt(node.id);
+        return;
+      }
       const id = store.serverId(node.id);
       writeClipboard(id).then(
         () => store.showToast(`Copied ${id}`),
@@ -501,7 +509,8 @@
       return;
     }
     if (matches(event, S.copySubtree)) {
-      // A real text selection keeps native copy; a collapsed caret copies the subtree.
+      // A real text selection keeps native copy; a collapsed caret copies the
+      // subtree.
       if (window.getSelection()?.isCollapsed !== true) return;
       event.preventDefault();
       commit();
@@ -562,21 +571,53 @@
       </button>
     {/if}
 
-    {#if node.kind === "task"}
-      <button
-        class={["glyph", "check", { ringed: hasChildren && isCollapsed }]}
-        role="checkbox"
-        aria-checked={isDone}
-        aria-label={isDone ? "Reopen task" : "Mark task done"}
-        tabindex="-1"
-        onclick={() => store.toggleDone(node.id)}
-      >
-        {#if isDone}
-          <svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">
-            <path d="M3 8.5 6.5 12 13 4.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+    {#if node.kind !== "bullet"}
+      {#if node.kind === "task"}
+        <button
+          class={["glyph", "check", { ringed: hasChildren && isCollapsed }]}
+          role="checkbox"
+          aria-checked={isDone}
+          aria-label={isDone ? "Reopen task" : "Mark task done"}
+          tabindex="-1"
+          onclick={() => store.toggleDone(node.id)}
+        >
+          {#if isDone}
+            <svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">
+              <path d="M3 8.5 6.5 12 13 4.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+            </svg>
+          {/if}
+        </button>
+      {:else}
+        <!-- Speech bubble in place of the checkbox (SPEC key decision 12); clicking toggles done all the same. -->
+        <button
+          class={["glyph", "bubble", { ringed: hasChildren && isCollapsed }]}
+          role="checkbox"
+          aria-checked={isDone}
+          aria-label={isDone ? "Reopen discussion" : "Mark discussion done"}
+          tabindex="-1"
+          onclick={() => store.toggleDone(node.id)}
+        >
+          <!-- Lucide messages-square, restroked to match the row's other icons; done fills the front bubble, like the filled done checkbox. -->
+          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+            <path
+              d="M16 10a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 14.286V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"
+              fill={isDone ? "currentColor" : "none"}
+              stroke="currentColor"
+              stroke-width="2.25"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+            <path
+              d="M20 9a2 2 0 0 1 2 2v10.286a.71.71 0 0 1-1.212.502l-2.202-2.202A2 2 0 0 0 17.172 19H10a2 2 0 0 1-2-2v-1"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.25"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
           </svg>
-        {/if}
-      </button>
+        </button>
+      {/if}
 
       <!-- Priority column at the row start, so priorities scan vertically. -->
       <span class="prio-wrap" bind:this={prioWrap}>
@@ -614,7 +655,7 @@
           role="textbox"
           tabindex="0"
           aria-multiline="false"
-          aria-label={node.kind === "task" ? "Task text" : "Bullet text"}
+          aria-label={textLabel}
           bind:textContent={() => draft, (value) => (draft = value ?? "")}
           {onkeydown}
           oninput={onEditableInput}
@@ -655,7 +696,7 @@
           role="textbox"
           tabindex="0"
           aria-multiline="false"
-          aria-label={node.kind === "task" ? "Task text" : "Bullet text"}
+          aria-label={textLabel}
           onpointerdown={onDisplayPointerDown}
           onfocus={onDisplayFocus}
           {@attach registerDisplay}
@@ -712,6 +753,12 @@
       {/if}
       {#if node.handoff}
         <span class="handoff" title={node.handoff.ref}>→ {node.handoff.target}</span>
+      {/if}
+      {#if node.kind === "discussion" && !editing}
+        <!-- Always visible (not hover-gated) so the flow is discoverable; hidden while editing. -->
+        <button class="copy-prompt" tabindex="-1" onclick={() => store.copyDiscussionPrompt(node.id)}>
+          Copy prompt
+        </button>
       {/if}
     </div>
   </div>
@@ -811,6 +858,23 @@
   .row.done .check::after {
     background: var(--done);
     border-color: var(--done);
+  }
+
+  .bubble {
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: pointer;
+    color: var(--check-border);
+  }
+  .bubble svg {
+    border-radius: 4px;
+  }
+  .bubble.ringed svg {
+    box-shadow: 0 0 0 3px var(--ring);
+  }
+  .row.done .bubble {
+    color: var(--done);
   }
 
   .content {
@@ -967,6 +1031,27 @@
     align-self: center;
     font-size: 12px;
     color: var(--muted);
+  }
+
+  /* Quiet link-style affordance, same visual weight as .handoff. */
+  .copy-prompt {
+    flex: none;
+    align-self: center;
+    padding: 0;
+    border: none;
+    background: none;
+    font: inherit;
+    font-size: 12px;
+    color: var(--muted);
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, var(--muted) 45%, transparent);
+    text-underline-offset: 3px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .copy-prompt:hover {
+    color: var(--fg);
+    text-decoration-color: currentColor;
   }
 
   .children {

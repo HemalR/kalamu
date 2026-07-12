@@ -32,7 +32,7 @@ import { readFileSync } from "node:fs";
 import { ensureAgentDocs } from "./agent-docs.js";
 import { CliError, resolvePaths, type CommandResult } from "./context.js";
 import { registerProject } from "./registry.js";
-import { renderOutline } from "./render.js";
+import { glyphFor, prefixFor, renderOutline } from "./render.js";
 import { seedTour } from "./tour.js";
 import { depthOf, serializeMarkdown } from "@kalamu/core";
 
@@ -48,7 +48,9 @@ export function parsePriority(value: string, allowDefault: boolean): Priority | 
 }
 
 export function parseKind(value: string): NodeKind {
-  if (value !== "bullet" && value !== "task") throw new CliError(`invalid kind "${value}" — use bullet or task`);
+  if (value !== "bullet" && value !== "task" && value !== "discussion") {
+    throw new CliError(`invalid kind "${value}" — use bullet, task or discussion`);
+  }
   return value;
 }
 
@@ -228,6 +230,7 @@ export interface ListOptions {
   open?: boolean;
   done?: boolean;
   handoff?: boolean;
+  discussions?: boolean;
   assignee?: string;
   tag?: string;
   depth?: string;
@@ -245,6 +248,7 @@ function listFilter(options: ListOptions): (node: KalamuNode) => boolean {
     if (options.open && !(node.kind === "task" && node.doneAt === null)) return false;
     if (options.done && !(node.kind === "task" && node.doneAt !== null)) return false;
     if (options.handoff && node.handoff === null) return false;
+    if (options.discussions && node.kind !== "discussion") return false;
     if (options.assignee !== undefined && node.assignee !== parseAssignee(options.assignee, false)) return false;
     if (options.tag !== undefined && !deriveTags(node.text).includes(options.tag.toLowerCase())) return false;
     return true;
@@ -310,19 +314,22 @@ export interface NextCommandOptions {
   all?: boolean;
   under?: string;
   includeHandedOff?: boolean;
+  /** Queue discussions instead of tasks (same eligibility/sort otherwise). */
+  discussion?: boolean;
 }
 
 export function next(cwd: string, options: NextCommandOptions = {}): CommandResult {
   const paths = resolvePaths(cwd);
   const { nodes } = readOutline(paths.outline);
-  const scope: NextOptions = { under: options.under, includeHandedOff: options.includeHandedOff };
+  const kind = options.discussion ? ("discussion" as const) : ("task" as const);
+  const scope: NextOptions = { under: options.under, includeHandedOff: options.includeHandedOff, kind };
 
   // Batch mode: --all or --limit N returns the queue in next-order so an
   // agent can load several tasks into context at once.
   if (options.all || options.limit !== undefined) {
     const limit = options.limit !== undefined ? parsePositiveInt(options.limit) : undefined;
     const queue = eligibleTasks(nodes, scope).slice(0, options.all ? undefined : limit);
-    if (!queue.length) return { text: "No eligible tasks.", json: { count: 0, tasks: [] }, exitCode: 2 };
+    if (!queue.length) return { text: `No eligible ${kind}s.`, json: { count: 0, tasks: [] }, exitCode: 2 };
     const entry = ({ node, path }: (typeof queue)[number]): Record<string, unknown> => ({
       id: node.id,
       text: node.text,
@@ -331,20 +338,19 @@ export function next(cwd: string, options: NextCommandOptions = {}): CommandResu
     });
     const text = queue
       .map(({ node, path }) => {
-        const p = effectivePriority(node) !== 3 ? `p${effectivePriority(node)} ` : "";
         const pathLine = path.length ? `\n${" ".repeat(node.id.length + 2)}Path: ${path.join(" > ")}` : "";
-        return `${node.id}  ☐ ${p}${node.text}${pathLine}`;
+        return `${node.id}  ${glyphFor(node)} ${prefixFor(node)}${node.text}${pathLine}`;
       })
       .join("\n");
     return {
-      text: `${text}\n${queue.length} task(s); sorted by priority (p1 first), then outline order`,
+      text: `${text}\n${queue.length} ${kind}(s); sorted by priority (p1 first), then outline order`,
       json: { count: queue.length, tasks: queue.map(entry) },
     };
   }
 
   const result = nextTask(nodes, scope);
   if (!result) {
-    return { text: "No eligible tasks.", json: { id: null }, exitCode: 2 };
+    return { text: `No eligible ${kind}s.`, json: { id: null }, exitCode: 2 };
   }
   // Single mode carries the task's full context for an agent: the ancestor
   // chain (root -> parent) and the task's own subtree, but never siblings.
@@ -355,14 +361,11 @@ export function next(cwd: string, options: NextCommandOptions = {}): CommandResu
   const taskDepth = depthOf(tree, result.node);
 
   const priority = effectivePriority(result.node);
-  const pPrefix = priority !== 3 ? `p${priority} ` : "";
-  const lines = [`${result.node.id}  ☐ ${pPrefix}${result.node.text}`];
+  const lines = [`${result.node.id}  ${glyphFor(result.node)} ${prefixFor(result.node)}${result.node.text}`];
   if (result.path.length) lines.push(`Path: ${result.path.join(" > ")}`);
   for (const child of descendants) {
     const indent = "  ".repeat(depthOf(tree, child) - taskDepth);
-    const p = child.kind === "task" && effectivePriority(child) !== 3 ? `p${effectivePriority(child)} ` : "";
-    const glyph = child.kind === "bullet" ? "•" : child.doneAt !== null ? "☑" : "☐";
-    lines.push(`${indent}${glyph} ${p}${child.text}  (${child.id})`);
+    lines.push(`${indent}${glyphFor(child)} ${prefixFor(child)}${child.text}  (${child.id})`);
   }
   lines.push(`Reason: ${result.reason}`);
   return {
@@ -387,6 +390,7 @@ export function clean(cwd: string, options: { dryRun?: boolean }): CommandResult
     const detail = [
       result.doneTasks > 0 ? `${result.doneTasks} done task(s)` : "",
       result.doneBullets > 0 ? `${result.doneBullets} done bullet(s)` : "",
+      result.doneDiscussions > 0 ? `${result.doneDiscussions} done discussion(s)` : "",
       result.blankNodes > 0 ? `${result.blankNodes} blank node(s)` : "",
     ]
       .filter(Boolean)
@@ -398,6 +402,7 @@ export function clean(cwd: string, options: { dryRun?: boolean }): CommandResult
         deleted: ids.length,
         doneTasks: result.doneTasks,
         doneBullets: result.doneBullets,
+        doneDiscussions: result.doneDiscussions,
         blankNodes: result.blankNodes,
         ids,
         dryRun: dry,

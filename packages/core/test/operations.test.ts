@@ -13,7 +13,7 @@ import {
   setHandoff,
   updateNode,
 } from "../src/operations.js";
-import { bullet, task } from "./helpers.js";
+import { bullet, discussion, task } from "./helpers.js";
 
 const NOW = "2026-07-09T09:00:00.000Z";
 
@@ -104,6 +104,43 @@ describe("updateNode", () => {
     expect(result.node.assignee).toBe("agent");
     result = updateNode(result.nodes, "n_001", { assignee: null });
     expect(result.node.assignee).toBeUndefined();
+  });
+});
+
+describe("discussions", () => {
+  it("keep their kind when a priority is set, and carry it", () => {
+    const added = addNode([], { kind: "discussion", text: "WorkOS or Auth0?", priority: 2, now: NOW });
+    expect(added.node.kind).toBe("discussion");
+    expect(added.node.priority).toBe(2);
+    const updated = updateNode([discussion("n_001")], "n_001", { priority: 1 });
+    expect(updated.node.kind).toBe("discussion");
+    expect(updated.node.priority).toBe(1);
+  });
+
+  it("cannot be assigned — they involve both parties", () => {
+    expect(() => addNode([], { kind: "discussion", text: "x", assignee: "human", now: NOW })).toThrow(
+      /only tasks can be assigned/,
+    );
+    expect(() => updateNode([discussion("n_001")], "n_001", { assignee: "agent" })).toThrow(
+      /only tasks can be assigned/,
+    );
+    // clearing is always safe, e.g. on a task being converted in the same call
+    const cleared = updateNode([discussion("n_001", { assignee: "human" })], "n_001", { assignee: null });
+    expect(cleared.node.assignee).toBeUndefined();
+  });
+
+  it("cannot be handed off", () => {
+    expect(() => setHandoff([discussion("n_001")], "n_001", "github", "url", NOW)).toThrow(
+      /only tasks can be handed off/,
+    );
+  });
+
+  it("never surface in next, and a done discussion never closes its umbrella", () => {
+    const nodes = [
+      discussion("n_001", { text: "Talk it over", priority: 1, doneAt: NOW }),
+      task("n_002", { parentId: "n_001", text: "Follow-up from the discussion" }),
+    ];
+    expect(nextTask(nodes)?.node.id).toBe("n_002");
   });
 });
 
@@ -248,6 +285,18 @@ describe("cleanDone", () => {
     expect(result.nodes).toEqual([]);
     expect(result.doneTasks).toBe(1);
     expect(result.doneBullets).toBe(1);
+  });
+
+  it("treats done discussions like done bullets: removed alone, kept while children survive", () => {
+    const nodes = [
+      discussion("n_001", { doneAt: NOW }),
+      bullet("n_002", { parentId: "n_001", text: "recorded outcome survives" }),
+      discussion("n_003", { doneAt: NOW }),
+    ];
+    const result = cleanDone(nodes);
+    expect(result.nodes.map((n) => n.id)).toEqual(["n_001", "n_002"]);
+    expect(result.doneDiscussions).toBe(1);
+    expect(result.doneBullets).toBe(0);
   });
 
   it("removes blank nodes of either kind", () => {

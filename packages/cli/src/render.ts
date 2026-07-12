@@ -9,12 +9,13 @@ import {
 
 export function glyphFor(node: KalamuNode): string {
   if (node.kind === "bullet") return "•";
+  if (node.kind === "discussion") return node.doneAt !== null ? "✓" : "?";
   return node.doneAt !== null ? "☑" : "☐";
 }
 
 /** Priority leads the row so priorities align in a scannable column. */
 export function prefixFor(node: KalamuNode): string {
-  if (node.kind === "task" && effectivePriority(node) !== 3) return `p${effectivePriority(node)} `;
+  if (node.kind !== "bullet" && effectivePriority(node) !== 3) return `p${effectivePriority(node)} `;
   return "";
 }
 

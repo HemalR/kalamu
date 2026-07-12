@@ -23,3 +23,7 @@ export function task(id: string, overrides: Partial<KalamuNode> = {}): KalamuNod
 export function bullet(id: string, overrides: Partial<KalamuNode> = {}): KalamuNode {
   return makeNode({ id, kind: "bullet", ...overrides });
 }
+
+export function discussion(id: string, overrides: Partial<KalamuNode> = {}): KalamuNode {
+  return makeNode({ id, kind: "discussion", ...overrides });
+}

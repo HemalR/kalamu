@@ -3,7 +3,7 @@ import { ConflictError, StoreError } from "@kalamu/core/store";
 import { Command } from "commander";
 import * as commands from "./commands.js";
 import { CliError, type CommandResult } from "./context.js";
-import { installHubAgent, runHub, uninstallHubAgent } from "./hub.js";
+import { installHubAgent, restartHub, runHub, uninstallHubAgent } from "./hub.js";
 import { open } from "./open.js";
 import { askYesNo, installSkill, isInteractive, offerSkillInstall } from "./skill.js";
 
@@ -98,15 +98,16 @@ program
 
 program
   .command("hub [action]")
-  .description("run the multi-project hub (all registered projects, one UI); actions: install, uninstall")
+  .description("run the multi-project hub (all registered projects, one UI); actions: install, uninstall, restart")
   .option("--port <port>", "port to listen on (default 4400)")
   .option("--no-browser", "do not open a browser")
   .action(async (action: string | undefined, opts: { port?: string; browser?: boolean }) => {
     try {
       if (action === "install") installHubAgent();
       else if (action === "uninstall") uninstallHubAgent();
+      else if (action === "restart") await restartHub();
       else if (action === undefined) await runHub(opts);
-      else throw new Error(`unknown hub action "${action}" (expected install or uninstall)`);
+      else throw new Error(`unknown hub action "${action}" (expected install, uninstall, or restart)`);
     } catch (err) {
       console.error(`kalamu: ${(err as Error).message}`);
       process.exitCode = 1;
@@ -120,6 +121,7 @@ program
   .option("--open", "open tasks only")
   .option("--done", "done tasks only")
   .option("--handoff", "handed-off tasks only")
+  .option("--discussions", "discussions only")
   .option("--assignee <who>", "tasks assigned to human or agent")
   .option("--tag <tag>", "nodes carrying a tag")
   .option("--depth <n>", "limit to the first n levels")
@@ -143,7 +145,7 @@ program
   .description("add a node")
   .requiredOption("--text <text>", "node text")
   .option("--parent <id>", "parent node (omit for top-level)")
-  .option("--kind <kind>", "bullet|task (default bullet)")
+  .option("--kind <kind>", "bullet|task|discussion (default bullet)")
   .option("--p <priority>", "priority 1 (urgent) to 5 (low); omit for default 3")
   .option("--tag <tag>", "tag (repeatable)", collect, [])
   .option("--assign <who>", "assign the task: human (excluded from next) or agent")
@@ -158,7 +160,7 @@ program
   .command("update <id>")
   .description("update a node")
   .option("--text <text>", "new text")
-  .option("--kind <kind>", "bullet|task")
+  .option("--kind <kind>", "bullet|task|discussion")
   .option("--p <priority>", '1-5 or "default" to clear')
   .option("--add-tag <tag>", "add tag (repeatable)", collect, [])
   .option("--remove-tag <tag>", "remove tag (repeatable)", collect, [])
@@ -237,6 +239,7 @@ program
   .option("--all", "print every eligible task in queue order")
   .option("--under <id>", "only consider tasks inside this node's subtree")
   .option("--include-handed-off", "also consider tasks already handed off to another system")
+  .option("--discussion", "queue discussions instead of tasks")
   .option("--format <format>", "output format (text|json)")
   .action((opts: commands.NextCommandOptions & { format?: string }) => {
     run(() => commands.next(process.cwd(), opts), opts);
@@ -247,6 +250,7 @@ program
   .description('print every eligible task in queue order (alias for "next --all")')
   .option("--under <id>", "only consider tasks inside this node's subtree")
   .option("--include-handed-off", "also consider tasks already handed off to another system")
+  .option("--discussion", "queue discussions instead of tasks")
   .option("--format <format>", "output format (text|json)")
   .action((opts: Omit<commands.NextCommandOptions, "all" | "limit"> & { format?: string }) => {
     run(() => commands.next(process.cwd(), { ...opts, all: true }), opts);

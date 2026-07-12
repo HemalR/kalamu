@@ -14,6 +14,24 @@ export function serializeSubtree(tree: Tree, rootId: string): { text: string; co
   return { text, count: text.split("\n").length };
 }
 
+/**
+ * The "Copy prompt" text for a discussion node (SPEC key decision 12): the
+ * topic, its subtree (indented as in copy-subtree, minus the node's own
+ * line), and a do-not-code instruction telling the agent how to record the
+ * outcome. `serverId` is the id as the CLI knows it — never a local alias.
+ */
+export function discussionPrompt(tree: Tree, rootId: string, serverId: string): string | null {
+  const root = tree.byId.get(rootId);
+  if (!root || root.kind !== "discussion") return null;
+  // Drop the node's own line; children keep their as-serialized indentation.
+  const subtree = serializeMarkdown(tree, [root]).split("\n").slice(1).join("\n");
+  return [
+    `Kalamu discussion ${serverId}: ${root.text}`,
+    ...(subtree === "" ? [] : [subtree]),
+    `This is for discussion only — do not make any code changes yet. When we reach a conclusion, help me record the outcome as child bullets under ${serverId} (kalamu add --parent ${serverId} --text "..."), then mark the discussion done (kalamu done ${serverId}).`,
+  ].join("\n\n");
+}
+
 /** navigator.clipboard when available; hidden-textarea execCommand otherwise. */
 export async function writeClipboard(text: string): Promise<void> {
   try {

@@ -7,9 +7,12 @@ import { effectivePriority, type KalamuNode } from "./model.js";
 import type { Tree } from "./tree.js";
 
 export function markdownLine(node: KalamuNode): string {
-  const box = node.kind === "bullet" ? "-" : node.doneAt !== null ? "- [x]" : "- [ ]";
+  const box =
+    node.kind === "bullet" ? "-"
+    : node.kind === "discussion" ? (node.doneAt !== null ? "- [x?]" : "- [?]")
+    : node.doneAt !== null ? "- [x]" : "- [ ]";
   const priority =
-    node.kind === "task" && effectivePriority(node) !== 3 ? `p${effectivePriority(node)} ` : "";
+    node.kind !== "bullet" && effectivePriority(node) !== 3 ? `p${effectivePriority(node)} ` : "";
   let suffix = "";
   if (node.handoff) suffix += ` → ${node.handoff.target}:${node.handoff.ref}`;
   if (node.assignee) suffix += ` @${node.assignee}`;

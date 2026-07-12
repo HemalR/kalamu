@@ -118,11 +118,13 @@
       }));
     }
     // Root level: a fixed nine-item list with stable numbers (SPEC). Items
-    // that don't apply — node actions without a target, or Priority / Assign
-    // on a bullet — are disabled rather than hidden.
+    // that don't apply — node actions without a target, Priority / Assign on
+    // a bullet, or Assign on a discussion (never assigned — SPEC key
+    // decision 12) — are disabled rather than hidden.
     const task = target?.kind === "task" ? target : undefined;
+    const workItem = target !== undefined && target.kind !== "bullet" ? target : undefined;
     return [
-      { id: "priority", label: "Priority…", disabled: !task, run: () => enter("priority") },
+      { id: "priority", label: "Priority…", disabled: !workItem, run: () => enter("priority") },
       { id: "labels", label: "Labels…", disabled: !target, run: () => enter("labels") },
       { id: "assign", label: "Assign…", disabled: !task, run: () => enter("assign") },
       {

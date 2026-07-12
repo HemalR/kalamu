@@ -8,7 +8,7 @@ import { pathsFor, readOutline } from "@kalamu/core/store";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { HUB_LAUNCHD_LABEL, hubLaunchAgentPlist, openBrowser, portIsFree, webAssetsDir } from "./launch.js";
@@ -245,4 +245,40 @@ export function uninstallHubAgent(): void {
   }
   rmSync(hubLaunchAgentPlist(), { force: true });
   console.log(`Removed ${HUB_LAUNCHD_LABEL} — the hub no longer starts at login`);
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Restart the installed hub so it picks up updated code (a running process
+ * never notices a new bundle on disk). Only launchd-managed hubs can be
+ * restarted — a foreground hub belongs to whoever's terminal it is running in.
+ */
+export async function restartHub(): Promise<void> {
+  if (process.platform === "darwin" && existsSync(hubLaunchAgentPlist())) {
+    const domain = `gui/${process.getuid?.() ?? 0}`;
+    try {
+      launchctl(["kickstart", "-k", `${domain}/${HUB_LAUNCHD_LABEL}`]);
+    } catch {
+      // Installed but not loaded (e.g. booted out) — load it instead.
+      try {
+        launchctl(["bootstrap", domain, hubLaunchAgentPlist()]);
+      } catch {
+        throw new Error(`launchd could not start ${HUB_LAUNCHD_LABEL} — try \`kalamu hub install\` again`);
+      }
+    }
+    for (let i = 0; i < 10; i++) {
+      await sleep(300);
+      if (await detectHub()) {
+        console.log(`Restarted ${HUB_LAUNCHD_LABEL}`);
+        console.log(`  http://127.0.0.1:${HUB_PORT}`);
+        return;
+      }
+    }
+    throw new Error(`restarted ${HUB_LAUNCHD_LABEL}, but no hub answered on port ${HUB_PORT} — check ~/.kalamu/hub.log`);
+  }
+  if (await detectHub()) {
+    throw new Error("the hub is running in a terminal, not via launchd — Ctrl+C it and rerun `kalamu hub`");
+  }
+  throw new Error("no hub is running — start one with `kalamu hub`, or `kalamu hub install` to run it at login");
 }
