@@ -51,6 +51,12 @@ Kalamu stores repo-local brainstorming and task state. If you are a coding agent
 
 **Use the CLI.** Do not edit `.kalamu/outline.jsonl` by hand unless the CLI is unavailable.
 
+This applies to work that originated from Kalamu or that the user explicitly
+asked to track in Kalamu. A direct user request is not automatically a Kalamu
+task merely because the repository contains `.kalamu/`; do not create or
+complete a task for ordinary direct work unless the user supplied a Kalamu task
+ID or requested tracking.
+
 **Getting work:**
 
 ```bash
@@ -79,7 +85,8 @@ kalamu validate                # before finishing
 3. Priority runs p1 (urgent) to p5 (low); a missing priority means p3.
 4. Before starting, run `kalamu next` or inspect the relevant task nodes.
 5. If you promote a task into another system, record it with `kalamu handoff`.
-6. After completing work, mark the originating task done and run `kalamu validate`.
+6. After completing Kalamu-originated work, mark the originating task done and
+   run `kalamu validate`. Do not run `kalamu done` for ordinary direct requests.
 
 ## The data
 

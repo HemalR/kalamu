@@ -1,6 +1,6 @@
 ---
 name: kalamu
-description: Work with Kalamu, the repo-local task outliner. Use when a repository contains a .kalamu/ directory, or when asked to pick up the next task, record todos, track deferred work, or mark tasks done in a repo that uses Kalamu. Covers getting work (kalamu next), recording work (add, done, handoff), and the rules agents must follow (human-assigned tasks, priorities, bullets vs tasks).
+description: Work with Kalamu, the repo-local task outliner. Use when asked to pick up, inspect, update, defer, hand off, or complete a Kalamu task, or when explicitly asked to track work in Kalamu. Covers getting work (kalamu next), recording work (add, done, handoff), and the rules agents must follow (human-assigned tasks, priorities, bullets vs tasks).
 license: MIT
 compatibility: Requires Node.js >= 20 (commands run via npx kalamu or an installed kalamu binary)
 metadata:
@@ -36,7 +36,15 @@ kalamu unhandoff <id>                              # external plan fell through
 kalamu validate                                    # before finishing (exit 1 = invalid)
 ```
 
-Defer work you discover but don't do: add it as a task rather than leaving TODO comments — in a Kalamu repo, the outline is the task system.
+Only record work in Kalamu when it originated from Kalamu or the user explicitly
+asked for it to be tracked there. Direct user requests are not Kalamu tasks just
+because the repository contains a `.kalamu/` directory. In particular, do not
+create a task with `kalamu add` or mark one done with `kalamu done` for ordinary
+direct user work unless the user supplied a Kalamu task ID or requested tracking.
+
+When working on a Kalamu-originated task, defer work you discover but don't do:
+add it as a task rather than leaving TODO comments — in a Kalamu repo, the
+outline is the task system.
 
 When your work needs the human to do something (a decision, a credential, a manual step outside the repo), don't just say so in chat — also record it as a human-assigned task so it survives the conversation.
 
@@ -52,3 +60,7 @@ When your work needs the human to do something (a decision, a credential, a manu
 ## Recognising a Kalamu repo
 
 A `.kalamu/` directory at the repository root (specifically `.kalamu/outline.jsonl`). If asked to set one up: `kalamu init`.
+
+The presence of `.kalamu/` alone does not mean every request must be added to
+or completed in Kalamu. Use the CLI for tasks sourced from Kalamu and for
+explicit tracking requests; otherwise follow the user's normal workflow.
