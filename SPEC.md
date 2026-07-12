@@ -45,6 +45,7 @@ These were deliberated and are settled. Do not relitigate them during implementa
 9. **Per-node plain-text contenteditable, no editor library.** Each node's text is its own `contenteditable="plaintext-only"` element using Svelte's native bindings (`bind:textContent`). Structural keys (Enter, Tab, Backspace-on-empty) are intercepted — guarded by `event.isComposing` for IME — and become outline operations; token parsing writes back only on commit (Enter/blur), never mid-keystroke, since external updates to bound content reset the caret. No TipTap/ProseMirror — those are document editors, and Kalamu's structure lives in the data model, not the editor. Fallback if the spike finds trouble: a roaming single editor where only the focused node is live. The UI spike exists to validate this.
 10. **Collapse state is view state, never document content.** It lives in a gitignored `.kalamu/ui-state.json`, not in `outline.jsonl` — otherwise every fold click dirties the canonical file and pollutes Git history. Agents and the CLI always operate on the full tree regardless of what is collapsed.
 11. **Images are files referenced by inline markdown tokens.** Pasting an image stores it in `.kalamu/assets/` (content-hashed filename, COMMITTED — assets are outline content and must survive a clone) and inserts `![](.kalamu/assets/img-<hash>.<ext>)` into the node text. Same rendering model as tags: unfocused nodes show a thumbnail in place, the focused node shows the raw token. No new node field; agents see an ordinary greppable path.
+12. **One hub, many projects.** (Added 2026-07-12.) `kalamu hub` runs a single machine-global server (default port 4400, still `127.0.0.1`-only) that mounts every registered project behind one UI with a project sidebar — no per-project server spin-up, no per-project ports. Projects are identified in hub URLs by a human-readable slug derived from `package.json` `name` (scope stripped) or the directory name, deduplicated with numeric suffixes and **stable once assigned**. The registry lives at `~/.kalamu/projects.json` — machine-global plumbing, never canonical outline data. The hub is human UI convenience only; agents and the CLI contract never depend on it. See [Hub](#hub-multi-project-dashboard).
 
 ---
 
@@ -1509,6 +1510,92 @@ The server additionally:
 * Watches `.kalamu/outline.jsonl` (chokidar or `fs.watch`).
 * Pushes an `outline-changed` event over SSE whenever the file changes on disk (e.g. an agent ran `kalamu done` while the UI is open).
 * The UI reloads its state on that event, preserving focus/cursor where possible.
+
+---
+
+## Hub (multi-project dashboard)
+
+Post-MVP. The pain it removes: with N projects, `kalamu open` means N terminal trips and N different addresses. The per-project server was only ever a file gateway (`createServer(paths, webAssetsDir)` is parameterized by a `.kalamu/` directory), so one long-running local process can mount them all. The hub adds **zero** cloud, auth, or database — it is the same local server pattern, once, for everything.
+
+### Project registry
+
+Machine-global file (the first Kalamu file outside a repo):
+
+```text
+~/.kalamu/projects.json
+```
+
+Shape:
+
+```json
+{
+  "version": 1,
+  "projects": [
+    {
+      "slug": "kalamu",
+      "path": "/Users/dev/repos/kalamu",
+      "registeredAt": "2026-07-12T00:00:00.000Z",
+      "lastSeenAt": "2026-07-12T09:30:00.000Z"
+    }
+  ]
+}
+```
+
+Rules:
+
+* Every CLI command that resolves a project (`init`, `open`, `add`, `next`, …) upserts that project's entry — registration is a side effect of use, never a setup step. Existing entry: touch `lastSeenAt` only.
+* Entries whose `path` no longer contains a `.kalamu/` directory are pruned silently on read.
+* Writes use the same temp-file + atomic-rename pattern as everything else. Registry failures must never break the command that triggered them — a broken registry degrades the hub, not the CLI.
+* The registry is plumbing, not data: deleting it loses nothing except the sidebar list (and slug assignments), which repopulates on use.
+
+### Slugs
+
+The hub identifies a project in URLs by a slug, not an opaque ID:
+
+* Derived at **first registration** from `package.json` `name` if present, else the project directory's basename — the same derivation the UI title already uses.
+* Normalization: strip a leading `@scope/`, lowercase, replace runs of characters outside `[a-z0-9-]` with `-`, trim leading/trailing dashes. Empty result falls back to `project`.
+* Collision with a different path: append the first free numeric suffix (`api`, `api-2`, `api-3`).
+* **Stable once assigned.** Renaming `package.json` or the directory later does not change an existing slug — bookmarks and open tabs keep working. The sidebar's *display name* is recomputed live (current `projectName()` logic); the slug is route identity only.
+
+### `kalamu hub`
+
+```bash
+kalamu hub                # foreground server on 127.0.0.1:4400
+kalamu hub --port 4500
+kalamu hub --no-browser
+kalamu hub install        # launchd user agent (macOS): start at login
+kalamu hub uninstall
+```
+
+Routes:
+
+```http
+GET /api/projects                    (registered projects: slug, display name, path, open-task count)
+ALL /p/:slug/api/*                   (routed into that project's server instance)
+GET /p/:slug/assets/*                (same)
+GET /                                (hub UI: project sidebar + outline pane)
+GET /p/:slug                         (deep link, sidebar pre-selected)
+```
+
+Behaviour:
+
+* Per-project server instances are the existing `createServer()` — created lazily on first request for a slug, torn down after an idle period so the hub doesn't hold file watchers for dormant projects.
+* SSE live reload, mtime-checked atomic writes, and undo work unchanged per project; hub, standalone `kalamu open` servers, and CLI agents can all write concurrently because every writer already does mtime-checked atomic writes.
+* `kalamu hub install` writes a launchd user agent (macOS first; systemd user unit later) so the hub is always up and `http://localhost:4400` becomes a permanent bookmark — the terminal disappears from the human workflow entirely.
+
+### `kalamu open` integration
+
+When a hub is already listening on the hub port, `kalamu open` opens `http://localhost:4400/p/<slug>` instead of starting a standalone server; otherwise today's behaviour is unchanged. Agents are unaffected — the hub exists for the human at the keyboard, and no agent-facing command needs it.
+
+### Discovery
+
+Nothing ever pushes the login item: `init` never offers it and the hub is advertised only by quiet, individually dismissible sticky-footer hints in the UI (dismissals persist per-browser in localStorage, never in the repo). `GET /api/project` carries `platform` and `hubInstalled` (plist existence) so hints appear only where actionable — one hint at a time, chosen randomly among the undismissed:
+
+* Standalone, hub not installed: "Running multiple projects? See a unified view of all your Kalamus by running `kalamu hub`" and (macOS only) "Tired of running `kalamu open`? Keep Kalamu ever-ready with `kalamu hub install`".
+* Hub mode, macOS, not installed: "Tired of running `kalamu hub` every time? Keep Kalamu ever-ready with `kalamu hub install`".
+* Hub installed: no hints anywhere.
+
+Each hint's command is a click-to-copy chip. Discovery therefore ladders `open` → `hub` (foreground, installs nothing) → `hub install`, each nudge appearing only at the moment it is actionable.
 
 ---
 

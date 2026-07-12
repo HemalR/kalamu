@@ -29,12 +29,13 @@ import {
   writeUiState,
   type KalamuPaths,
 } from "@kalamu/core/store";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, watch, writeFileSync, type FSWatcher } from "node:fs";
 import { basename, dirname, extname, join, normalize } from "node:path";
 import { z } from "zod";
+import { hubAgentInstalled } from "./launch.js";
 
 const IMAGE_TYPES: Record<string, string> = {
   "image/png": ".png",
@@ -97,8 +98,27 @@ export interface KalamuServer {
   close: () => void;
 }
 
+/** Static web-asset handler (SPA: unknown paths fall back to index.html). Shared with the hub. */
+export function webAppHandler(webAssetsDir: string | null): (c: Context) => Response {
+  return (c) => {
+    if (!webAssetsDir) {
+      return c.html(
+        "<h1>Kalamu</h1><p>Web assets are not built. The API is available under <code>/api</code>.</p>",
+        200,
+      );
+    }
+    const requested = normalize(c.req.path).replace(/^\/+/, "");
+    const candidate = join(webAssetsDir, requested || "index.html");
+    const safe = candidate.startsWith(webAssetsDir) && existsSync(candidate) && !candidate.endsWith("/");
+    const file = safe && extname(candidate) ? candidate : join(webAssetsDir, "index.html");
+    if (!existsSync(file)) return c.text("not found", 404);
+    const type = CONTENT_TYPES[extname(file)] ?? "application/octet-stream";
+    return c.body(readFileSync(file), 200, { "Content-Type": type });
+  };
+}
+
 /** Project name for the UI title: package.json `name` if present, else the root directory's name. */
-function projectName(root: string): string {
+export function projectName(root: string): string {
   try {
     const pkg: unknown = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
     if (pkg !== null && typeof pkg === "object" && "name" in pkg && typeof pkg.name === "string" && pkg.name.trim() !== "") {
@@ -297,7 +317,11 @@ export function createServer(paths: KalamuPaths, webAssetsDir: string | null): K
     return c.body(readFileSync(full), 200, { "Content-Type": type ?? "application/octet-stream" });
   });
 
-  app.get("/api/project", (c) => c.json({ name: projectName(dirname(paths.dir)) }));
+  // platform + hubInstalled drive the UI's hub-discovery hints: install advice
+  // is only shown where `hub install` exists and hasn't already been run.
+  app.get("/api/project", (c) =>
+    c.json({ name: projectName(dirname(paths.dir)), platform: process.platform, hubInstalled: hubAgentInstalled() }),
+  );
 
   app.get("/api/meta", (c) => c.json(readMeta(paths.meta)));
 
@@ -342,21 +366,7 @@ export function createServer(paths: KalamuPaths, webAssetsDir: string | null): K
   );
 
   // Static web assets (SPA: unknown paths fall back to index.html).
-  app.get("*", (c) => {
-    if (!webAssetsDir) {
-      return c.html(
-        "<h1>Kalamu</h1><p>Web assets are not built. The API is available under <code>/api</code>.</p>",
-        200,
-      );
-    }
-    const requested = normalize(c.req.path).replace(/^\/+/, "");
-    const candidate = join(webAssetsDir, requested || "index.html");
-    const safe = candidate.startsWith(webAssetsDir) && existsSync(candidate) && !candidate.endsWith("/");
-    const file = safe && extname(candidate) ? candidate : join(webAssetsDir, "index.html");
-    if (!existsSync(file)) return c.text("not found", 404);
-    const type = CONTENT_TYPES[extname(file)] ?? "application/octet-stream";
-    return c.body(readFileSync(file), 200, { "Content-Type": type });
-  });
+  app.get("*", webAppHandler(webAssetsDir));
 
   return {
     app,

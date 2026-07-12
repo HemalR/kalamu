@@ -31,6 +31,7 @@ import { initKalamu, readOutline, withOutline } from "@kalamu/core/store";
 import { readFileSync } from "node:fs";
 import { ensureAgentDocs } from "./agent-docs.js";
 import { CliError, resolvePaths, type CommandResult } from "./context.js";
+import { registerProject } from "./registry.js";
 import { renderOutline } from "./render.js";
 import { seedTour } from "./tour.js";
 import { depthOf, serializeMarkdown } from "@kalamu/core";
@@ -61,6 +62,7 @@ export function parseAssignee(value: string, allowNone: boolean): Assignee | nul
 
 export function init(cwd: string, options: { agentDocs?: boolean } = {}): CommandResult {
   const { created, paths } = initKalamu(cwd);
+  registerProject(paths.root);
   const docs = options.agentDocs === false ? [] : ensureAgentDocs(cwd);
   const docsLine = docs.length ? [`Added the agent standing instruction to ${docs.join(" and ")}.`] : [];
   if (!created) {

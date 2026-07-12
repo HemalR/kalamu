@@ -4,6 +4,7 @@
  * core's tokens.ts: whole words only, never inside longer words like
  * `issue#42`. Image tokens are markdown pointing into `.kalamu/assets/`.
  */
+import { apiBase } from "./api";
 
 export interface TextSegment {
   kind: "text";
@@ -40,7 +41,7 @@ const IMAGE_TOKEN = /!\[([^\]]*)\]\((\.kalamu\/assets\/[^)\s]+)\)/g;
 
 /** The browser-visible URL for an asset path stored in node text. */
 export function assetUrl(path: string): string {
-  return path.replace(/^\.kalamu\/assets\//, "/assets/");
+  return path.replace(/^\.kalamu\/assets\//, `${apiBase}/assets/`);
 }
 
 /**

@@ -194,6 +194,15 @@ describe("meta and ui-state API", () => {
     expect(fromPkg.name).toBe("my-project");
   });
 
+  it("project reports platform and hub install state for the UI's discovery hints", async () => {
+    const body = (await (await server.app.request("/api/project")).json()) as {
+      platform: string;
+      hubInstalled: boolean;
+    };
+    expect(body.platform).toBe(process.platform);
+    expect(typeof body.hubInstalled).toBe("boolean");
+  });
+
   it("ui-state persists collapse sets", async () => {
     const put = await server.app.request("/api/ui-state", {
       method: "PUT",

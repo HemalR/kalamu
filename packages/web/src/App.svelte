@@ -3,9 +3,11 @@
   import CheatSheet from "./components/CheatSheet.svelte";
   import CliSheet from "./components/CliSheet.svelte";
   import CommandPalette from "./components/CommandPalette.svelte";
+  import HubHint from "./components/HubHint.svelte";
   import OutlineNode from "./components/OutlineNode.svelte";
+  import Sidebar from "./components/Sidebar.svelte";
   import Toast from "./components/Toast.svelte";
-  import { api } from "./lib/api";
+  import { api, apiBase, type ProjectInfo } from "./lib/api";
   import { OutlineStore } from "./lib/outline.svelte";
   import { matches, SHORTCUTS as S } from "./lib/shortcuts";
   import { theme } from "./lib/theme.svelte";
@@ -13,13 +15,14 @@
   const store = new OutlineStore();
   void store.init();
 
-  /** Name of the project this instance serves; null until (and unless) it loads. */
-  let projectName = $state<string | null>(null);
+  /** Project this instance serves (name for the title, platform/hubInstalled
+      for HubHint); null until (and unless) it loads. */
+  let project = $state<ProjectInfo | null>(null);
   void api
     .getProject()
-    .then(({ name }) => {
-      projectName = name;
-      document.title = `Kalamu | ${name}`;
+    .then((info) => {
+      project = info;
+      document.title = `Kalamu | ${info.name}`;
     })
     .catch(() => {});
 
@@ -71,9 +74,10 @@
 
 <svelte:window onkeydown={onWindowKeydown} />
 
+{#snippet app()}
 <main>
   <header>
-    <span class="wordmark">kalamu{#if projectName !== null}<span class="project">| {projectName}</span>{/if}</span>
+    <span class="wordmark">kalamu{#if project !== null}<span class="project">| {project.name}</span>{/if}</span>
     <div class="actions">
       <button class="clean-up" title="Delete completed tasks and their subtrees" onclick={() => store.clean()}>
         Clean up
@@ -136,6 +140,9 @@
   {/if}
 </main>
 
+<!-- In flow after <main>, so under the hub it stays inside the content column. -->
+<HubHint {store} {project} />
+
 <button class="help-button" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)" onclick={() => (overlay = "help")}>?</button>
 
 {#if overlay === "help"}
@@ -152,8 +159,29 @@
 {/if}
 
 <Toast message={store.toast} />
+{/snippet}
+
+{#if apiBase !== ""}
+  <!-- Hub mode: project sidebar beside the regular app. -->
+  <div class="hub">
+    <Sidebar />
+    <div class="hub-main">{@render app()}</div>
+  </div>
+{:else}
+  {@render app()}
+{/if}
 
 <style>
+  .hub {
+    display: flex;
+    align-items: flex-start;
+  }
+
+  .hub-main {
+    flex: 1;
+    min-width: 0;
+  }
+
   main {
     max-width: 760px;
     margin: 0 auto;

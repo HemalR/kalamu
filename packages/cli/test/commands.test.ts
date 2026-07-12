@@ -14,6 +14,9 @@ function addTask(text: string, extra: Partial<commands.AddOptions> = {}): string
 
 beforeEach(() => {
   cwd = mkdtempSync(join(tmpdir(), "kalamu-cli-"));
+  // Commands register projects for the hub as a side effect; keep tests
+  // out of the real ~/.kalamu/projects.json.
+  process.env.KALAMU_REGISTRY = join(cwd, "test-registry.json");
   commands.init(cwd);
 });
 

@@ -6,6 +6,15 @@ import type { Assignee, KalamuMeta, KalamuNode, NodeKind, UiState } from "@kalam
 
 export type Priority = 1 | 2 | 3 | 4 | 5;
 
+/**
+ * Under `kalamu hub` the same SPA is served at /p/<slug> with the project's
+ * API at /p/<slug>/api/* (and assets at /p/<slug>/assets/*); standalone it
+ * lives at / with no prefix. Derived once at startup; "" when standalone.
+ * Guarded so Node-side tests can import this module without a `location`.
+ */
+const hubMatch = typeof location === "undefined" ? null : /^\/p\/([a-z0-9-]+)/.exec(location.pathname);
+export const apiBase = hubMatch === null ? "" : `/p/${hubMatch[1]}`;
+
 export interface CreateNodeBody {
   parentId?: string | null;
   kind?: NodeKind;
@@ -31,6 +40,13 @@ export interface MoveNodeBody {
   beforeId?: string;
 }
 
+/** platform + hubInstalled drive HubHint's discovery messages (SPEC "Hub > Discovery"). */
+export interface ProjectInfo {
+  name: string;
+  platform: string;
+  hubInstalled: boolean;
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -44,7 +60,7 @@ export class ApiError extends Error {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(path, init);
+    response = await fetch(apiBase + path, init);
   } catch {
     throw new ApiError("cannot reach the kalamu server", 0);
   }
@@ -82,7 +98,7 @@ export const api = {
     request<KalamuNode>(`/api/nodes/${encodeURIComponent(id)}/move`, json("POST", body)),
   markDone: (id: string) => request<KalamuNode>(`/api/nodes/${encodeURIComponent(id)}/done`, { method: "POST" }),
   reopen: (id: string) => request<KalamuNode>(`/api/nodes/${encodeURIComponent(id)}/reopen`, { method: "POST" }),
-  getProject: () => request<{ name: string }>("/api/project"),
+  getProject: () => request<ProjectInfo>("/api/project"),
   getMeta: () => request<KalamuMeta>("/api/meta"),
   setTagColor: (tag: string, color: string | null) =>
     request<KalamuMeta>(`/api/tags/${encodeURIComponent(tag)}`, json("PUT", { color })),

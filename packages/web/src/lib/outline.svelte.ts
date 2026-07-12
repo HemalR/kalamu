@@ -30,7 +30,7 @@ import {
 } from "@kalamu/core";
 import { tick } from "svelte";
 import { SvelteSet } from "svelte/reactivity";
-import { api, ApiError, type Priority } from "./api";
+import { api, apiBase, ApiError, type Priority } from "./api";
 import type { CaretPosition } from "./caret";
 import { commitPatch, tokenPatch, type CommitPatch } from "./commit";
 import { serializeSubtree, writeClipboard } from "./copy";
@@ -131,7 +131,7 @@ export class OutlineStore {
       this.loadError = err instanceof Error ? err.message : "unknown error";
       return;
     }
-    const events = new EventSource("/api/events");
+    const events = new EventSource(`${apiBase}/api/events`);
     // EventSource retries on its own: onerror means the server is gone,
     // onopen fires again once it comes back.
     events.onopen = () => this.setConnected(true);
