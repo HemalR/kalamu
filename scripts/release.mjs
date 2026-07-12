@@ -14,7 +14,7 @@
  * published until tests and the version check pass.
  */
 import { execSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -61,6 +61,17 @@ try {
 run(`npm version ${bump} --no-git-tag-version`, { cwd: cliDir });
 const { version } = JSON.parse(readFileSync(new URL("../packages/cli/package.json", import.meta.url), "utf8"));
 console.log(`\nReleasing kalamu v${version}`);
+
+// Keep the README's version line in lockstep — npm renders the README as the
+// package page, and it ships inside the tarball. The release commit below
+// (`git commit -am`) picks this change up alongside the package.json bump.
+const readmeUrl = new URL("../packages/cli/README.md", import.meta.url);
+const readme = readFileSync(readmeUrl, "utf8");
+const versionLine = /\*\*Current version: v\d+\.\d+\.\d+\*\*/;
+if (!versionLine.test(readme)) {
+  fail("packages/cli/README.md is missing its '**Current version: vX.Y.Z**' line — restore it before releasing");
+}
+writeFileSync(readmeUrl, readme.replace(versionLine, `**Current version: v${version}**`));
 
 run("pnpm -r --if-present typecheck");
 run("pnpm test");
