@@ -68,6 +68,22 @@ describe("hub", () => {
     expect(counts.projects.find((p) => p.slug === "alpha")?.openTasks).toBe(1);
   });
 
+  it("forgets a project on DELETE /api/projects/:slug", async () => {
+    // Touch alpha first so its server instance exists and must be torn down.
+    await hub.app.request("/p/alpha/api/nodes");
+    const res = await hub.app.request("/api/projects/alpha", { method: "DELETE" });
+    expect(res.status).toBe(204);
+
+    const { projects } = (await (await hub.app.request("/api/projects")).json()) as { projects: { slug: string }[] };
+    expect(projects.map((p) => p.slug)).toEqual(["beta"]);
+    expect((await hub.app.request("/p/alpha/api/nodes")).status).toBe(404);
+  });
+
+  it("404s a DELETE for an unknown slug", async () => {
+    const res = await hub.app.request("/api/projects/nope", { method: "DELETE" });
+    expect(res.status).toBe(404);
+  });
+
   it("404s an unregistered slug", async () => {
     const res = await hub.app.request("/p/nope/api/nodes");
     expect(res.status).toBe(404);

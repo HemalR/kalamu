@@ -12,7 +12,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { HUB_LAUNCHD_LABEL, hubLaunchAgentPlist, openBrowser, portIsFree, webAssetsDir } from "./launch.js";
-import { readRegistry, type RegistryEntry } from "./registry.js";
+import { readRegistry, unregisterProject, type RegistryEntry } from "./registry.js";
 import { createServer, projectName, webAppHandler, type KalamuServer } from "./server.js";
 
 export const HUB_PORT = 4400;
@@ -90,6 +90,18 @@ export function createHubServer(assetsDir: string | null, options: HubOptions = 
       lastSeenAt: entry.lastSeenAt,
     }));
     return c.json({ projects });
+  });
+
+  // Forget a project: drop the registry entry and tear down any live instance.
+  // Non-destructive — .kalamu/ data is untouched and the project re-registers
+  // on its next CLI use — so the UI offers no confirmation step either.
+  app.delete("/api/projects/:slug", (c) => {
+    const slug = c.req.param("slug");
+    if (!unregisterProject(slug, options.registryFile)) {
+      return c.json({ error: `no registered project "${slug}"` }, 404);
+    }
+    closeInstance(slug);
+    return c.body(null, 204);
   });
 
   // Project traffic routes into that project's own server instance; everything

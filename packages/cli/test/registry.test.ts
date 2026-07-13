@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { readRegistry, registerProject, slugify } from "../src/registry.js";
+import { readRegistry, registerProject, slugify, unregisterProject } from "../src/registry.js";
 
 let base: string;
 let file: string;
@@ -75,6 +75,24 @@ describe("registerProject", () => {
     const root = makeProject("epsilon");
     expect(() => registerProject(root, file)).not.toThrow();
     expect(readRegistry(file).projects.map((p) => p.path)).toEqual([root]);
+  });
+});
+
+describe("unregisterProject", () => {
+  it("forgets the entry but leaves the project's .kalamu data alone", () => {
+    const root = makeProject("zeta");
+    registerProject(root, file);
+    expect(unregisterProject("zeta", file)).toBe(true);
+    expect(readRegistry(file).projects).toEqual([]);
+    // Re-registration works because nothing on disk was touched.
+    registerProject(root, file);
+    expect(readRegistry(file).projects.map((p) => p.slug)).toEqual(["zeta"]);
+  });
+
+  it("returns false for an unknown slug", () => {
+    registerProject(makeProject("eta"), file);
+    expect(unregisterProject("nope", file)).toBe(false);
+    expect(readRegistry(file).projects).toHaveLength(1);
   });
 });
 

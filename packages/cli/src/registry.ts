@@ -84,11 +84,33 @@ export function registerProject(root: string, file = defaultRegistryFile()): voi
       for (let n = 2; taken.has(slug); n++) slug = `${base}-${n}`;
       registry.projects.push({ slug, path: root, registeredAt: now, lastSeenAt: now });
     }
-    mkdirSync(dirname(file), { recursive: true });
-    const temp = `${file}.${process.pid}.tmp`;
-    writeFileSync(temp, `${JSON.stringify(registry, null, 2)}\n`, "utf8");
-    renameSync(temp, file);
+    writeRegistry(registry, file);
   } catch {
     // registry failures degrade the hub, never the command that triggered them
   }
+}
+
+/**
+ * Remove the project with `slug` from the registry ("forget", SPEC "Hub").
+ * The project's .kalamu/ data is untouched, and the next kalamu command run
+ * inside it re-registers it. Returns false — never throws — when the slug is
+ * unknown or the registry could not be written.
+ */
+export function unregisterProject(slug: string, file = defaultRegistryFile()): boolean {
+  try {
+    const registry = readRegistry(file);
+    const remaining = registry.projects.filter((p) => p.slug !== slug);
+    if (remaining.length === registry.projects.length) return false;
+    writeRegistry({ version: 1, projects: remaining }, file);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function writeRegistry(registry: Registry, file: string): void {
+  mkdirSync(dirname(file), { recursive: true });
+  const temp = `${file}.${process.pid}.tmp`;
+  writeFileSync(temp, `${JSON.stringify(registry, null, 2)}\n`, "utf8");
+  renameSync(temp, file);
 }

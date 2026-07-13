@@ -1609,6 +1609,7 @@ Routes:
 
 ```http
 GET /api/projects                    (registered projects: slug, display name, path, open-task count)
+DELETE /api/projects/:slug           (forget: drop the registry entry, tear down any live instance; 204/404)
 ALL /p/:slug/api/*                   (routed into that project's server instance)
 GET /p/:slug/assets/*                (same)
 GET /                                (hub UI: project sidebar + outline pane)
@@ -1618,6 +1619,7 @@ GET /p/:slug                         (deep link, sidebar pre-selected)
 Behaviour:
 
 * Per-project server instances are the existing `createServer()` — created lazily on first request for a slug, torn down after an idle period so the hub doesn't hold file watchers for dormant projects.
+* Removing a project from the sidebar is a **forget**, consistent with the registry being plumbing: the entry is dropped, the project's `.kalamu/` data is untouched, and the next kalamu command run inside the project re-registers it. Because it is non-destructive, the UI's per-entry remove affordance asks for no confirmation.
 * SSE live reload, mtime-checked atomic writes, and undo work unchanged per project; hub, standalone `kalamu open` servers, and CLI agents can all write concurrently because every writer already does mtime-checked atomic writes.
 * `kalamu hub install` writes a launchd user agent (macOS first; systemd user unit later) so the hub is always up and `http://localhost:4400` becomes a permanent bookmark — the terminal disappears from the human workflow entirely.
 

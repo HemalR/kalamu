@@ -29,6 +29,18 @@
       });
     })
     .catch(() => {});
+
+  /** Non-destructive: deregisters the project; it re-registers on next CLI use. */
+  async function removeProject(slug: string): Promise<void> {
+    try {
+      const response = await fetch(`/api/projects/${slug}`, { method: "DELETE" });
+      if (!response.ok || projects === null) return;
+      projects = projects.filter((project) => project.slug !== slug);
+      if (slug === activeSlug) location.href = "/";
+    } catch {
+      // Failures leave the entry in place, same as the list fetch.
+    }
+  }
 </script>
 
 {#if projects !== null}
@@ -48,6 +60,12 @@
               <span class="count">{project.openTasks}</span>
             {/if}
           </a>
+          <button
+            class="remove"
+            aria-label={`Remove ${project.name} from sidebar`}
+            title="Remove from sidebar (project data is untouched)"
+            onclick={() => removeProject(project.slug)}
+          >×</button>
         </li>
       {/each}
     </ul>
@@ -81,6 +99,11 @@
     list-style: none;
   }
 
+  /* Hover target for the row: anchor and remove button are siblings. */
+  li {
+    position: relative;
+  }
+
   a {
     display: flex;
     align-items: center;
@@ -91,7 +114,8 @@
     color: var(--muted);
     text-decoration: none;
   }
-  a:hover {
+  /* li:hover (not a:hover) so the row stays lit while pointing at the ×. */
+  li:hover a {
     background: var(--guide);
     color: var(--fg);
   }
@@ -117,5 +141,33 @@
     border-radius: 999px;
     color: var(--muted);
     background: var(--guide);
+  }
+  /* The × replaces the count while it's showing. */
+  li:hover .count,
+  li:has(.remove:focus-visible) .count {
+    visibility: hidden;
+  }
+
+  .remove {
+    position: absolute;
+    top: 50%;
+    right: 6px;
+    transform: translateY(-50%);
+    padding: 1px 6px;
+    border: none;
+    border-radius: 6px;
+    background: none;
+    font-size: 14px;
+    line-height: 1.2;
+    color: var(--muted);
+    cursor: pointer;
+    opacity: 0;
+  }
+  li:hover .remove,
+  .remove:focus-visible {
+    opacity: 1;
+  }
+  .remove:hover {
+    color: var(--fg);
   }
 </style>
