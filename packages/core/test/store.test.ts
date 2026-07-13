@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -47,6 +47,13 @@ describe("findRoot", () => {
     expect(findRoot(root)).toBe(root);
     expect(findRoot(nested)).toBe(root); // nested dir need not exist on disk to resolve upward
     expect(findRoot(tmpdir())).toBeNull();
+  });
+
+  it("ignores a .kalamu directory without an outline (e.g. the hub's ~/.kalamu config dir)", () => {
+    mkdirSync(join(root, ".kalamu"), { recursive: true });
+    writeFileSync(join(root, ".kalamu", "projects.json"), "{}");
+    expect(findRoot(root)).toBeNull();
+    expect(findRoot(join(root, "somewhere", "deep"))).toBeNull();
   });
 });
 

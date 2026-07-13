@@ -36,12 +36,17 @@ export function pathsFor(root: string): KalamuPaths {
   };
 }
 
-/** Walk up from cwd to the nearest directory containing .kalamu/. */
+/**
+ * Walk up from cwd to the nearest project root. A project is a directory whose
+ * .kalamu/ contains outline.jsonl — the dir alone doesn't count, because the
+ * machine-global ~/.kalamu (hub registry, logs) would otherwise make the home
+ * directory masquerade as a project for everything beneath it.
+ */
 export function findRoot(cwd: string): string | null {
   let current = cwd;
   for (;;) {
     try {
-      if (statSync(join(current, KALAMU_DIR)).isDirectory()) return current;
+      if (statSync(join(current, KALAMU_DIR, OUTLINE_FILE)).isFile()) return current;
     } catch {
       // keep walking
     }

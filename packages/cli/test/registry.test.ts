@@ -88,6 +88,15 @@ describe("readRegistry", () => {
     expect(readRegistry(file).projects.map((p) => p.path)).toEqual([keep]);
   });
 
+  it("prunes entries whose .kalamu remains but has no outline (config dirs are not projects)", () => {
+    const keep = makeProject("keep");
+    const husk = makeProject("husk");
+    registerProject(keep, file);
+    registerProject(husk, file);
+    rmSync(join(husk, ".kalamu", "outline.jsonl"));
+    expect(readRegistry(file).projects.map((p) => p.path)).toEqual([keep]);
+  });
+
   it("returns an empty registry for a missing file", () => {
     expect(readRegistry(join(base, "nope.json"))).toEqual({ version: 1, projects: [] });
   });

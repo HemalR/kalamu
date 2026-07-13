@@ -1,5 +1,5 @@
 import { OperationError } from "@kalamu/core";
-import { ConflictError, StoreError } from "@kalamu/core/store";
+import { ConflictError, findRoot, StoreError } from "@kalamu/core/store";
 import { Command } from "commander";
 import * as commands from "./commands.js";
 import { CliError, type CommandResult } from "./context.js";
@@ -48,6 +48,38 @@ function run(fn: () => CommandResult, options: { format?: string }): CommandResu
   }
 }
 
+interface InitOptions {
+  tour?: boolean;
+  skill?: boolean;
+  agentDocs?: boolean;
+  format?: string;
+}
+
+/**
+ * `init` plus its interactive offers (tour, agent skill) — shared by the init
+ * command and `open`'s fresh-directory bootstrap. Returns false when init
+ * itself failed. Humans get offers; agents and scripts (no TTY, JSON mode, or
+ * --no-*) never block.
+ */
+async function initWithOffers(opts: InitOptions): Promise<boolean> {
+  const result = run(() => commands.init(process.cwd(), { agentDocs: opts.agentDocs }), opts);
+  if (!result || process.exitCode) return false;
+  const interactive = isInteractive() && opts.format !== "json";
+  const fresh = (result.json as { created: boolean }).created;
+  if (opts.tour === true) {
+    run(() => commands.tour(process.cwd()), opts);
+  } else if (opts.tour !== false && interactive && fresh) {
+    if (await askYesNo("Seed a two-minute tour outline to learn the UI?", true)) {
+      run(() => commands.tour(process.cwd()), opts);
+    }
+  } else if (opts.tour === undefined && !interactive && fresh && opts.format !== "json") {
+    console.log("\nNew to Kalamu? `kalamu init --tour` seeds a two-minute tour, then `kalamu open`.");
+  }
+  if (opts.skill === true) installSkill();
+  else if (opts.skill !== false && interactive) await offerSkillInstall();
+  return true;
+}
+
 program
   .command("init")
   .description("initialise Kalamu in the current directory")
@@ -59,36 +91,31 @@ program
   .option("--open", "open the web UI when done (default when run interactively)")
   .option("--no-open", "do not open the web UI")
   .option("--format <format>", "output format (text|json)")
-  .action(async (opts: { tour?: boolean; skill?: boolean; agentDocs?: boolean; open?: boolean; format?: string }) => {
-    const result = run(() => commands.init(process.cwd(), { agentDocs: opts.agentDocs }), opts);
-    if (!result || process.exitCode) return;
-    // Humans get offers; agents and scripts (no TTY, JSON mode, or --no-*) never block.
-    const interactive = isInteractive() && opts.format !== "json";
-    const fresh = (result.json as { created: boolean }).created;
-    if (opts.tour === true) {
-      run(() => commands.tour(process.cwd()), opts);
-    } else if (opts.tour !== false && interactive && fresh) {
-      if (await askYesNo("Seed a two-minute tour outline to learn the UI?", true)) {
-        run(() => commands.tour(process.cwd()), opts);
-      }
-    } else if (opts.tour === undefined && !interactive && fresh && opts.format !== "json") {
-      console.log("\nNew to Kalamu? `kalamu init --tour` seeds a two-minute tour, then `kalamu open`.");
-    }
-    if (opts.skill === true) installSkill();
-    else if (opts.skill !== false && interactive) await offerSkillInstall();
+  .action(async (opts: InitOptions & { open?: boolean }) => {
+    if (!(await initWithOffers(opts))) return;
     // Humans land in the UI; agents and scripts must never end up holding a server.
-    if (opts.open === true || (opts.open !== false && interactive)) {
+    if (opts.open === true || (opts.open !== false && isInteractive() && opts.format !== "json")) {
       await open(process.cwd(), {});
     }
   });
 
 program
   .command("open")
-  .description("start the local server and open the browser UI")
+  .description("start the local server and open the browser UI (offers to initialise a fresh directory)")
   .option("--port <port>", "port to listen on (default 4242, auto-increments when taken)")
   .option("--no-browser", "do not open a browser")
   .action(async (opts: { port?: string; browser?: boolean }) => {
     try {
+      // Fresh directory + a human at the keyboard: confirm before initialising
+      // (the path in the prompt catches wrong-directory accidents), then give
+      // them init's full onboarding. Non-TTY keeps open()'s silent ensure.
+      if (findRoot(process.cwd()) === null && isInteractive()) {
+        if (!(await askYesNo(`No Kalamu project here — initialise ${process.cwd()}?`, true))) {
+          console.log('Nothing initialised. Run "kalamu open" from your project, or "kalamu init" to set one up.');
+          return;
+        }
+        if (!(await initWithOffers({}))) return;
+      }
       await open(process.cwd(), opts);
     } catch (err) {
       console.error(`kalamu: ${(err as Error).message}`);

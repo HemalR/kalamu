@@ -5,7 +5,7 @@
  * sidebar list, and a broken registry must never break the command that
  * triggered it.
  */
-import { KALAMU_DIR } from "@kalamu/core/store";
+import { KALAMU_DIR, OUTLINE_FILE } from "@kalamu/core/store";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -52,7 +52,8 @@ export function readRegistry(file = defaultRegistryFile()): Registry {
     if (entry === null || typeof entry !== "object") continue;
     const e = entry as Record<string, unknown>;
     if (typeof e.slug !== "string" || typeof e.path !== "string") continue;
-    if (!existsSync(join(e.path, KALAMU_DIR))) continue;
+    // Same project test as findRoot: the outline file, not just the directory.
+    if (!existsSync(join(e.path, KALAMU_DIR, OUTLINE_FILE))) continue;
     projects.push({
       slug: e.slug,
       path: e.path,

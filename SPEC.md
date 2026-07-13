@@ -597,7 +597,13 @@ kalamu open --file .kalamu/outline.jsonl
 Expected behaviour:
 
 1. Detect project root or use current working directory.
-2. Ensure `.kalamu/outline.jsonl` exists.
+2. Ensure `.kalamu/outline.jsonl` exists. (Amended 2026-07-13.) When no
+   `.kalamu/` exists anywhere up the tree and the run is interactive (TTY),
+   `open` first asks "No Kalamu project here — initialise `<cwd>`? [Y/n]" —
+   showing the path catches wrong-directory accidents — and on yes runs the
+   full `init` flow (tour offer, agent docs, skill offer) before serving; on
+   no it exits without creating anything. Non-TTY runs keep the silent
+   ensure-exists behaviour and are never prompted.
 3. Start local HTTP server on `127.0.0.1`.
 4. Serve prebuilt web app assets.
 5. Expose API endpoints for reading/writing nodes.
@@ -1575,7 +1581,7 @@ Shape:
 Rules:
 
 * Every CLI command that resolves a project (`init`, `open`, `add`, `next`, …) upserts that project's entry — registration is a side effect of use, never a setup step. Existing entry: touch `lastSeenAt` only.
-* Entries whose `path` no longer contains a `.kalamu/` directory are pruned silently on read.
+* Entries whose `path` no longer contains `.kalamu/outline.jsonl` are pruned silently on read. The outline file — not the bare directory — is the project test everywhere (`findRoot` included), so the machine-global `~/.kalamu` (registry, hub log) can never make the home directory masquerade as a project.
 * Writes use the same temp-file + atomic-rename pattern as everything else. Registry failures must never break the command that triggered them — a broken registry degrades the hub, not the CLI.
 * The registry is plumbing, not data: deleting it loses nothing except the sidebar list (and slug assignments), which repopulates on use.
 
