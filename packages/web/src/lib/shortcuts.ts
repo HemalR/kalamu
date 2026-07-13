@@ -19,6 +19,8 @@ export interface Shortcut {
   /** Display label; "Mod" and "Alt" are replaced per platform when rendered. */
   keys: string;
   does: string;
+  /** Only shown/active when the app is served under the hub (/p/<slug>). */
+  hubOnly?: boolean;
 }
 
 export function matches(event: KeyboardEvent, shortcut: Shortcut): boolean {
@@ -51,6 +53,7 @@ export const SHORTCUTS = {
   undo: { combo: { key: "z", mod: true }, keys: "Mod+Z", does: "Undo" },
   redo: { combo: { key: "z", mod: true, shift: true }, keys: "Mod+Shift+Z", does: "Redo" },
   palette: { combo: { key: "k", mod: true }, keys: "Mod+K", does: "Open the command palette (priority, labels, assign, done, view sheets)" },
+  openProject: { keys: "Mod+Shift+1…9", does: "Open the nth sidebar project", hubOnly: true },
   help: { combo: { key: "/", mod: true }, keys: "Mod+/", does: "Show this cheat sheet" },
   helpQuestion: { keys: "?", does: "Show this cheat sheet (when not editing)" },
   escape: { keys: "Esc", does: "Close this cheat sheet; clear the active tag filter (when not editing)" },

@@ -125,16 +125,27 @@ program
 
 program
   .command("hub [action]")
-  .description("run the multi-project hub (all registered projects, one UI); actions: install, uninstall, restart")
+  .description("run the multi-project hub (all registered projects, one UI); actions: install, uninstall")
   .option("--port <port>", "port to listen on (default 4400)")
   .option("--no-browser", "do not open a browser")
   .action(async (action: string | undefined, opts: { port?: string; browser?: boolean }) => {
     try {
       if (action === "install") installHubAgent();
       else if (action === "uninstall") uninstallHubAgent();
-      else if (action === "restart") await restartHub();
       else if (action === undefined) await runHub(opts);
-      else throw new Error(`unknown hub action "${action}" (expected install, uninstall, or restart)`);
+      else throw new Error(`unknown hub action "${action}" (expected install or uninstall)`);
+    } catch (err) {
+      console.error(`kalamu: ${(err as Error).message}`);
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command("restart")
+  .description("restart the installed hub (picks up updated code)")
+  .action(async () => {
+    try {
+      await restartHub();
     } catch (err) {
       console.error(`kalamu: ${(err as Error).message}`);
       process.exitCode = 1;

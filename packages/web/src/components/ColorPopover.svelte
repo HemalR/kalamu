@@ -2,20 +2,23 @@
   import { TAG_PALETTE } from "@kalamu/core";
 
   interface Props {
-    /** Lowercase tag name (for the filter action label). */
-    tag: string;
-    /** The tag's current colour (override or hash-derived). */
+    /** Lowercase tag name (for the filter action label); omit with onfilter
+        for a plain colour picker. */
+    tag?: string;
+    /** The current colour (override or hash-derived). */
     color: string;
     /** A palette hex, or null for "default" (clears the override). */
     onpick: (color: string | null) => void;
-    onfilter: () => void;
+    onfilter?: () => void;
   }
 
   let { tag, color, onpick, onfilter }: Props = $props();
 </script>
 
-<div class="popover" role="dialog" aria-label="Tag actions">
-  <button class="filter" onclick={onfilter}>Filter by <strong>#{tag}</strong></button>
+<div class="popover" role="dialog" aria-label={onfilter ? "Tag actions" : "Choose colour"}>
+  {#if tag !== undefined && onfilter !== undefined}
+    <button class="filter" onclick={onfilter}>Filter by <strong>#{tag}</strong></button>
+  {/if}
   <div class="swatches">
     {#each TAG_PALETTE as swatch (swatch)}
       <button

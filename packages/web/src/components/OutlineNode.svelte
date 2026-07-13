@@ -10,6 +10,7 @@
     placeCaret,
     placeCaretAtPoint,
     placeCaretAtX,
+    selectionOffsets,
     type CaretPosition,
   } from "../lib/caret";
   import { api } from "../lib/api";
@@ -441,8 +442,23 @@
         store.cycleKind(node.id);
         return;
       }
-      commit();
-      store.createAfter(node.id);
+      const sel = el ? selectionOffsets(el) : null;
+      // A collapsed caret at the very end (or an unknowable selection) keeps
+      // the old behaviour: empty sibling below, children stay here.
+      if (sel === null || (sel.start === sel.end && sel.end >= draft.length)) {
+        commit();
+        store.createAfter(node.id);
+        return;
+      }
+      // Split at the caret (a real selection is deleted by the split). The
+      // children follow the after-text to the new node — it's the
+      // continuation. Set draft to the before-half FIRST: focusing the new
+      // node blurs this editable, and the blur-commit must be a no-op, not a
+      // commit of the full pre-split text.
+      const before = draft.slice(0, sel.start);
+      const after = draft.slice(sel.end);
+      draft = before;
+      store.splitNode(node.id, before, after);
       return;
     }
     if (matches(event, S.indent) || matches(event, S.outdent)) {
@@ -489,6 +505,14 @@
       if (draft === "") {
         event.preventDefault();
         store.deleteEmpty(node.id);
+        return;
+      }
+      if (atStart) {
+        // Fold into the node above — the inverse of Enter's split. The merge
+        // deletes this node, so the blur-commit when focus moves to the
+        // target is a no-op (commitText ignores unknown ids).
+        event.preventDefault();
+        store.mergeIntoPrevious(node.id, draft);
       }
       return;
     }
@@ -764,7 +788,7 @@
   </div>
 
   {#if hasChildren && !isCollapsed}
-    <div class="children">
+    <div class={["children", { wide: node.kind !== "bullet" }]}>
       {#each children as child (child.id)}
         <Self node={child} {store} />
       {/each}
@@ -1058,5 +1082,11 @@
     margin-left: 8px;
     padding-left: 21px;
     border-left: 1px solid var(--guide);
+  }
+  /* Task/discussion rows start their text after the prio column (27px +
+     3px margin); indent children the same 30px so their bullets sit under
+     the parent's text, as they do under bullet parents. */
+  .children.wide {
+    padding-left: 51px;
   }
 </style>

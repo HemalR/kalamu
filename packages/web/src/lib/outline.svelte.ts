@@ -300,6 +300,82 @@ export class OutlineStore {
     if (applied) this.revealNewNode(localId);
   }
 
+  /**
+   * Enter mid-text: `before` stays in the node, a new sibling right after it
+   * takes `after` (inheriting only the kind) plus ALL of the node's children —
+   * the new node is the continuation. One mutate call, so one undo step.
+   */
+  splitNode(id: string, before: string, after: string): void {
+    const node = this.tree.byId.get(id);
+    if (!node) return;
+    // mutate runs `local` synchronously, so the tree snapshot is still current.
+    const childIds = (this.tree.children.get(id) ?? []).map((child) => child.id);
+    let localId = "";
+    let next: KalamuNode[] = [];
+    const applied = this.mutate(
+      (nodes) => {
+        const patch = commitPatch(node, before);
+        const trimmed = patch ? updateNode(nodes, id, patch).nodes : nodes;
+        const added = addNode(trimmed, {
+          parentId: node.parentId ?? undefined,
+          kind: node.kind,
+          text: after,
+          afterId: id,
+        });
+        localId = added.node.id;
+        next = added.nodes;
+        // Sequential appends preserve the children's order under the new node.
+        for (const childId of childIds) next = moveNode(next, childId, { parentId: localId }).nodes;
+        return next;
+      },
+      // Whole-outline replace (like undo/clean): the server keeps client ids,
+      // so the new node needs no adoption.
+      () => api.replaceNodes(this.serverize(next)),
+    );
+    if (applied) this.revealNewNode(localId);
+  }
+
+  /**
+   * Backspace at the start of a non-empty node: fold it into the node
+   * rendered directly above (the previous visible id) — the inverse of
+   * splitNode. The merged text is target text + draft with no separator, the
+   * node's children become the target's FIRST children (order preserved, so
+   * a first child merging into its parent keeps document order), and the
+   * node itself is deleted. One mutate call, so one undo step.
+   */
+  mergeIntoPrevious(id: string, draft: string): void {
+    const node = this.tree.byId.get(id);
+    if (!node) return;
+    const order = this.visibleIds;
+    const target = this.tree.byId.get(order[order.indexOf(id) - 1] ?? "");
+    if (!target) return; // first visible node: nothing above to merge into
+    // mutate runs `local` synchronously, so the tree snapshot is still current.
+    const childIds = (this.tree.children.get(id) ?? []).map((child) => child.id);
+    // May be the merging node itself (a first child folding into its parent);
+    // it still anchors the inserts and is deleted afterwards.
+    const anchorId = (this.tree.children.get(target.id) ?? [])[0]?.id;
+    const junction = target.text.length;
+    let next: KalamuNode[] = [];
+    const applied = this.mutate(
+      (nodes) => {
+        const patch = commitPatch(target, target.text + draft);
+        let merged: readonly KalamuNode[] = patch ? updateNode(nodes, target.id, patch).nodes : nodes;
+        // Sequential inserts before a fixed anchor preserve the children's order.
+        for (const childId of childIds) {
+          merged = moveNode(merged, childId, { parentId: target.id, ...(anchorId === undefined ? {} : { beforeId: anchorId }) }).nodes;
+        }
+        next = deleteNode(merged, id).nodes;
+        return next;
+      },
+      // Whole-outline replace (like splitNode): the server keeps client ids.
+      () => api.replaceNodes(this.serverize(next)),
+    );
+    if (!applied) return;
+    // Expand the target so adopted children don't vanish into a fold.
+    if (childIds.length > 0 && this.collapsed.delete(target.id)) this.persistUiStateSoon();
+    void this.focus(target.id, junction);
+  }
+
   /** New empty bullet appended at the top level; focuses it. */
   createRoot(): void {
     let localId = "";

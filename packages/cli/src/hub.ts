@@ -12,7 +12,15 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { HUB_LAUNCHD_LABEL, hubLaunchAgentPlist, openBrowser, portIsFree, webAssetsDir } from "./launch.js";
-import { readRegistry, renameProject, unregisterProject, type RegistryEntry } from "./registry.js";
+import {
+  isHexColor,
+  projectColor,
+  readRegistry,
+  recolorProject,
+  renameProject,
+  unregisterProject,
+  type RegistryEntry,
+} from "./registry.js";
 import { createServer, projectName, webAppHandler, type KalamuServer } from "./server.js";
 
 export const HUB_PORT = 4400;
@@ -90,15 +98,17 @@ export function createHubServer(assetsDir: string | null, options: HubOptions = 
       slug: entry.slug,
       name: entry.name ?? projectName(entry.path),
       path: entry.path,
+      color: projectColor(entry),
       openTasks: countOpenTasks(entry),
       lastSeenAt: entry.lastSeenAt,
     }));
     return c.json({ projects });
   });
 
-  // Rename a project's display name (slug — route identity — never changes).
-  // A blank name clears the override, reverting to the derived name; the
-  // response carries the effective name so the UI can show the reverted value.
+  // Update a project's display name and/or theme colour (slug — route
+  // identity — never changes). A blank value clears that override, reverting
+  // to the derived name/colour; the response carries the effective values so
+  // the UI can show what a clear reverted to.
   app.patch("/api/projects/:slug", async (c) => {
     const slug = c.req.param("slug");
     let body: unknown;
@@ -107,11 +117,23 @@ export function createHubServer(assetsDir: string | null, options: HubOptions = 
     } catch {
       return c.json({ error: "invalid JSON body" }, 400);
     }
-    const name = body !== null && typeof body === "object" ? (body as { name?: unknown }).name : undefined;
-    if (typeof name !== "string") return c.json({ error: `expected {"name": string}` }, 400);
-    const effective = renameProject(slug, name, options.registryFile);
-    if (effective === null) return c.json({ error: `no registered project "${slug}"` }, 404);
-    return c.json({ name: effective });
+    const { name, color } = body !== null && typeof body === "object" ? (body as Record<string, unknown>) : {};
+    if (name === undefined && color === undefined) {
+      return c.json({ error: `expected {"name"?: string, "color"?: string}` }, 400);
+    }
+    if (name !== undefined && typeof name !== "string") return c.json({ error: `expected {"name": string}` }, 400);
+    if (color !== undefined && (typeof color !== "string" || (color.trim() !== "" && !isHexColor(color.trim())))) {
+      return c.json({ error: `expected {"color": "#rrggbb"} (blank clears the override)` }, 400);
+    }
+    if (name !== undefined && renameProject(slug, name, options.registryFile) === null) {
+      return c.json({ error: `no registered project "${slug}"` }, 404);
+    }
+    if (color !== undefined && recolorProject(slug, color, options.registryFile) === null) {
+      return c.json({ error: `no registered project "${slug}"` }, 404);
+    }
+    const entry = readRegistry(options.registryFile).projects.find((p) => p.slug === slug);
+    if (!entry) return c.json({ error: `no registered project "${slug}"` }, 404);
+    return c.json({ name: entry.name ?? projectName(entry.path), color: projectColor(entry) });
   });
 
   // Forget a project: drop the registry entry and tear down any live instance.

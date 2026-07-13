@@ -5,6 +5,7 @@
  * sidebar list, and a broken registry must never break the command that
  * triggered it.
  */
+import { tagColor } from "@kalamu/core";
 import { KALAMU_DIR, OUTLINE_FILE } from "@kalamu/core/store";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -18,6 +19,8 @@ export interface RegistryEntry {
   lastSeenAt: string;
   /** Display-name override set by renaming in the hub; absent = derive via projectName(). */
   name?: string;
+  /** Theme-colour override set in the hub sidebar; absent = derive via projectColor(). */
+  color?: string;
 }
 
 export interface Registry {
@@ -38,6 +41,20 @@ export function slugify(name: string): string {
     .replace(/[^a-z0-9-]+/g, "-")
     .replace(/^-+|-+$/g, "");
   return slug || "project";
+}
+
+/** #rrggbb only — what the palette swatches produce. */
+export function isHexColor(value: string): boolean {
+  return /^#[0-9a-f]{6}$/i.test(value);
+}
+
+/**
+ * A project's theme colour: the sidebar-set override, else the slug hashed
+ * into the shared palette — automatic, stable, and stored nowhere, the same
+ * scheme as tag colours (SPEC key decision 7).
+ */
+export function projectColor(entry: Pick<RegistryEntry, "slug" | "color">): string {
+  return entry.color ?? tagColor(entry.slug);
 }
 
 /** Read the registry, dropping entries whose project no longer has a .kalamu/ dir. */
@@ -62,6 +79,7 @@ export function readRegistry(file = defaultRegistryFile()): Registry {
       registeredAt: typeof e.registeredAt === "string" ? e.registeredAt : "",
       lastSeenAt: typeof e.lastSeenAt === "string" ? e.lastSeenAt : "",
       ...(typeof e.name === "string" && e.name.trim() !== "" ? { name: e.name } : {}),
+      ...(typeof e.color === "string" && isHexColor(e.color) ? { color: e.color } : {}),
     });
   }
   return { version: 1, projects };
@@ -127,6 +145,26 @@ export function renameProject(slug: string, name: string, file = defaultRegistry
     else entry.name = trimmed;
     writeRegistry(registry, file);
     return entry.name ?? projectName(entry.path);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Set (or, with a blank colour, clear) the theme-colour override for `slug`
+ * (SPEC "Hub"). Returns the effective colour, or null — never throws — when
+ * the slug is unknown or the registry could not be written.
+ */
+export function recolorProject(slug: string, color: string, file = defaultRegistryFile()): string | null {
+  try {
+    const registry = readRegistry(file);
+    const entry = registry.projects.find((p) => p.slug === slug);
+    if (!entry) return null;
+    const trimmed = color.trim();
+    if (trimmed === "") delete entry.color;
+    else entry.color = trimmed;
+    writeRegistry(registry, file);
+    return projectColor(entry);
   } catch {
     return null;
   }

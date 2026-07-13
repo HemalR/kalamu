@@ -1,3 +1,4 @@
+import { tagColor } from "@kalamu/core";
 import { initKalamu } from "@kalamu/core/store";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -87,7 +88,7 @@ describe("hub", () => {
       body: JSON.stringify({ name: "Alpha App" }),
       headers: { "Content-Type": "application/json" },
     });
-    expect(await res.json()).toEqual({ name: "Alpha App" });
+    expect(await res.json()).toEqual({ name: "Alpha App", color: tagColor("alpha") });
 
     const { projects } = (await (await hub.app.request("/api/projects")).json()) as {
       projects: { slug: string; name: string }[];
@@ -108,7 +109,51 @@ describe("hub", () => {
       body: JSON.stringify({ name: "   " }),
       headers: { "Content-Type": "application/json" },
     });
-    expect(await res.json()).toEqual({ name: "@acme/alpha" });
+    expect(await res.json()).toEqual({ name: "@acme/alpha", color: tagColor("alpha") });
+  });
+
+  it("assigns every project a slug-derived theme colour", async () => {
+    const { projects } = (await (await hub.app.request("/api/projects")).json()) as {
+      projects: { slug: string; color: string }[];
+    };
+    expect(projects.find((p) => p.slug === "alpha")?.color).toBe(tagColor("alpha"));
+    expect(projects.find((p) => p.slug === "beta")?.color).toBe(tagColor("beta"));
+  });
+
+  it("sets a theme colour on PATCH and reverts to the derived one on a blank colour", async () => {
+    const set = await hub.app.request("/api/projects/alpha", {
+      method: "PATCH",
+      body: JSON.stringify({ color: "#0090FF" }),
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(await set.json()).toEqual({ name: "@acme/alpha", color: "#0090FF" });
+
+    const { projects } = (await (await hub.app.request("/api/projects")).json()) as {
+      projects: { slug: string; color: string }[];
+    };
+    expect(projects.find((p) => p.slug === "alpha")?.color).toBe("#0090FF");
+
+    const cleared = await hub.app.request("/api/projects/alpha", {
+      method: "PATCH",
+      body: JSON.stringify({ color: "" }),
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(await cleared.json()).toEqual({ name: "@acme/alpha", color: tagColor("alpha") });
+  });
+
+  it("rejects a malformed colour and a PATCH with neither field", async () => {
+    const bad = await hub.app.request("/api/projects/alpha", {
+      method: "PATCH",
+      body: JSON.stringify({ color: "blue" }),
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(bad.status).toBe(400);
+    const empty = await hub.app.request("/api/projects/alpha", {
+      method: "PATCH",
+      body: JSON.stringify({}),
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(empty.status).toBe(400);
   });
 
   it("rejects a PATCH without a string name, and 404s an unknown slug", async () => {

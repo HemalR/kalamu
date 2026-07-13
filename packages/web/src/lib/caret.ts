@@ -37,6 +37,21 @@ export function placeCaret(el: HTMLElement, position: CaretPosition): void {
   selection.addRange(range);
 }
 
+/** Character offsets of the current selection's start/end within `el`'s text (equal when collapsed). */
+export function selectionOffsets(el: HTMLElement): { start: number; end: number } | null {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) return null;
+  const range = selection.getRangeAt(0);
+  if (!el.contains(range.startContainer) || !el.contains(range.endContainer)) return null;
+  const probe = range.cloneRange();
+  probe.selectNodeContents(el);
+  probe.setEnd(range.startContainer, range.startOffset);
+  const start = probe.toString().length;
+  probe.selectNodeContents(el);
+  probe.setEnd(range.endContainer, range.endOffset);
+  return { start, end: probe.toString().length };
+}
+
 /** Character offset of the caret within `el`'s text. */
 export function caretOffset(el: HTMLElement): number {
   const selection = window.getSelection();

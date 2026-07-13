@@ -187,6 +187,14 @@
     min-width: 0;
   }
 
+  /* Below the sidebar breakpoint a fixed toggle (Sidebar.svelte) sits in
+     the top-left; keep the wordmark clear of it at narrow widths. */
+  @media (max-width: 999.98px) {
+    .hub main {
+      padding-left: 56px;
+    }
+  }
+
   main {
     max-width: 760px;
     margin: 0 auto;

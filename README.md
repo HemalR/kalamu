@@ -53,7 +53,7 @@ Like it? Make it permanent (macOS):
 
 ```bash
 kalamu hub install     # start the hub at login; uninstall fully reverses it
-kalamu hub restart     # restart the installed hub (e.g. after updating kalamu)
+kalamu restart         # restart the installed hub (e.g. after updating kalamu)
 ```
 
 `install` does exactly one thing: writes a human-readable launchd file to `~/Library/LaunchAgents/dev.kalamu.hub.plist` so the hub starts at login and restarts if it crashes. It stays bound to `127.0.0.1` — nothing ever leaves your machine — and logs to `~/.kalamu/hub.log`.

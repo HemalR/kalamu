@@ -1606,14 +1606,14 @@ kalamu hub --port 4500
 kalamu hub --no-browser
 kalamu hub install        # launchd user agent (macOS): start at login
 kalamu hub uninstall
-kalamu hub restart        # restart the installed hub (picks up updated code)
+kalamu restart            # restart the installed hub (picks up updated code)
 ```
 
 Routes:
 
 ```http
-GET /api/projects                    (registered projects: slug, display name, path, open-task count)
-PATCH /api/projects/:slug            (rename: set/clear the display-name override; returns the effective name; 200/400/404)
+GET /api/projects                    (registered projects: slug, display name, path, theme colour, open-task count)
+PATCH /api/projects/:slug            (set/clear the display-name and/or theme-colour override; returns the effective values; 200/400/404)
 DELETE /api/projects/:slug           (forget: drop the registry entry, tear down any live instance; 204/404)
 ALL /p/:slug/api/*                   (routed into that project's server instance)
 GET /p/:slug/assets/*                (same)
@@ -1624,6 +1624,7 @@ GET /p/:slug                         (deep link, sidebar pre-selected)
 Behaviour:
 
 * Per-project server instances are the existing `createServer()` — created lazily on first request for a slug, torn down after an idle period so the hub doesn't hold file watchers for dormant projects.
+* Every project has a **theme colour** so multiple Kalamus are tellable apart at a glance: the sidebar is tinted with the active project's colour and each row carries a swatch. Like tag colours (key decision 7), the colour is the slug hashed into the shared palette — automatic, stable, stored nowhere — until a swatch pick stores an override in the registry (`PATCH {"color": "#rrggbb"}`; blank clears back to derived).
 * Removing a project from the sidebar is a **forget**, consistent with the registry being plumbing: the entry is dropped, the project's `.kalamu/` data is untouched, and the next kalamu command run inside the project re-registers it. Because it is non-destructive, the UI's per-entry remove affordance asks for no confirmation.
 * SSE live reload, mtime-checked atomic writes, and undo work unchanged per project; hub, standalone `kalamu open` servers, and CLI agents can all write concurrently because every writer already does mtime-checked atomic writes.
 * `kalamu hub install` writes a launchd user agent (macOS first; systemd user unit later) so the hub is always up and `http://localhost:4400` becomes a permanent bookmark — the terminal disappears from the human workflow entirely.

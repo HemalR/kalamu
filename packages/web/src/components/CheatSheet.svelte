@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { apiBase } from "../lib/api";
   import { SHORTCUTS, TOKEN_HINTS, type Shortcut } from "../lib/shortcuts";
   import Overlay from "./Overlay.svelte";
 
@@ -9,7 +10,8 @@
   let { onclose }: Props = $props();
 
   const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
-  const entries: Shortcut[] = Object.values(SHORTCUTS);
+  // Hub-only shortcuts have no target when standalone (apiBase === "").
+  const entries: Shortcut[] = Object.values(SHORTCUTS).filter((s: Shortcut) => !s.hubOnly || apiBase !== "");
 
   function keysFor(shortcut: Shortcut): string[] {
     return shortcut.keys
