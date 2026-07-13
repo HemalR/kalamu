@@ -541,6 +541,20 @@ and the cheat sheet. Every tour task is `assignee: "human"` AND says in prose th
 demo — agents must never treat tour items as work; `kalamu next` on a
 tour-only outline exits 2.
 
+Interactively (TTY, not JSON mode), a **fresh** `init` in a directory with no
+repo marker — no `.git` (directory or worktree file), `.gitignore`, or
+`package.json` directly in the cwd; deliberately no walk-up, since Kalamu is
+repo-local and an init anywhere but a repo root is suspect — first asks
+"This doesn't look like a code repository — initialise Kalamu in `<cwd>`
+anyway? [y/N]" and stops on no. The default is **no**: when the heuristic
+fires, a wrong-directory accident is the likelier case. Re-init on an existing
+project never asks, and non-TTY runs (agents, scripts — including scaffolds
+where `git init` hasn't happened yet) are never prompted and proceed as before.
+This guard is the only gate on hub registration: registration is a side effect
+of use on an already-initialised project, so guarding `init` (and `open`'s
+bootstrap below) keeps wrong directories out of the hub without the
+registration path ever prompting or failing.
+
 Interactively (TTY, not JSON mode), a fresh `init` ASKS "Seed a two-minute tour
 outline to learn the UI? [Y/n]" instead of requiring the flag; `--tour` forces,
 `--no-tour` suppresses the question. Non-TTY runs (agents, scripts) are never
@@ -603,8 +617,12 @@ Expected behaviour:
    `open` first asks "No Kalamu project here — initialise `<cwd>`? [Y/n]" —
    showing the path catches wrong-directory accidents — and on yes runs the
    full `init` flow (tour offer, agent docs, skill offer) before serving; on
-   no it exits without creating anything. Non-TTY runs keep the silent
-   ensure-exists behaviour and are never prompted.
+   no it exits without creating anything. When the directory additionally has
+   no repo marker (see the `init` guard above), the question becomes "This
+   doesn't look like a code repository — initialise Kalamu in `<cwd>` anyway?
+   [y/N]" with the default flipped to no — one question either way, never two.
+   Non-TTY runs keep the silent ensure-exists behaviour and are never
+   prompted.
 3. Start local HTTP server on `127.0.0.1`.
 4. Serve prebuilt web app assets.
 5. Expose API endpoints for reading/writing nodes.

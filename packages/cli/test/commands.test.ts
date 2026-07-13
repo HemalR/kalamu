@@ -1,9 +1,9 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as commands from "../src/commands.js";
-import { CliError } from "../src/context.js";
+import { CliError, looksLikeRepo } from "../src/context.js";
 
 let cwd: string;
 
@@ -370,5 +370,39 @@ describe("init --tour", () => {
   it("refuses to seed a non-empty outline", () => {
     addTask("real work");
     expect(() => commands.tour(cwd)).toThrow(/fresh, empty outline/);
+  });
+});
+
+describe("looksLikeRepo (init wrong-directory guard)", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "kalamu-repo-"));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("rejects a directory with no repo marker", () => {
+    expect(looksLikeRepo(dir)).toBe(false);
+  });
+
+  it.each([".gitignore", "package.json", ".git"])("accepts a directory containing %s", (marker) => {
+    if (marker === ".git") mkdirSync(join(dir, marker));
+    else writeFileSync(join(dir, marker), "");
+    expect(looksLikeRepo(dir)).toBe(true);
+  });
+
+  it("accepts a .git file (worktrees/submodules)", () => {
+    writeFileSync(join(dir, ".git"), "gitdir: /elsewhere");
+    expect(looksLikeRepo(dir)).toBe(true);
+  });
+
+  it("does not walk up — a repo subdirectory is still suspect", () => {
+    writeFileSync(join(dir, ".gitignore"), "");
+    const sub = join(dir, "nested");
+    mkdirSync(sub);
+    expect(looksLikeRepo(sub)).toBe(false);
   });
 });

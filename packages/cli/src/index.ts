@@ -3,7 +3,7 @@ import { ConflictError, findRoot, StoreError } from "@kalamu/core/store";
 import { Command } from "commander";
 import * as commands from "./commands.js";
 import { readConfig, updateCheckEnabled, writeConfig } from "./config.js";
-import { CliError, type CommandResult } from "./context.js";
+import { CliError, looksLikeRepo, type CommandResult } from "./context.js";
 import { installHubAgent, restartHub, runHub, uninstallHubAgent } from "./hub.js";
 import { open } from "./open.js";
 import { askYesNo, installSkill, isInteractive, offerSkillInstall } from "./skill.js";
@@ -58,13 +58,26 @@ interface InitOptions {
 /**
  * `init` plus its interactive offers (tour, agent skill) — shared by the init
  * command and `open`'s fresh-directory bootstrap. Returns false when init
- * itself failed. Humans get offers; agents and scripts (no TTY, JSON mode, or
- * --no-*) never block.
+ * itself failed or the repo guard declined. Humans get offers; agents and
+ * scripts (no TTY, JSON mode, or --no-*) never block.
  */
-async function initWithOffers(opts: InitOptions): Promise<boolean> {
+async function initWithOffers(opts: InitOptions, guard: { skipRepoGuard?: boolean } = {}): Promise<boolean> {
+  const interactive = isInteractive() && opts.format !== "json";
+  // Wrong-directory guard: a fresh interactive init somewhere with no repo
+  // marker defaults to NO — when the heuristic fires, a mistake is the likelier
+  // case. Re-init and non-TTY runs (agents, pre-`git init` scaffolds) never ask.
+  if (!guard.skipRepoGuard && interactive && findRoot(process.cwd()) === null && !looksLikeRepo(process.cwd())) {
+    const proceed = await askYesNo(
+      `This doesn't look like a code repository — initialise Kalamu in ${process.cwd()} anyway?`,
+      false,
+    );
+    if (!proceed) {
+      console.log("Nothing initialised. Run kalamu init from your project's root directory.");
+      return false;
+    }
+  }
   const result = run(() => commands.init(process.cwd(), { agentDocs: opts.agentDocs }), opts);
   if (!result || process.exitCode) return false;
-  const interactive = isInteractive() && opts.format !== "json";
   const fresh = (result.json as { created: boolean }).created;
   if (opts.tour === true) {
     run(() => commands.tour(process.cwd()), opts);
@@ -108,13 +121,18 @@ program
     try {
       // Fresh directory + a human at the keyboard: confirm before initialising
       // (the path in the prompt catches wrong-directory accidents), then give
-      // them init's full onboarding. Non-TTY keeps open()'s silent ensure.
+      // them init's full onboarding. No repo marker flips the default to NO —
+      // one question either way. Non-TTY keeps open()'s silent ensure.
       if (findRoot(process.cwd()) === null && isInteractive()) {
-        if (!(await askYesNo(`No Kalamu project here — initialise ${process.cwd()}?`, true))) {
+        const repo = looksLikeRepo(process.cwd());
+        const question = repo
+          ? `No Kalamu project here — initialise ${process.cwd()}?`
+          : `This doesn't look like a code repository — initialise Kalamu in ${process.cwd()} anyway?`;
+        if (!(await askYesNo(question, repo))) {
           console.log('Nothing initialised. Run "kalamu open" from your project, or "kalamu init" to set one up.');
           return;
         }
-        if (!(await initWithOffers({}))) return;
+        if (!(await initWithOffers({}, { skipRepoGuard: true }))) return;
       }
       await open(process.cwd(), opts);
     } catch (err) {
