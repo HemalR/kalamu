@@ -16,6 +16,8 @@ export interface RegistryEntry {
   path: string;
   registeredAt: string;
   lastSeenAt: string;
+  /** Display-name override set by renaming in the hub; absent = derive via projectName(). */
+  name?: string;
 }
 
 export interface Registry {
@@ -59,6 +61,7 @@ export function readRegistry(file = defaultRegistryFile()): Registry {
       path: e.path,
       registeredAt: typeof e.registeredAt === "string" ? e.registeredAt : "",
       lastSeenAt: typeof e.lastSeenAt === "string" ? e.lastSeenAt : "",
+      ...(typeof e.name === "string" && e.name.trim() !== "" ? { name: e.name } : {}),
     });
   }
   return { version: 1, projects };
@@ -105,6 +108,27 @@ export function unregisterProject(slug: string, file = defaultRegistryFile()): b
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Set (or, with a blank name, clear) the display-name override for `slug`
+ * (SPEC "Hub"). The slug — route identity — never changes. Returns the
+ * effective display name, or null — never throws — when the slug is unknown
+ * or the registry could not be written.
+ */
+export function renameProject(slug: string, name: string, file = defaultRegistryFile()): string | null {
+  try {
+    const registry = readRegistry(file);
+    const entry = registry.projects.find((p) => p.slug === slug);
+    if (!entry) return null;
+    const trimmed = name.trim();
+    if (trimmed === "") delete entry.name;
+    else entry.name = trimmed;
+    writeRegistry(registry, file);
+    return entry.name ?? projectName(entry.path);
+  } catch {
+    return null;
   }
 }
 

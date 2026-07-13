@@ -12,7 +12,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { HUB_LAUNCHD_LABEL, hubLaunchAgentPlist, openBrowser, portIsFree, webAssetsDir } from "./launch.js";
-import { readRegistry, unregisterProject, type RegistryEntry } from "./registry.js";
+import { readRegistry, renameProject, unregisterProject, type RegistryEntry } from "./registry.js";
 import { createServer, projectName, webAppHandler, type KalamuServer } from "./server.js";
 
 export const HUB_PORT = 4400;
@@ -70,7 +70,11 @@ export function createHubServer(assetsDir: string | null, options: HubOptions = 
     const entry = readRegistry(options.registryFile).projects.find((p) => p.slug === slug);
     if (!entry) return null;
     const instance: Instance = {
-      server: createServer(pathsFor(entry.path), assetsDir),
+      // Registry-backed display name so a rename shows up in the project's own
+      // /api/project (the "kalamu | name" header) without restarting the instance.
+      server: createServer(pathsFor(entry.path), assetsDir, () => {
+        return readRegistry(options.registryFile).projects.find((p) => p.slug === slug)?.name ?? null;
+      }),
       lastAccess: Date.now(),
       sse: 0,
     };
@@ -84,12 +88,30 @@ export function createHubServer(assetsDir: string | null, options: HubOptions = 
   app.get("/api/projects", (c) => {
     const projects = [...readRegistry(options.registryFile).projects].sort(byMostRecent).map((entry) => ({
       slug: entry.slug,
-      name: projectName(entry.path),
+      name: entry.name ?? projectName(entry.path),
       path: entry.path,
       openTasks: countOpenTasks(entry),
       lastSeenAt: entry.lastSeenAt,
     }));
     return c.json({ projects });
+  });
+
+  // Rename a project's display name (slug — route identity — never changes).
+  // A blank name clears the override, reverting to the derived name; the
+  // response carries the effective name so the UI can show the reverted value.
+  app.patch("/api/projects/:slug", async (c) => {
+    const slug = c.req.param("slug");
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "invalid JSON body" }, 400);
+    }
+    const name = body !== null && typeof body === "object" ? (body as { name?: unknown }).name : undefined;
+    if (typeof name !== "string") return c.json({ error: `expected {"name": string}` }, 400);
+    const effective = renameProject(slug, name, options.registryFile);
+    if (effective === null) return c.json({ error: `no registered project "${slug}"` }, 404);
+    return c.json({ name: effective });
   });
 
   // Forget a project: drop the registry entry and tear down any live instance.

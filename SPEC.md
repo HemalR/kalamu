@@ -1583,7 +1583,7 @@ Rules:
 * Every CLI command that resolves a project (`init`, `open`, `add`, `next`, …) upserts that project's entry — registration is a side effect of use, never a setup step. Existing entry: touch `lastSeenAt` only.
 * Entries whose `path` no longer contains `.kalamu/outline.jsonl` are pruned silently on read. The outline file — not the bare directory — is the project test everywhere (`findRoot` included), so the machine-global `~/.kalamu` (registry, hub log) can never make the home directory masquerade as a project.
 * Writes use the same temp-file + atomic-rename pattern as everything else. Registry failures must never break the command that triggered them — a broken registry degrades the hub, not the CLI.
-* The registry is plumbing, not data: deleting it loses nothing except the sidebar list (and slug assignments), which repopulates on use.
+* The registry is plumbing, not data: deleting it loses nothing except the sidebar list (plus slug assignments and display-name overrides), which repopulates on use.
 
 ### Slugs
 
@@ -1592,7 +1592,11 @@ The hub identifies a project in URLs by a slug, not an opaque ID:
 * Derived at **first registration** from `package.json` `name` if present, else the project directory's basename — the same derivation the UI title already uses.
 * Normalization: strip a leading `@scope/`, lowercase, replace runs of characters outside `[a-z0-9-]` with `-`, trim leading/trailing dashes. Empty result falls back to `project`.
 * Collision with a different path: append the first free numeric suffix (`api`, `api-2`, `api-3`).
-* **Stable once assigned.** Renaming `package.json` or the directory later does not change an existing slug — bookmarks and open tabs keep working. The sidebar's *display name* is recomputed live (current `projectName()` logic); the slug is route identity only.
+* **Stable once assigned.** Renaming `package.json` or the directory later does not change an existing slug — bookmarks and open tabs keep working. The sidebar's *display name* is recomputed live (current `projectName()` logic) unless the user has renamed the project in the hub; the slug is route identity only.
+
+### Renaming
+
+A project can be renamed from the hub sidebar (inline edit). The rename sets an optional `name` field on the project's registry entry — a display-name override used by the sidebar and by the project's own header (`kalamu | <name>`) wherever the hub serves it. It never changes the slug, the project's `package.json`, or anything in the repo. Committing a blank name clears the override, reverting to the derived name. Like everything in the registry, overrides are plumbing: deleting `~/.kalamu/projects.json` loses them.
 
 ### `kalamu hub`
 
@@ -1609,6 +1613,7 @@ Routes:
 
 ```http
 GET /api/projects                    (registered projects: slug, display name, path, open-task count)
+PATCH /api/projects/:slug            (rename: set/clear the display-name override; returns the effective name; 200/400/404)
 DELETE /api/projects/:slug           (forget: drop the registry entry, tear down any live instance; 204/404)
 ALL /p/:slug/api/*                   (routed into that project's server instance)
 GET /p/:slug/assets/*                (same)

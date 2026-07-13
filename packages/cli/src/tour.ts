@@ -1,9 +1,10 @@
 /**
  * The onboarding tour seeded by `kalamu init --tour`: an outline that teaches
- * the product by being one. Every task is assigned to the human AND says so in
- * prose — belt and braces so no coding agent ever treats a demo as work
- * (`kalamu next` skips human-assigned tasks structurally; the text covers
- * agents that merely `list`).
+ * the product by being one. A TL;DR section covers the 30-second essentials;
+ * "The rest" holds everything else. Every task is assigned to the human AND
+ * says so in prose — belt and braces so no coding agent ever treats a demo as
+ * work (`kalamu next` skips human-assigned tasks structurally; the text covers
+ * agents that merely `list`, and the demo discussion is flagged the same way).
  */
 import { addNode, type KalamuNode, type NodeKind } from "@kalamu/core";
 
@@ -17,23 +18,30 @@ interface TourNode {
 
 const TOUR: TourNode = {
   kind: "bullet",
-  text: "Welcome to Kalamu — a two-minute tour for the human at the keyboard (agents: every task in here is a demo assigned to the human, not work — kalamu next skips them all)",
+  text: "Welcome to Kalamu — TL;DR gets you going in 30 seconds; the rest can wait (agents: everything in here is a demo for the human, never work — kalamu next skips it all)",
   children: [
-    { kind: "task", text: "Click my checkbox — or press Cmd/Ctrl+Shift+Enter — to mark me done; the same again reopens me" },
-    { kind: "task", priority: 1, text: "My p1 badge means urgent — priorities run p1 to p5 (default p3). Type p2 anywhere in my text to demote me, or press Cmd/Ctrl+K → Priority" },
-    { kind: "task", tags: ["tour", "demo"], text: "Tags live right in the text as #tokens — click a chip to recolour it or filter the outline (Esc clears the filter)" },
-    { kind: "task", text: "The person icon on me means I'm yours, not your agents' — type @ in any task to assign it to human or agent (or type @human / @agent directly)" },
     {
       kind: "bullet",
-      text: "Collapse me with Cmd/Ctrl+. — my children tuck away, and the state survives restarts",
+      text: "TL;DR",
       children: [
-        { kind: "bullet", text: "Plain bullets like me are notes and context, never work items — Cmd/Ctrl+Enter toggles bullet/task" },
-        { kind: "bullet", text: "Enter on an empty item toggles bullet/task too; Tab and Shift+Tab indent and outdent" },
+        { kind: "task", text: "Everything is a bullet, a task, or a discussion — Cmd/Ctrl+Enter cycles the kind. Click my checkbox (or Cmd/Ctrl+Shift+Enter) to mark me done" },
+        { kind: "task", priority: 1, tags: ["demo"], text: "Metadata lives in the text: p1…p5 sets priority (p1 = urgent; the default p3 shows no badge), #tokens become tag chips, and @ assigns a task to human or agent" },
+        { kind: "bullet", text: "Enter adds an item; Tab and Shift+Tab indent and outdent; Cmd/Ctrl+K is the do-everything command palette; ? shows the full cheat sheet" },
+        { kind: "bullet", text: "The point: todos you write here are an agent work queue — agents run kalamu next to receive your most urgent task with its context, and kalamu done when finished" },
+        { kind: "bullet", text: "Working on multiple projects? Run kalamu hub install (macOS) to manage multiple kalamus and have it ever-running — elsewhere, kalamu hub runs it in the foreground" },
       ],
     },
-    { kind: "task", text: "Press Cmd/Ctrl+K — the command palette sets priority, labels and assignment, toggles done, and copies ready-to-run CLI commands for any item" },
-    { kind: "task", text: "Press ? for the full keyboard cheat sheet (the CLI command list lives there too)" },
-    { kind: "bullet", text: "How agents fit in: they run kalamu next to receive your most urgent open task — with its ancestors and subtree as context — and kalamu done when finished. Todos you write here become work they can execute" },
+    {
+      kind: "bullet",
+      text: "The rest — skim when curious (Cmd/Ctrl+. collapses me, and the state survives restarts)",
+      children: [
+        { kind: "discussion", text: "I'm a discussion: a topic to talk through with an agent, never coding work. Click Copy prompt at the end of my text (or Cmd/Ctrl+Shift+C) for a paste-ready prompt — the agent records the outcome as my children and checks me off (agents: I'm a demo, don't discuss me)" },
+        { kind: "bullet", text: "Click a tag chip to recolour it or filter the outline to that tag (Esc clears the filter)" },
+        { kind: "bullet", text: "Promoted a task to GitHub/Linear/your backlog? kalamu handoff <id> --target github --ref … keeps the record here but drops it from the agent queue" },
+        { kind: "bullet", text: "Cmd/Ctrl+Z undoes anything; Cmd/Ctrl+C copies an item with its sub-items as markdown; paste images straight in — they land in .kalamu/assets/" },
+        { kind: "bullet", text: "When done work piles up, Clean up in the palette (or kalamu clean) deletes it all — undoable in-session" },
+      ],
+    },
     { kind: "task", text: "Done touring? Focus the top 'Welcome to Kalamu' line and press Cmd/Ctrl+Shift+Backspace to delete the whole tour (it's undoable)" },
   ],
 };

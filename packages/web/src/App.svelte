@@ -164,7 +164,12 @@
 {#if apiBase !== ""}
   <!-- Hub mode: project sidebar beside the regular app. -->
   <div class="hub">
-    <Sidebar />
+    <Sidebar
+      onrename={(name) => {
+        if (project !== null) project.name = name;
+        document.title = `Kalamu | ${name}`;
+      }}
+    />
     <div class="hub-main">{@render app()}</div>
   </div>
 {:else}

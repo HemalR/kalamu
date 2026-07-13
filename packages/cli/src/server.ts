@@ -130,7 +130,16 @@ export function projectName(root: string): string {
   return basename(root);
 }
 
-export function createServer(paths: KalamuPaths, webAssetsDir: string | null): KalamuServer {
+/**
+ * `displayName` (optional) overrides the derived project name in /api/project —
+ * the hub passes a registry-backed lookup so renames apply without restarting
+ * the instance. Returning null falls back to projectName().
+ */
+export function createServer(
+  paths: KalamuPaths,
+  webAssetsDir: string | null,
+  displayName?: () => string | null,
+): KalamuServer {
   const app = new Hono();
   const listeners = new Set<(event: string) => void>();
 
@@ -320,7 +329,11 @@ export function createServer(paths: KalamuPaths, webAssetsDir: string | null): K
   // platform + hubInstalled drive the UI's hub-discovery hints: install advice
   // is only shown where `hub install` exists and hasn't already been run.
   app.get("/api/project", (c) =>
-    c.json({ name: projectName(dirname(paths.dir)), platform: process.platform, hubInstalled: hubAgentInstalled() }),
+    c.json({
+      name: displayName?.() ?? projectName(dirname(paths.dir)),
+      platform: process.platform,
+      hubInstalled: hubAgentInstalled(),
+    }),
   );
 
   app.get("/api/meta", (c) => c.json(readMeta(paths.meta)));

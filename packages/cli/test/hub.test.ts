@@ -79,6 +79,53 @@ describe("hub", () => {
     expect((await hub.app.request("/p/alpha/api/nodes")).status).toBe(404);
   });
 
+  it("renames a project on PATCH /api/projects/:slug, visible in the list and the project header", async () => {
+    // Touch alpha first so a live instance picks up the rename without restarting.
+    await hub.app.request("/p/alpha/api/nodes");
+    const res = await hub.app.request("/api/projects/alpha", {
+      method: "PATCH",
+      body: JSON.stringify({ name: "Alpha App" }),
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(await res.json()).toEqual({ name: "Alpha App" });
+
+    const { projects } = (await (await hub.app.request("/api/projects")).json()) as {
+      projects: { slug: string; name: string }[];
+    };
+    expect(projects.find((p) => p.slug === "alpha")?.name).toBe("Alpha App");
+    const project = (await (await hub.app.request("/p/alpha/api/project")).json()) as { name: string };
+    expect(project.name).toBe("Alpha App");
+  });
+
+  it("clears the override on a blank rename, reverting to the derived name", async () => {
+    await hub.app.request("/api/projects/alpha", {
+      method: "PATCH",
+      body: JSON.stringify({ name: "Alpha App" }),
+      headers: { "Content-Type": "application/json" },
+    });
+    const res = await hub.app.request("/api/projects/alpha", {
+      method: "PATCH",
+      body: JSON.stringify({ name: "   " }),
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(await res.json()).toEqual({ name: "@acme/alpha" });
+  });
+
+  it("rejects a PATCH without a string name, and 404s an unknown slug", async () => {
+    const bad = await hub.app.request("/api/projects/alpha", {
+      method: "PATCH",
+      body: JSON.stringify({ name: 7 }),
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(bad.status).toBe(400);
+    const missing = await hub.app.request("/api/projects/nope", {
+      method: "PATCH",
+      body: JSON.stringify({ name: "x" }),
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(missing.status).toBe(404);
+  });
+
   it("404s a DELETE for an unknown slug", async () => {
     const res = await hub.app.request("/api/projects/nope", { method: "DELETE" });
     expect(res.status).toBe(404);

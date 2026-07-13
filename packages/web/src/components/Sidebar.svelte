@@ -4,6 +4,7 @@
    * /p/<slug>). Entries are plain links on purpose: each project gets a
    * fresh app instance, so navigation is a full page load.
    */
+  import type { Attachment } from "svelte/attachments";
   import { apiBase } from "../lib/api";
 
   interface HubProject {
@@ -13,6 +14,9 @@
     openTasks: number | null;
     lastSeenAt: string;
   }
+
+  /** Called with the effective name after the ACTIVE project is renamed. */
+  let { onrename }: { onrename?: (name: string) => void } = $props();
 
   const activeSlug = apiBase.slice("/p/".length);
 
@@ -41,6 +45,54 @@
       // Failures leave the entry in place, same as the list fetch.
     }
   }
+
+  /** Slug of the row being renamed inline; null when none. */
+  let editingSlug = $state<string | null>(null);
+  let draft = $state("");
+
+  function startRename(project: HubProject): void {
+    editingSlug = project.slug;
+    draft = project.name;
+  }
+
+  const focusAndSelect: Attachment<HTMLInputElement> = (input) => {
+    input.focus();
+    input.select();
+  };
+
+  function onRenameKeydown(event: KeyboardEvent): void {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void commitRename();
+    } else if (event.key === "Escape") {
+      event.stopPropagation(); // Escape is a global "clear filter" key.
+      editingSlug = null;
+    }
+  }
+
+  /** Sends the raw draft; the server trims, and blank clears the override. */
+  async function commitRename(): Promise<void> {
+    const slug = editingSlug;
+    editingSlug = null; // also guards the blur that follows Enter
+    if (slug === null || projects === null) return;
+    const project = projects.find((entry) => entry.slug === slug);
+    if (project === undefined || draft === project.name) return;
+    try {
+      const response = await fetch(`/api/projects/${slug}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: draft }),
+      });
+      if (!response.ok) return;
+      const body: unknown = await response.json();
+      if (body !== null && typeof body === "object" && "name" in body && typeof body.name === "string") {
+        project.name = body.name;
+        if (slug === activeSlug) onrename?.(body.name);
+      }
+    } catch {
+      // Quiet failure: the old name stays, same as removeProject.
+    }
+  }
 </script>
 
 {#if projects !== null}
@@ -49,23 +101,45 @@
     <ul>
       {#each projects as project (project.slug)}
         <li>
-          <a
-            href={`/p/${project.slug}`}
-            class:active={project.slug === activeSlug}
-            aria-current={project.slug === activeSlug ? "page" : undefined}
-            title={project.path}
-          >
-            <span class="name">{project.name}</span>
-            {#if project.openTasks !== null && project.openTasks > 0}
-              <span class="count">{project.openTasks}</span>
-            {/if}
-          </a>
-          <button
-            class="remove"
-            aria-label={`Remove ${project.name} from sidebar`}
-            title="Remove from sidebar (project data is untouched)"
-            onclick={() => removeProject(project.slug)}
-          >×</button>
+          {#if editingSlug === project.slug}
+            <input
+              class="rename"
+              type="text"
+              bind:value={draft}
+              aria-label={`New name for ${project.name}`}
+              onkeydown={onRenameKeydown}
+              onblur={() => void commitRename()}
+              {@attach focusAndSelect}
+            />
+          {:else}
+            <a
+              href={`/p/${project.slug}`}
+              class:active={project.slug === activeSlug}
+              aria-current={project.slug === activeSlug ? "page" : undefined}
+              title={project.path}
+            >
+              <span class="name">{project.name}</span>
+              {#if project.openTasks !== null && project.openTasks > 0}
+                <span class="count">{project.openTasks}</span>
+              {/if}
+            </a>
+            <button
+              class="edit"
+              aria-label={`Rename ${project.name}`}
+              title="Rename"
+              onclick={() => startRename(project)}
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+              </svg>
+            </button>
+            <button
+              class="remove"
+              aria-label={`Remove ${project.name} from sidebar`}
+              title="Remove from sidebar (project data is untouched)"
+              onclick={() => removeProject(project.slug)}
+            >×</button>
+          {/if}
         </li>
       {/each}
     </ul>
@@ -142,16 +216,17 @@
     color: var(--muted);
     background: var(--guide);
   }
-  /* The × replaces the count while it's showing. */
+  /* The hover buttons replace the count while they're showing. */
   li:hover .count,
+  li:has(.edit:focus-visible) .count,
   li:has(.remove:focus-visible) .count {
     visibility: hidden;
   }
 
+  .edit,
   .remove {
     position: absolute;
     top: 50%;
-    right: 6px;
     transform: translateY(-50%);
     padding: 1px 6px;
     border: none;
@@ -163,11 +238,38 @@
     cursor: pointer;
     opacity: 0;
   }
+  .remove {
+    right: 6px;
+  }
+  .edit {
+    right: 26px;
+    display: flex;
+    align-items: center;
+    padding: 3px 4px;
+  }
+  li:hover .edit,
   li:hover .remove,
+  .edit:focus-visible,
   .remove:focus-visible {
     opacity: 1;
   }
+  .edit:hover,
   .remove:hover {
     color: var(--fg);
+  }
+
+  /* Sits where the anchor was, in the anchor's hover/active tone. */
+  .rename {
+    width: 100%;
+    padding: 5px 10px;
+    border: none;
+    border-radius: 6px;
+    background: var(--guide);
+    font: inherit;
+    font-size: 13.5px;
+    color: var(--fg);
+  }
+  .rename:focus {
+    outline: none;
   }
 </style>

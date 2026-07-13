@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { readRegistry, registerProject, slugify, unregisterProject } from "../src/registry.js";
+import { readRegistry, registerProject, renameProject, slugify, unregisterProject } from "../src/registry.js";
 
 let base: string;
 let file: string;
@@ -93,6 +93,24 @@ describe("unregisterProject", () => {
     registerProject(makeProject("eta"), file);
     expect(unregisterProject("nope", file)).toBe(false);
     expect(readRegistry(file).projects).toHaveLength(1);
+  });
+});
+
+describe("renameProject", () => {
+  it("sets a trimmed display-name override that survives re-registration", () => {
+    const root = makeProject("theta", "theta");
+    registerProject(root, file);
+    expect(renameProject("theta", "  Theta App  ", file)).toBe("Theta App");
+    registerProject(root, file);
+    expect(readRegistry(file).projects[0]?.name).toBe("Theta App");
+  });
+
+  it("clears the override on a blank name and returns null for an unknown slug", () => {
+    registerProject(makeProject("iota"), file);
+    renameProject("iota", "Iota", file);
+    expect(renameProject("iota", "   ", file)).toBe("iota");
+    expect(readRegistry(file).projects[0]?.name).toBeUndefined();
+    expect(renameProject("nope", "x", file)).toBeNull();
   });
 });
 
