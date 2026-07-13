@@ -63,13 +63,15 @@ const { version } = JSON.parse(readFileSync(new URL("../packages/cli/package.jso
 console.log(`\nReleasing kalamu v${version}`);
 
 // Keep the README's version line in lockstep — npm renders the README as the
-// package page, and it ships inside the tarball. The release commit below
-// (`git commit -am`) picks this change up alongside the package.json bump.
-const readmeUrl = new URL("../packages/cli/README.md", import.meta.url);
+// package page, and it ships inside the tarball. Edit the ROOT README, not
+// packages/cli/README.md: the build (copy-web.mjs) copies root -> cli on every
+// run, so editing the cli copy here would be silently clobbered by `pnpm build`
+// below. The release commit (`git commit -am`) picks up both files.
+const readmeUrl = new URL("../README.md", import.meta.url);
 const readme = readFileSync(readmeUrl, "utf8");
 const versionLine = /\*\*Current version: v\d+\.\d+\.\d+\*\*/;
 if (!versionLine.test(readme)) {
-  fail("packages/cli/README.md is missing its '**Current version: vX.Y.Z**' line — restore it before releasing");
+  fail("README.md is missing its '**Current version: vX.Y.Z**' line — restore it before releasing");
 }
 writeFileSync(readmeUrl, readme.replace(versionLine, `**Current version: v${version}**`));
 
@@ -81,6 +83,14 @@ run("pnpm build");
 const reported = capture("node packages/cli/dist/index.js --version");
 if (reported !== version) {
   fail(`built binary reports ${reported}, expected ${version} — version injection is broken`);
+}
+
+// The README that ships (packages/cli/README.md) is regenerated from root by the
+// build; assert it survived with the right version. This is the backstop that
+// v0.4.0 lacked when a stale README clobbered the release.
+const shippedReadme = readFileSync(new URL("../packages/cli/README.md", import.meta.url), "utf8");
+if (!shippedReadme.includes(`**Current version: v${version}**`)) {
+  fail(`packages/cli/README.md does not carry 'Current version: v${version}' after build — a stale README clobbered the release`);
 }
 
 run(`git commit -am "Release v${version}"`);
