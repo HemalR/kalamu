@@ -1,27 +1,9 @@
 ---
-// Placeholder hero — full design/content pass is an open outline task (n_0FNDP5SBW1).
-// The CTA copies a setup prompt the visitor pastes into their coding agent; keep the
-// commands in it aligned with the CLI and the skills.sh install flow.
-const agentInstructions = `Set up Kalamu (repo-local task outliner — https://kalamu.dev) in this repository:
+import '../styles/global.css';
+import OutlineDemo from '../components/OutlineDemo.svelte';
 
-1. Run: npx kalamu init --tour
-   It creates .kalamu/ and seeds a self-guided onboarding outline for me, the human.
-   Every tour item is assigned to the human — it is a demo for me, never work for you.
-   Do not act on, complete, or delete any of it.
-   init prints suggested .gitignore entries — add them to .gitignore.
-2. Install the Kalamu agent skill so coding agents in this repo know how to use it.
-   Detect which agents are in use here (config dirs like .claude/, .cursor/, .agents/, .windsurf/), then run:
-   npx skills add hemalr/kalamu -y
-   with -a <agent> flags for the agents in use (e.g. -a claude-code). Ask me if you can't tell which agents I use.
-3. Verify: npx kalamu validate, then npx kalamu next
-   (next exiting with code 2 is expected — the tour tasks are all mine, so there is no agent work yet.)
-4. Commit .kalamu/ and the installed skill files.
-5. Finally, run npx kalamu open in the background and leave it running — it serves on
-   127.0.0.1 and opens my browser on the tour outline.
-
-Then explain to me how to use Kalamu:
-- The tour in my browser walks the UI: Enter/Tab/Shift+Tab to outline, Cmd/Ctrl+K for the command palette, ? for the keyboard cheat sheet. Typing p1–p5 in a task sets priority, #words become tags, and typing @ in a task assigns it to human or agent — @human tasks are mine, so agents skip them.
-- Todos I write become tasks agents can execute: they pick up work with kalamu next and mark it done with kalamu done.`;
+const installCommand = `npm install -g kalamu
+kalamu init`;
 ---
 
 <html lang="en">
@@ -38,105 +20,167 @@ Then explain to me how to use Kalamu:
 	</head>
 	<body>
 		<main>
-			<h1>kalamu</h1>
-			<p class="tagline">
-				A repo-local, keyboard-first outliner for turning developer thoughts into agent-ready tasks.
-			</p>
+			<section class="hero">
+				<div class="hero-content">
+					<h1>Think it, jot it, queue it for your agent</h1>
+					<h2>
+						Lightweight, local outliner application to put down your thoughts and turn them into tasks for your
+						agents to execute.
+					</h2>
 
-			<button id="copy-cta" data-instructions={agentInstructions}>Copy instructions for your agent</button>
-			<p class="cta-hint">Paste into Claude Code, Cursor, Codex, or any coding agent — it sets your repo up and shows you how to use it.</p>
+					<div class="cta-row">
+						<div class="install-block">
+							<pre><code>{installCommand}</code></pre>
+							<button id="copy-install" data-install={installCommand} aria-label="Copy install commands">
+								<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+									<rect x="5.5" y="5.5" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3" />
+									<path
+										d="M3.5 10.5h-1a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v1"
+										fill="none"
+										stroke="currentColor"
+										stroke-width="1.3"
+									/>
+								</svg>
+								<span>Copy</span>
+							</button>
+						</div>
 
-			<details>
-				<summary>What gets copied</summary>
-				<pre>{agentInstructions}</pre>
-			</details>
+						<a class="secondary-cta" href="#next-section">Read more ↓</a>
+					</div>
+				</div>
 
-			<ul>
-				<li>One diffable file in your repo — no cloud, no account, no daemon.</li>
-				<li>Keyboard-first web UI: outline at the speed of thought, ⌘K for everything else.</li>
-				<li>Agents get their own door: <code>kalamu next</code> hands them the most urgent task with full context.</li>
-			</ul>
+				<div class="hero-demo">
+					<OutlineDemo client:load />
+				</div>
+			</section>
+
+			<section id="next-section" aria-hidden="true"></section>
 		</main>
 
 		<script>
-			const button = document.getElementById('copy-cta') as HTMLButtonElement;
-			const original = button.textContent;
+			const button = document.getElementById('copy-install') as HTMLButtonElement;
+			const label = button.querySelector('span') as HTMLSpanElement;
+			const original = label.textContent;
 			let timer: ReturnType<typeof setTimeout> | undefined;
 			button.addEventListener('click', async () => {
 				try {
-					await navigator.clipboard.writeText(button.dataset.instructions ?? '');
-					button.textContent = 'Copied — paste it to your agent';
+					await navigator.clipboard.writeText(button.dataset.install ?? '');
+					label.textContent = 'Copied';
 				} catch {
-					button.textContent = 'Copy failed — expand "What gets copied" below';
+					label.textContent = 'Copy failed';
 				}
 				clearTimeout(timer);
-				timer = setTimeout(() => (button.textContent = original), 2500);
+				timer = setTimeout(() => (label.textContent = original), 2000);
 			});
 		</script>
 	</body>
 </html>
 
 <style>
-	:root {
-		color-scheme: light dark;
+	main {
+		max-width: 72rem;
+		margin: 0 auto;
+		padding: 0 2rem;
 	}
-	body {
-		margin: 0;
+
+	.hero {
 		min-height: 100vh;
 		display: grid;
-		place-items: center;
-		font-family: ui-sans-serif, system-ui, sans-serif;
-		line-height: 1.6;
+		grid-template-columns: 1fr 1fr;
+		align-items: center;
+		gap: 3rem;
+		padding: 4rem 0;
 	}
-	main {
-		max-width: 42rem;
-		padding: 2rem;
+
+	.hero-content {
+		display: flex;
+		flex-direction: column;
+		gap: 1.25rem;
 	}
+
 	h1 {
-		font-size: 2.5rem;
-		letter-spacing: 0.04em;
-		margin: 0;
+		font-size: clamp(2.25rem, 4vw, 3.25rem);
+		line-height: 1.1;
+		letter-spacing: -0.01em;
+		font-weight: 700;
 	}
-	.tagline {
+
+	h2 {
 		font-size: 1.15rem;
-		opacity: 0.8;
+		font-weight: 400;
+		line-height: 1.5;
+		color: var(--muted);
+		max-width: 34rem;
 	}
-	#copy-cta {
+
+	.cta-row {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 1.25rem;
+		margin-top: 0.75rem;
+	}
+
+	.install-block {
+		display: flex;
+		align-items: stretch;
+		border-radius: 8px;
+		border: 1px solid var(--guide);
+		background: var(--panel);
+		overflow: hidden;
+	}
+
+	.install-block pre {
+		margin: 0;
+		padding: 0.85rem 1.1rem;
+		font-size: 0.9rem;
+		line-height: 1.6;
+		white-space: pre;
+	}
+
+	#copy-install {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		padding: 0 1rem;
+		border: none;
+		border-left: 1px solid var(--guide);
+		background: color-mix(in srgb, var(--fg) 5%, transparent);
+		color: var(--fg);
 		font: inherit;
+		font-size: 0.85rem;
 		font-weight: 600;
-		padding: 0.7rem 1.4rem;
-		border-radius: 8px;
-		border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
-		background: color-mix(in srgb, currentColor 10%, transparent);
-		color: inherit;
 		cursor: pointer;
 	}
-	#copy-cta:hover {
-		background: color-mix(in srgb, currentColor 16%, transparent);
+
+	#copy-install:hover {
+		background: color-mix(in srgb, var(--fg) 9%, transparent);
 	}
-	.cta-hint {
-		font-size: 0.9rem;
-		opacity: 0.65;
+
+	.secondary-cta {
+		font-size: 0.95rem;
+		font-weight: 600;
+		color: var(--fg);
+		text-decoration: underline;
+		text-decoration-color: color-mix(in srgb, var(--fg) 35%, transparent);
+		text-underline-offset: 4px;
 	}
-	details {
-		margin: 1rem 0;
-		font-size: 0.9rem;
+
+	.secondary-cta:hover {
+		text-decoration-color: currentColor;
 	}
-	details pre {
-		white-space: pre-wrap;
-		padding: 1rem;
-		border-radius: 8px;
-		border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
-		overflow-x: auto;
+
+	.hero-demo {
+		display: flex;
+		justify-content: center;
 	}
-	summary {
-		cursor: pointer;
-		opacity: 0.7;
-	}
-	ul {
-		padding-left: 1.2rem;
-	}
-	li + li {
-		margin-top: 0.4rem;
+
+	@media (max-width: 900px) {
+		.hero {
+			grid-template-columns: 1fr;
+			min-height: auto;
+			padding: 3rem 0;
+			gap: 2.5rem;
+		}
 	}
 </style>
