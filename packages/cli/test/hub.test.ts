@@ -24,6 +24,9 @@ function makeProject(dir: string, pkgName?: string): string {
 beforeEach(() => {
   base = mkdtempSync(join(tmpdir(), "kalamu-hub-"));
   file = join(base, "projects.json");
+  // Keep lazily-created project instances from doing a real update check.
+  process.env.KALAMU_HOME = base;
+  process.env.KALAMU_NO_UPDATE_CHECK = "1";
   makeProject("alpha", "@acme/alpha");
   makeProject("beta");
   hub = createHubServer(null, { registryFile: file });
@@ -32,6 +35,8 @@ beforeEach(() => {
 afterEach(() => {
   hub.close();
   rmSync(base, { recursive: true, force: true });
+  delete process.env.KALAMU_HOME;
+  delete process.env.KALAMU_NO_UPDATE_CHECK;
 });
 
 describe("hub", () => {

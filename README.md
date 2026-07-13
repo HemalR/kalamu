@@ -22,6 +22,8 @@ Or install globally:
 npm install -g kalamu
 ```
 
+Kalamu checks npm about once a day and tells you — on the command line and in the UI — when a newer version is out (it never updates itself). That daily check is the only network call it makes; turn it off with `export KALAMU_NO_UPDATE_CHECK=1` or `kalamu config update-check off`.
+
 ## Quickstart
 
 ```bash

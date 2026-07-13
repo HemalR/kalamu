@@ -8,9 +8,15 @@ import { createServer, type KalamuServer } from "../src/server.js";
 let root: string;
 let paths: KalamuPaths;
 let server: KalamuServer;
+let home: string;
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "kalamu-srv-"));
+  // Isolate the update check: KALAMU_HOME keeps its cache out of the real
+  // ~/.kalamu, and the opt-out keeps the server's startup refresh off the wire.
+  home = mkdtempSync(join(tmpdir(), "kalamu-srv-home-"));
+  process.env.KALAMU_HOME = home;
+  process.env.KALAMU_NO_UPDATE_CHECK = "1";
   paths = initKalamu(root).paths;
   server = createServer(paths, null);
 });
@@ -18,6 +24,9 @@ beforeEach(() => {
 afterEach(() => {
   server.close();
   rmSync(root, { recursive: true, force: true });
+  rmSync(home, { recursive: true, force: true });
+  delete process.env.KALAMU_HOME;
+  delete process.env.KALAMU_NO_UPDATE_CHECK;
 });
 
 async function post(path: string, body: unknown): Promise<Response> {
@@ -201,6 +210,27 @@ describe("meta and ui-state API", () => {
     };
     expect(body.platform).toBe(process.platform);
     expect(typeof body.hubInstalled).toBe("boolean");
+  });
+
+  it("project reports the update comparison from the cache for the UI chip", async () => {
+    // No cache yet → no update known (the startup refresh is opted out here).
+    const fresh = (await (await server.app.request("/api/project")).json()) as {
+      version: string;
+      latestVersion: string | null;
+      updateAvailable: boolean;
+    };
+    expect(typeof fresh.version).toBe("string");
+    expect(fresh.latestVersion).toBeNull();
+    expect(fresh.updateAvailable).toBe(false);
+
+    // Seed the cache with a newer release; /api/project reports it, no network.
+    writeFileSync(join(home, "update-check.json"), JSON.stringify({ checkedAt: 1, latest: "999.0.0" }));
+    const behind = (await (await server.app.request("/api/project")).json()) as {
+      latestVersion: string | null;
+      updateAvailable: boolean;
+    };
+    expect(behind.latestVersion).toBe("999.0.0");
+    expect(behind.updateAvailable).toBe(true);
   });
 
   it("ui-state persists collapse sets", async () => {

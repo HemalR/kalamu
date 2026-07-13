@@ -47,6 +47,7 @@ These were deliberated and are settled. Do not relitigate them during implementa
 11. **Images are files referenced by inline markdown tokens.** Pasting an image stores it in `.kalamu/assets/` (content-hashed filename, COMMITTED — assets are outline content and must survive a clone) and inserts `![](.kalamu/assets/img-<hash>.<ext>)` into the node text. Same rendering model as tags: unfocused nodes show a thumbnail in place, the focused node shows the raw token. No new node field; agents see an ordinary greppable path.
 12. **Discussions are a third node kind.** (Added 2026-07-12.) `kind: "discussion"` marks a work item whose deliverable is a conversation between the developer and an agent — "talk this through with me" rather than "go build this". Discussions are never mixed into the agent task queue — `next` never returns them (agents must never treat them as coding work); `next --discussion` queries the discussion queue explicitly, with the same eligibility and sort. They can never be assigned (they involve both parties by definition) and can never be handed off. Priority is allowed purely as human-facing ordering — setting one never converts the node to a task. A done discussion never closes its umbrella — its children are the recorded outcome, often follow-up tasks that must stay eligible — and `clean` treats it like a done bullet (removed only once nothing beneath it survives). The flow is human-initiated: the UI renders a discussion with a speech-bubble glyph and a "Copy prompt" affordance that copies the topic plus a do-not-code instruction for pasting into an agent session; the agent discusses, records the outcome as child bullets, and marks the discussion done.
 13. **One hub, many projects.** (Added 2026-07-12.) `kalamu hub` runs a single machine-global server (default port 4400, still `127.0.0.1`-only) that mounts every registered project behind one UI with a project sidebar — no per-project server spin-up, no per-project ports. Projects are identified in hub URLs by a human-readable slug derived from `package.json` `name` (scope stripped) or the directory name, deduplicated with numeric suffixes and **stable once assigned**. The registry lives at `~/.kalamu/projects.json` — machine-global plumbing, never canonical outline data. The hub is human UI convenience only; agents and the CLI contract never depend on it. See [Hub](#hub-multi-project-dashboard).
+14. **Update checks: default-on, opt-out, human-only.** (Added 2026-07-13.) Every install path (`npx` caches, global installs and the launchd hub never self-update) can silently run a stale binary, so Kalamu tells the human when a newer version is on npm. This is the one deliberate outbound network call in an otherwise `127.0.0.1`-only tool — a single throttled GET to `registry.npmjs.org`, never analytics, never a phone-home of outline data. It is **on by default with a first-run notice** and opts out via `KALAMU_NO_UPDATE_CHECK`, `CI`, or `~/.kalamu/config.json` (`kalamu config update-check off`). The check is best-effort and non-blocking: the latest version is cached in `~/.kalamu/update-check.json` for ~24h, and offline/slow/opted-out all degrade to silence, never an error or a delay. It surfaces two ways — a CLI banner on **stderr** shown only to a human at a TTY (so agents and `--format json` never see it), and a dismissible chip in the web UI/hub (`/api/project` reports `version`/`latestVersion`/`updateAvailable`). Purely advisory: Kalamu never self-updates. See [Update checks](#update-checks).
 
 ---
 
@@ -1642,6 +1643,25 @@ Nothing ever pushes the login item: `init` never offers it and the hub is advert
 * Hub installed: no hints anywhere.
 
 Each hint's command is a click-to-copy chip. Discovery therefore ladders `open` → `hub` (foreground, installs nothing) → `hub install`, each nudge appearing only at the moment it is actionable.
+
+---
+
+## Update checks
+
+(Added 2026-07-13. See key decision 14.) Because none of Kalamu's install paths self-update — `npx` pins the version it first resolved, global installs and the launchd hub sit still until told otherwise — a user can run a months-old binary with no signal. The update check closes that gap: it tells the human a newer version is on npm, and nothing more (Kalamu never self-updates).
+
+**The call.** A single GET to `https://registry.npmjs.org/kalamu/latest`, throttled to about once a day. This is the only outbound request Kalamu makes; it is not analytics and carries no outline data. It is on by default with a one-time notice printed on the first run that performs it.
+
+**Opt-out** (any one disables it): the `KALAMU_NO_UPDATE_CHECK` env var, a `CI` env var (CI is never nagged), or `updateCheck: false` in `~/.kalamu/config.json` — set persistently with `kalamu config update-check off` (and `on` to re-enable; `kalamu config` with no argument prints the current state).
+
+**Best-effort, never in the way.** The latest version is cached in `~/.kalamu/update-check.json` with the attempt timestamp; the displayed comparison always comes from that cache (instant, synchronous), and only a stale cache triggers a network read (short timeout). Offline, a slow or failing registry, a corrupt cache, or an opt-out all degrade to "no update known" — never an exception, never a blocked command. A failed fetch still stamps the timestamp so a flaky registry isn't retried every run.
+
+**Two surfaces, one shared check** (both live in the CLI process; the browser never calls npm):
+
+* **CLI banner.** After a command completes, a human at a TTY sees `kalamu <latest> available (you have <current>) · npm i -g kalamu@latest` on **stderr** — off-stdout so it can never corrupt `--format json`, and TTY-gated so agents and scripts never see it. Long-running `open`/`hub` exit before the banner would print; their sessions are covered by the chip instead.
+* **Web/hub chip.** `GET /api/project` reports `version`, `latestVersion`, and `updateAvailable` (comparison served from cache; a throttled refresh warms it at server start and on each poll). The UI shows a quiet, dismissible chip when an update is available; dismissal is keyed to the version in localStorage, so it returns for the next release.
+
+Version comparison is plain `x.y.z`: a pre-release or unparseable version on either side reads as "no update", so a user running a dev build is never nagged.
 
 ---
 

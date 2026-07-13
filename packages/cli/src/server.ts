@@ -36,6 +36,8 @@ import { existsSync, mkdirSync, readFileSync, renameSync, watch, writeFileSync, 
 import { basename, dirname, extname, join, normalize } from "node:path";
 import { z } from "zod";
 import { hubAgentInstalled } from "./launch.js";
+import { cachedUpdate, refreshUpdate } from "./update-check.js";
+import { CURRENT_VERSION } from "./version.js";
 
 const IMAGE_TYPES: Record<string, string> = {
   "image/png": ".png",
@@ -142,6 +144,10 @@ export function createServer(
 ): KalamuServer {
   const app = new Hono();
   const listeners = new Set<(event: string) => void>();
+
+  // Warm the update-check cache at startup (throttled to a day, no-op when
+  // opted out) so the human's first UI load already knows about a new release.
+  void refreshUpdate(CURRENT_VERSION);
 
   // One watcher on .kalamu/ catches every writer — this server, the CLI,
   // an agent in a terminal, a git checkout. Debounced per event type.
@@ -328,13 +334,21 @@ export function createServer(
 
   // platform + hubInstalled drive the UI's hub-discovery hints: install advice
   // is only shown where `hub install` exists and hasn't already been run.
-  app.get("/api/project", (c) =>
-    c.json({
+  // version/latestVersion/updateAvailable drive the UI's update chip: the
+  // comparison is served from cache (instant); the fire-and-forget refresh
+  // warms it — throttled to a day and a no-op when opted out — for next poll.
+  app.get("/api/project", (c) => {
+    const update = cachedUpdate(CURRENT_VERSION);
+    void refreshUpdate(CURRENT_VERSION);
+    return c.json({
       name: displayName?.() ?? projectName(dirname(paths.dir)),
       platform: process.platform,
       hubInstalled: hubAgentInstalled(),
-    }),
-  );
+      version: CURRENT_VERSION,
+      latestVersion: update.latest,
+      updateAvailable: update.updateAvailable,
+    });
+  });
 
   app.get("/api/meta", (c) => c.json(readMeta(paths.meta)));
 

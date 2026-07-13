@@ -2,20 +2,20 @@ import { OperationError } from "@kalamu/core";
 import { ConflictError, findRoot, StoreError } from "@kalamu/core/store";
 import { Command } from "commander";
 import * as commands from "./commands.js";
+import { readConfig, updateCheckEnabled, writeConfig } from "./config.js";
 import { CliError, type CommandResult } from "./context.js";
 import { installHubAgent, restartHub, runHub, uninstallHubAgent } from "./hub.js";
 import { open } from "./open.js";
 import { askYesNo, installSkill, isInteractive, offerSkillInstall } from "./skill.js";
-
-// Injected by tsup's `define` from package.json at build time.
-declare const __KALAMU_VERSION__: string;
+import { refreshUpdate } from "./update-check.js";
+import { CURRENT_VERSION } from "./version.js";
 
 const program = new Command();
 
 program
   .name("kalamu")
   .description("Repo-local outliner for turning developer thoughts into agent-ready tasks")
-  .version(__KALAMU_VERSION__);
+  .version(CURRENT_VERSION);
 
 function collect(value: string, previous: string[]): string[] {
   return [...previous, value];
@@ -150,6 +150,29 @@ program
       console.error(`kalamu: ${(err as Error).message}`);
       process.exitCode = 1;
     }
+  });
+
+program
+  .command("config [key] [value]")
+  .description("view or change machine-global settings (key: update-check <on|off>)")
+  .action((key: string | undefined, value: string | undefined) => {
+    if (key === undefined) {
+      const enabled = updateCheckEnabled();
+      console.log(`update-check ${enabled ? "on" : "off"}${enabled ? "" : " (KALAMU_NO_UPDATE_CHECK, CI, or config)"}`);
+      return;
+    }
+    if (key !== "update-check") {
+      console.error(`kalamu: unknown config key "${key}" (expected update-check)`);
+      process.exitCode = 1;
+      return;
+    }
+    if (value !== "on" && value !== "off") {
+      console.error(`kalamu: expected "on" or "off" for update-check`);
+      process.exitCode = 1;
+      return;
+    }
+    writeConfig({ ...readConfig(), updateCheck: value === "on" });
+    console.log(`update-check ${value}`);
   });
 
 program
@@ -311,7 +334,36 @@ program
     run(() => commands.validate(process.cwd()), opts);
   });
 
-program.parseAsync().catch((err: unknown) => {
-  console.error(`kalamu: ${err instanceof Error ? err.message : String(err)}`);
-  process.exitCode = 1;
-});
+/**
+ * After a command finishes, tell a human at the keyboard about a newer npm
+ * release (SPEC key decision 14). stderr keeps it clear of `--format json`
+ * stdout; the TTY gate keeps agents and scripts from ever seeing it. The first
+ * time the check runs we explain it once and how to turn it off. Long-running
+ * commands (open/hub) exit via process.exit before this resolves — the web chip
+ * covers those sessions instead.
+ */
+async function notifyUpdate(): Promise<void> {
+  if (!isInteractive() || !updateCheckEnabled()) return;
+  const config = readConfig();
+  if (config.updateNoticeSeen !== true) {
+    process.stderr.write(
+      "\nkalamu checks npm for a newer version about once a day.\n" +
+        "Turn it off: export KALAMU_NO_UPDATE_CHECK=1  (or `kalamu config update-check off`)\n",
+    );
+    writeConfig({ ...config, updateNoticeSeen: true });
+  }
+  const { latest, updateAvailable } = await refreshUpdate(CURRENT_VERSION);
+  if (updateAvailable && latest) {
+    process.stderr.write(
+      `\n  kalamu ${latest} available (you have ${CURRENT_VERSION}) · npm i -g kalamu@latest\n\n`,
+    );
+  }
+}
+
+program
+  .parseAsync()
+  .then(notifyUpdate)
+  .catch((err: unknown) => {
+    console.error(`kalamu: ${err instanceof Error ? err.message : String(err)}`);
+    process.exitCode = 1;
+  });

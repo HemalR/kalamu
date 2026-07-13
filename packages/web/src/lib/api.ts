@@ -45,6 +45,10 @@ export interface ProjectInfo {
   name: string;
   platform: string;
   hubInstalled: boolean;
+  /** Running CLI version, and the newer npm release when one is known (SPEC key decision 14). */
+  version: string;
+  latestVersion: string | null;
+  updateAvailable: boolean;
 }
 
 export class ApiError extends Error {

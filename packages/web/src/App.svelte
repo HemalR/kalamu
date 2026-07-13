@@ -7,6 +7,7 @@
   import OutlineNode from "./components/OutlineNode.svelte";
   import Sidebar from "./components/Sidebar.svelte";
   import Toast from "./components/Toast.svelte";
+  import UpdateChip from "./components/UpdateChip.svelte";
   import { api, apiBase, type ProjectInfo } from "./lib/api";
   import { OutlineStore } from "./lib/outline.svelte";
   import { matches, SHORTCUTS as S } from "./lib/shortcuts";
@@ -140,8 +141,9 @@
   {/if}
 </main>
 
-<!-- In flow after <main>, so under the hub it stays inside the content column. -->
+<!-- In flow after <main>, so under the hub they stay inside the content column. -->
 <HubHint {store} {project} />
+<UpdateChip {store} {project} />
 
 <button class="help-button" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)" onclick={() => (overlay = "help")}>?</button>
 
