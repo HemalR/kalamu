@@ -1,8 +1,9 @@
 {
-	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "kalamu",
-	"compatibility_date": "2026-07-13",
-	"assets": {
-		"directory": "./dist"
-	}
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // packages/landing/wrangler.jsonc
+  "name": "kalamu-dev",
+  "compatibility_date": "2026-07-13",
+  "assets": {
+    "directory": "./dist",
+  },
 }
