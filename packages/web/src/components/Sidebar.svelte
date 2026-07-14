@@ -19,8 +19,13 @@
     lastSeenAt: string;
   }
 
-  /** Called with the effective name after the ACTIVE project is renamed. */
-  let { onrename }: { onrename?: (name: string) => void } = $props();
+  /** onrename: effective name after the ACTIVE project is renamed.
+      oncolor: the active project's colour (override or derived), null when
+      unknown — drives the wordmark/favicon tint (bronze default). */
+  let {
+    onrename,
+    oncolor,
+  }: { onrename?: (name: string) => void; oncolor?: (color: string | null) => void } = $props();
 
   const activeSlug = apiBase.slice("/p/".length);
 
@@ -69,6 +74,13 @@
 
   /** The row whose theme colours the sidebar; null if it left the registry. */
   const activeProject = $derived(projects?.find((project) => project.slug === activeSlug) ?? null);
+
+  // Report the active colour up (bronze default until the list loads, and if
+  // the active project leaves the registry). Re-fires when a swatch pick
+  // changes it, so the wordmark and favicon recolour live.
+  $effect(() => {
+    oncolor?.(activeProject?.color ?? null);
+  });
 
   /** Slug of the row whose colour popover is open; null when none. */
   let colorSlug = $state<string | null>(null);

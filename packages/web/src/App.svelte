@@ -10,6 +10,7 @@
   import UpdateChip from "./components/UpdateChip.svelte";
   import Wordmark from "./components/Wordmark.svelte";
   import { api, apiBase, type ProjectInfo } from "./lib/api";
+  import { BRAND_BRONZE, setFavicon } from "./lib/favicon";
   import { OutlineStore } from "./lib/outline.svelte";
   import { matches, SHORTCUTS as S } from "./lib/shortcuts";
   import { theme } from "./lib/theme.svelte";
@@ -30,6 +31,13 @@
 
   /** At most one overlay at a time; Overlay.svelte owns Escape while one is open. */
   let overlay = $state<"palette" | "help" | "cli" | null>(null);
+
+  /** Active project's colour (hub only), reported by the Sidebar; null falls
+      back to the bronze brand. Tints the wordmark and the favicon. */
+  let markColor = $state<string | null>(null);
+  $effect(() => {
+    setFavicon(markColor ?? BRAND_BRONZE);
+  });
 
   const visibleRoots = $derived(store.visibleChildren(null));
 
@@ -166,12 +174,13 @@
 
 {#if apiBase !== ""}
   <!-- Hub mode: project sidebar beside the regular app. -->
-  <div class="hub">
+  <div class="hub" style:--mark={markColor ?? undefined}>
     <Sidebar
       onrename={(name) => {
         if (project !== null) project.name = name;
         document.title = `Kalamu | ${name}`;
       }}
+      oncolor={(color) => (markColor = color)}
     />
     <div class="hub-main">{@render app()}</div>
   </div>

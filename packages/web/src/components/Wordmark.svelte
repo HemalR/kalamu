@@ -33,7 +33,9 @@
   .mark {
     height: calc(var(--wm-size) * 0.92);
     width: auto;
-    color: var(--brand);
+    /* --mark is set to the active project's colour in the hub; falls back to
+       the bronze brand when there's no project (standalone / hub default). */
+    color: var(--mark, var(--brand));
     vertical-align: baseline;
   }
   /* Monospace, echoing the outline text; kerned just under the mark's arm. */
