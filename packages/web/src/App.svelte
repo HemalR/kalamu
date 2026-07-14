@@ -8,6 +8,7 @@
   import Sidebar from "./components/Sidebar.svelte";
   import Toast from "./components/Toast.svelte";
   import UpdateChip from "./components/UpdateChip.svelte";
+  import Wordmark from "./components/Wordmark.svelte";
   import { api, apiBase, type ProjectInfo } from "./lib/api";
   import { OutlineStore } from "./lib/outline.svelte";
   import { matches, SHORTCUTS as S } from "./lib/shortcuts";
@@ -78,7 +79,7 @@
 {#snippet app()}
 <main>
   <header>
-    <span class="wordmark">kalamu{#if project !== null}<span class="project">| {project.name}</span>{/if}</span>
+    <span class="brandline"><Wordmark />{#if project !== null}<span class="project">| {project.name}</span>{/if}</span>
     <div class="actions">
       <button class="clean-up" title="Delete completed tasks and their subtrees" onclick={() => store.clean()}>
         Clean up
@@ -214,17 +215,18 @@
     margin-bottom: 20px;
   }
 
-  .wordmark {
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    color: var(--muted);
+  .brandline {
+    display: flex;
+    align-items: center;
   }
 
   /* Project name stays in the wordmark's muted tone, just less bold. */
-  .wordmark .project {
-    margin-left: 0.4em;
+  .brandline .project {
+    margin-left: 0.5em;
+    font-size: 12px;
     font-weight: 400;
+    letter-spacing: 0.02em;
+    color: var(--muted);
   }
 
   /* Right-aligned header actions; more buttons will land here later. */

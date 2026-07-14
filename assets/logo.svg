@@ -1,11 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100" role="img" aria-label="Kalamu">
-  <!-- A fountain-pen nib (kalamu = "pen") whose breather hole is an outline
-       bullet and whose slit points down like a caret into the next node. -->
-  <mask id="nib">
-    <rect width="100" height="100" fill="#000"/>
-    <path d="M50 16 C67 16 78 23 78 34 C78 55 65 76 50 94 C35 76 22 55 22 34 C22 23 33 16 50 16 Z" fill="#fff"/>
-    <circle cx="50" cy="41" r="8.2" fill="#000"/>
-    <path d="M50 49 L50 88" stroke="#000" stroke-width="4.2" stroke-linecap="round"/>
-  </mask>
-  <rect width="100" height="100" fill="#0090ff" mask="url(#nib)"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="18 10 66 82" width="132" height="164" role="img" aria-label="Kalamu">
+  <!-- The fanned-k mark: a tiny outline — a bullet on the stem (a thought,
+       connected) and a checkbox nested beneath it (a task, indented) — that
+       reads as the letter k. Bronze ink; recolour by editing the values. -->
+  <g fill="none" stroke="#9a6a2e" stroke-width="7" stroke-linecap="round">
+    <path d="M30 18 L30 84" />
+    <path d="M42 45 L75 28" />
+    <path d="M56 63 L79 77" />
+  </g>
+  <circle cx="30" cy="47" r="8" fill="#9a6a2e" />
+  <rect x="39" y="54.5" width="15" height="15" rx="3.5" fill="none" stroke="#9a6a2e" stroke-width="6" />
 </svg>

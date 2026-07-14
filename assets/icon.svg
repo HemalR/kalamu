@@ -1,9 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100" role="img" aria-label="Kalamu">
-  <!-- App tile / favicon source: white nib on the brand-blue rounded tile.
-       Hole + slit are painted back in the tile colour so no mask is needed
-       (keeps the inlined favicon data URI compact). -->
-  <rect width="100" height="100" rx="23" fill="#0090ff"/>
-  <path d="M50 20 C64 20 73 26 73 35 C73 52 62 69 50 84 C38 69 27 52 27 35 C27 26 36 20 50 20 Z" fill="#f2f9ff"/>
-  <circle cx="50" cy="40.5" r="6.6" fill="#0090ff"/>
-  <path d="M50 47 L50 79" stroke="#0090ff" stroke-width="3.4" stroke-linecap="round"/>
+  <!-- App tile / favicon source: the fanned-k knocked out in cream on the
+       bronze tile. Geometry is the mark scaled to ~0.8 and centred so it
+       clears the rounded corners. -->
+  <rect width="100" height="100" rx="23" fill="#9a6a2e" />
+  <g fill="none" stroke="#fbf4e9" stroke-width="5.6" stroke-linecap="round">
+    <path d="M34 24.4 L34 77.2" />
+    <path d="M43.6 46 L70 32.4" />
+    <path d="M54.8 60.4 L73.2 71.6" />
+  </g>
+  <circle cx="34" cy="47.6" r="6.4" fill="#fbf4e9" />
+  <rect x="41.2" y="53.6" width="12" height="12" rx="2.8" fill="none" stroke="#fbf4e9" stroke-width="4.8" />
 </svg>
