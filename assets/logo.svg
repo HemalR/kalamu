@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100" role="img" aria-label="Kalamu">
+  <!-- A fountain-pen nib (kalamu = "pen") whose breather hole is an outline
+       bullet and whose slit points down like a caret into the next node. -->
+  <mask id="nib">
+    <rect width="100" height="100" fill="#000"/>
+    <path d="M50 16 C67 16 78 23 78 34 C78 55 65 76 50 94 C35 76 22 55 22 34 C22 23 33 16 50 16 Z" fill="#fff"/>
+    <circle cx="50" cy="41" r="8.2" fill="#000"/>
+    <path d="M50 49 L50 88" stroke="#000" stroke-width="4.2" stroke-linecap="round"/>
+  </mask>
+  <rect width="100" height="100" fill="#0090ff" mask="url(#nib)"/>
+</svg>
