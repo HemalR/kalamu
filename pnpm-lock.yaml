@@ -59,6 +59,9 @@ importers:
       '@astrojs/svelte':
         specifier: ^9.0.1
         version: 9.0.1(@types/node@24.13.3)(astro@7.0.7(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.2)(@types/node@24.13.3)(rollup@4.62.2)(yaml@2.9.0))(esbuild@0.28.1)(svelte@5.56.4)(typescript@5.9.3)(yaml@2.9.0)
+      '@kalamu/web':
+        specifier: workspace:*
+        version: link:../web
       astro:
         specifier: ^7.0.7
         version: 7.0.7(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.2)(@types/node@24.13.3)(rollup@4.62.2)(yaml@2.9.0)
@@ -86,7 +89,7 @@ importers:
         specifier: ^6.0.0
         version: 6.2.4(svelte@5.56.4)(vite@7.3.6(@types/node@24.13.3)(lightningcss@1.32.0)(yaml@2.9.0))
       svelte:
-        specifier: ^5.36.0
+        specifier: ^5.56.4
         version: 5.56.4
       svelte-check:
         specifier: ^4.2.0

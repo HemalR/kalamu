@@ -1,6 +1,6 @@
 ---
 import '../styles/global.css';
-import OutlineDemo from '../components/OutlineDemo.svelte';
+import OutlineEmbed from '@kalamu/web/embed';
 
 const installCommand = `npm install -g kalamu
 kalamu init`;
@@ -50,7 +50,7 @@ kalamu init`;
 				</div>
 
 				<div class="hero-demo">
-					<OutlineDemo client:load />
+					<OutlineEmbed client:only="svelte" />
 				</div>
 			</section>
 

@@ -30,7 +30,7 @@ import {
 } from "@kalamu/core";
 import { tick } from "svelte";
 import { SvelteSet } from "svelte/reactivity";
-import { api, apiBase, ApiError, type Priority } from "./api";
+import { api, ApiError, type Priority } from "./api";
 import type { CaretPosition } from "./caret";
 import { commitPatch, tokenPatch, type CommitPatch } from "./commit";
 import { discussionPrompt, serializeSubtree, writeClipboard } from "./copy";
@@ -131,13 +131,12 @@ export class OutlineStore {
       this.loadError = err instanceof Error ? err.message : "unknown error";
       return;
     }
-    const events = new EventSource(`${apiBase}/api/events`);
-    // EventSource retries on its own: onerror means the server is gone,
-    // onopen fires again once it comes back.
-    events.onopen = () => this.setConnected(true);
-    events.onerror = () => this.setConnected(false);
-    events.addEventListener("outline-changed", () => void this.refetchNodes());
-    events.addEventListener("meta-changed", () => void this.refetchMeta());
+    api.subscribe({
+      onConnected: () => this.setConnected(true),
+      onDisconnected: () => this.setConnected(false),
+      onOutlineChanged: () => void this.refetchNodes(),
+      onMetaChanged: () => void this.refetchMeta(),
+    });
   }
 
   private setConnected(value: boolean): void {

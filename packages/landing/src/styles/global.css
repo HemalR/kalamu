@@ -1,7 +1,9 @@
 /*
- * Shared tokens with @kalamu/web's app.css, so the marketing site and the
- * product read as one brand. Keep in sync by eye — there's no shared package,
- * the palette is small enough that duplication beats a cross-package import.
+ * Tokens duplicated from @kalamu/web's app.css, so the marketing site and the
+ * product read as one brand. The hero demo IS the real product component
+ * (@kalamu/web/embed) and consumes these tokens directly; the page-level
+ * duplication here stays deliberate — the palette is small enough that
+ * keeping it in sync by eye beats importing the app's stylesheet wholesale.
  */
 
 :root {
@@ -17,6 +19,17 @@
   --guide: light-dark(rgba(20, 30, 40, 0.09), rgba(220, 230, 240, 0.09));
   --p1: light-dark(#e5484d, #ff6369);
   --p2: light-dark(#f76b15, #ff8d47);
+  --toast-bg: light-dark(#24292f, #e3e6ea);
+  --toast-fg: light-dark(#f6f8fa, #17191d);
+}
+
+/* The embed's command palette can toggle the theme; it sets data-theme on
+   <html> (lib/theme.svelte.ts), same as in the product. */
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
 }
 
 * {

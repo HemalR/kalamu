@@ -87,9 +87,42 @@ function json(method: string, body: unknown): RequestInit {
   return { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) };
 }
 
-export const api = {
-  getNodes: () => request<{ nodes: KalamuNode[] }>("/api/nodes"),
+/** Server-push notifications the store reacts to (SSE over HTTP; no-op in-memory). */
+export interface BackendEvents {
+  onConnected(): void;
+  onDisconnected(): void;
+  onOutlineChanged(): void;
+  onMetaChanged(): void;
+}
+
+/**
+ * Everything the UI needs from a backend. The default is the local Kalamu
+ * server over HTTP; the landing-page demo swaps in an in-memory backend via
+ * setBackend() so the identical UI runs with no server at all.
+ */
+export interface Backend {
+  getNodes(): Promise<{ nodes: KalamuNode[] }>;
   /** Whole-outline replace; exists for undo/redo snapshot-restore. */
+  replaceNodes(nodes: KalamuNode[]): Promise<{ nodes: KalamuNode[] }>;
+  createNode(body: CreateNodeBody): Promise<KalamuNode>;
+  patchNode(id: string, body: PatchNodeBody): Promise<KalamuNode>;
+  deleteNode(id: string, recursive: boolean): Promise<{ id: string; deleted: number }>;
+  moveNode(id: string, body: MoveNodeBody): Promise<KalamuNode>;
+  markDone(id: string): Promise<KalamuNode>;
+  reopen(id: string): Promise<KalamuNode>;
+  getProject(): Promise<ProjectInfo>;
+  getMeta(): Promise<KalamuMeta>;
+  setTagColor(tag: string, color: string | null): Promise<KalamuMeta>;
+  getUiState(): Promise<UiState>;
+  putUiState(state: UiState): Promise<UiState>;
+  /** Pasted image → content-hashed file in .kalamu/assets/ (SPEC key decision 11). */
+  uploadAsset(blob: Blob): Promise<{ path: string; url: string }>;
+  /** Start pushing change notifications; called once, after the initial load succeeds. */
+  subscribe(events: BackendEvents): void;
+}
+
+const httpBackend: Backend = {
+  getNodes: () => request<{ nodes: KalamuNode[] }>("/api/nodes"),
   replaceNodes: (nodes: KalamuNode[]) => request<{ nodes: KalamuNode[] }>("/api/nodes", json("PUT", { nodes })),
   createNode: (body: CreateNodeBody) => request<KalamuNode>("/api/nodes", json("POST", body)),
   patchNode: (id: string, body: PatchNodeBody) =>
@@ -108,11 +141,29 @@ export const api = {
     request<KalamuMeta>(`/api/tags/${encodeURIComponent(tag)}`, json("PUT", { color })),
   getUiState: () => request<UiState>("/api/ui-state"),
   putUiState: (state: UiState) => request<UiState>("/api/ui-state", json("PUT", state)),
-  /** Pasted image → content-hashed file in .kalamu/assets/ (SPEC key decision 11). */
   uploadAsset: (blob: Blob) =>
     request<{ path: string; url: string }>("/api/assets", {
       method: "POST",
       headers: { "content-type": blob.type },
       body: blob,
     }),
+  subscribe: (events: BackendEvents) => {
+    const source = new EventSource(`${apiBase}/api/events`);
+    // EventSource retries on its own: onerror means the server is gone,
+    // onopen fires again once it comes back.
+    source.onopen = () => events.onConnected();
+    source.onerror = () => events.onDisconnected();
+    source.addEventListener("outline-changed", () => events.onOutlineChanged());
+    source.addEventListener("meta-changed", () => events.onMetaChanged());
+  },
 };
+
+/**
+ * The active backend. An ESM live binding: `api.*` call sites always see the
+ * current backend, so setBackend() before the store loads swaps everything.
+ */
+export let api: Backend = httpBackend;
+
+export function setBackend(backend: Backend): void {
+  api = backend;
+}
