@@ -119,6 +119,8 @@ export class OutlineStore {
   private opVersion = 0;
   private uiStateTimer: ReturnType<typeof setTimeout> | undefined;
   private toastTimer: ReturnType<typeof setTimeout> | undefined;
+  private stopEvents: (() => void) | undefined;
+  private eventsPaused = false;
 
   async init(): Promise<void> {
     try {
@@ -131,12 +133,39 @@ export class OutlineStore {
       this.loadError = err instanceof Error ? err.message : "unknown error";
       return;
     }
-    api.subscribe({
+    this.subscribeToEvents();
+  }
+
+  private subscribeToEvents(): void {
+    // pagehide can run while the initial requests above are still in flight.
+    // In that case init may finish, but the obsolete page must not open SSE.
+    if (this.eventsPaused || this.stopEvents !== undefined) return;
+    this.stopEvents = api.subscribe({
       onConnected: () => this.setConnected(true),
       onDisconnected: () => this.setConnected(false),
       onOutlineChanged: () => void this.refetchNodes(),
       onMetaChanged: () => void this.refetchMeta(),
     });
+  }
+
+  /** Close SSE before full-page hub navigation (or entry into the bfcache). */
+  pauseEvents(): void {
+    this.eventsPaused = true;
+    this.stopEvents?.();
+    this.stopEvents = undefined;
+  }
+
+  /** Restore SSE when a bfcache-preserved page becomes active again. */
+  resumeEvents(): void {
+    const wasPaused = this.eventsPaused;
+    this.eventsPaused = false;
+    if (!this.loaded) return;
+    this.subscribeToEvents();
+    if (wasPaused) {
+      // Changes made while this document was hidden were not pushed to it.
+      void this.refetchNodes();
+      void this.refetchMeta();
+    }
   }
 
   private setConnected(value: boolean): void {

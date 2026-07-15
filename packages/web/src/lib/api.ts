@@ -117,8 +117,51 @@ export interface Backend {
   putUiState(state: UiState): Promise<UiState>;
   /** Pasted image → content-hashed file in .kalamu/assets/ (SPEC key decision 11). */
   uploadAsset(blob: Blob): Promise<{ path: string; url: string }>;
-  /** Start pushing change notifications; called once, after the initial load succeeds. */
-  subscribe(events: BackendEvents): void;
+  /** Start pushing change notifications; returns an idempotent stop function. */
+  subscribe(events: BackendEvents): () => void;
+}
+
+interface EventStream {
+  addEventListener(type: string, listener: EventListener): void;
+  removeEventListener(type: string, listener: EventListener): void;
+  close(): void;
+}
+
+/**
+ * Open the server's SSE stream and return its disposer. Keeping the listener
+ * references here is deliberate: rapid hub navigation must be able to detach
+ * every callback and close the underlying HTTP connection immediately.
+ *
+ * `createSource` is injectable so the lifecycle can be tested without a
+ * browser EventSource implementation.
+ */
+export function subscribeToServerEvents(
+  events: BackendEvents,
+  createSource: (url: string) => EventStream = (url) => new EventSource(url),
+): () => void {
+  const source = createSource(`${apiBase}/api/events`);
+  const onOpen: EventListener = () => events.onConnected();
+  const onError: EventListener = () => events.onDisconnected();
+  const onOutlineChanged: EventListener = () => events.onOutlineChanged();
+  const onMetaChanged: EventListener = () => events.onMetaChanged();
+  let stopped = false;
+
+  // EventSource retries on its own: error means the server is gone, and open
+  // fires again once it comes back.
+  source.addEventListener("open", onOpen);
+  source.addEventListener("error", onError);
+  source.addEventListener("outline-changed", onOutlineChanged);
+  source.addEventListener("meta-changed", onMetaChanged);
+
+  return () => {
+    if (stopped) return;
+    stopped = true;
+    source.removeEventListener("open", onOpen);
+    source.removeEventListener("error", onError);
+    source.removeEventListener("outline-changed", onOutlineChanged);
+    source.removeEventListener("meta-changed", onMetaChanged);
+    source.close();
+  };
 }
 
 const httpBackend: Backend = {
@@ -147,15 +190,7 @@ const httpBackend: Backend = {
       headers: { "content-type": blob.type },
       body: blob,
     }),
-  subscribe: (events: BackendEvents) => {
-    const source = new EventSource(`${apiBase}/api/events`);
-    // EventSource retries on its own: onerror means the server is gone,
-    // onopen fires again once it comes back.
-    source.onopen = () => events.onConnected();
-    source.onerror = () => events.onDisconnected();
-    source.addEventListener("outline-changed", () => events.onOutlineChanged());
-    source.addEventListener("meta-changed", () => events.onMetaChanged());
-  },
+  subscribe: subscribeToServerEvents,
 };
 
 /**

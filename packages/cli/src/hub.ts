@@ -149,11 +149,9 @@ export function createHubServer(assetsDir: string | null, options: HubOptions = 
     return c.body(null, 204);
   });
 
-  // Per-project installed-app (PWA) identity: a manifest + icon rendered in
-  // the project's colour, so an installed hub project's dock/home-screen icon
-  // matches its sidebar colour. The SPA repoints <link rel="manifest"> here
-  // (index.html ships a static bronze manifest for standalone). Registered
-  // before the catch-all proxy below so these literal paths win.
+  // Compatibility routes for older web bundles that pointed at a project-local
+  // manifest. The installed app is still the single, root-scoped Kalamu hub;
+  // only its icon retains the active project's colour.
   app.get("/p/:slug/icon.svg", (c) => {
     const entry = readRegistry(options.registryFile).projects.find((p) => p.slug === c.req.param("slug"));
     if (!entry) return c.text("not found", 404);
@@ -163,12 +161,12 @@ export function createHubServer(assetsDir: string | null, options: HubOptions = 
     const slug = c.req.param("slug");
     const entry = readRegistry(options.registryFile).projects.find((p) => p.slug === slug);
     if (!entry) return c.text("not found", 404);
-    const name = entry.name ?? projectName(entry.path);
     const manifest = {
-      name,
-      short_name: name,
-      start_url: `/p/${slug}/`,
-      scope: `/p/${slug}`,
+      name: "Kalamu",
+      short_name: "Kalamu",
+      id: "/",
+      start_url: "/",
+      scope: "/",
       display: "standalone",
       theme_color: projectColor(entry),
       background_color: "#17191d",

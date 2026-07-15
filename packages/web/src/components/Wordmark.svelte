@@ -43,6 +43,6 @@
     font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
     font-weight: 500;
     letter-spacing: -0.01em;
-    margin-left: -0.06em;
+    margin-left: 0.12em;
   }
 </style>

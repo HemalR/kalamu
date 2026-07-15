@@ -128,6 +128,6 @@ export function createMemoryBackend(seed: KalamuNode[]): Backend {
     },
 
     // No server to lose: the store stays connected forever.
-    subscribe: () => {},
+    subscribe: () => () => {},
   };
 }

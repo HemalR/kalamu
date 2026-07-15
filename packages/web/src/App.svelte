@@ -40,13 +40,6 @@
     // Browser UI / installed-app title bar follows the project colour too.
     document.querySelector('meta[name="theme-color"]')?.setAttribute("content", markColor ?? BRAND_BRONZE);
   });
-  // In the hub, point the install manifest at this project's dynamic one (name
-  // + colour); standalone keeps the static bronze manifest from index.html.
-  if (apiBase !== "") {
-    const manifestLink = document.querySelector('link[rel="manifest"]');
-    if (manifestLink instanceof HTMLLinkElement) manifestLink.href = `${apiBase}/manifest.webmanifest`;
-  }
-
   const visibleRoots = $derived(store.visibleChildren(null));
 
   function onWindowKeydown(event: KeyboardEvent): void {
@@ -90,7 +83,11 @@
   }
 </script>
 
-<svelte:window onkeydown={onWindowKeydown} />
+<svelte:window
+  onkeydown={onWindowKeydown}
+  onpagehide={() => store.pauseEvents()}
+  onpageshow={() => store.resumeEvents()}
+/>
 
 {#snippet app()}
 <main>

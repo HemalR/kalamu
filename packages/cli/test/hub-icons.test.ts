@@ -31,16 +31,18 @@ writeFileSync(
 const hub = createHubServer(null, { registryFile });
 afterAll(() => hub.close());
 
-describe("hub per-project install icons", () => {
-  it("serves a manifest scoped to the project, in its colour", async () => {
+describe("hub install identity", () => {
+  it("serves a root-scoped Kalamu manifest in the project's colour", async () => {
     const res = await hub.app.fetch(new Request("http://h/p/acme/manifest.webmanifest"));
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("application/manifest+json");
     const manifest = (await res.json()) as Record<string, unknown>;
-    expect(manifest.name).toBe("Acme");
+    expect(manifest.name).toBe("Kalamu");
+    expect(manifest.short_name).toBe("Kalamu");
+    expect(manifest.id).toBe("/");
     expect(manifest.theme_color).toBe("#8e4ec6");
-    expect(manifest.start_url).toBe("/p/acme/");
-    expect(manifest.scope).toBe("/p/acme");
+    expect(manifest.start_url).toBe("/");
+    expect(manifest.scope).toBe("/");
     expect(manifest.icons).toEqual([
       { src: "/p/acme/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" },
       { src: "/p/acme/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "maskable" },

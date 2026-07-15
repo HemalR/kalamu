@@ -1,6 +1,7 @@
 {
   "name": "Kalamu",
   "short_name": "Kalamu",
+  "id": "/",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
