@@ -16,6 +16,16 @@ under `Added` / `Changed` / `Fixed` / `Removed`.
 
 ## [Unreleased]
 
+### Fixed
+
+- Installed web app (PWA) now presents a single, stable "Kalamu" identity
+  instead of a per-project name, so installing from different projects no longer
+  creates mismatched or duplicate app entries. The installed icon still takes
+  the active project's colour.
+- Closed a leak where navigating between projects in the hub left the previous
+  project's live-update connection open; connections are now closed on
+  navigation and restored when a page is revisited.
+
 ## [0.7.0] - 2026-07-15
 
 ### Added
