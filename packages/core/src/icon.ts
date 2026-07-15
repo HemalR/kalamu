@@ -32,7 +32,7 @@ export function markInk(accent: string): string {
 function markPaths(ink: string): string {
   return (
     `<g fill="none" stroke="${ink}" stroke-width="7" stroke-linecap="round">` +
-    `<path d="M30 18 L30 84"/><path d="M42 45 L75 28"/><path d="M56 63 L79 77"/></g>` +
+    `<path d="M30 18 L30 84"/><path d="M34 51 L78 20"/><path d="M56 63 L82 82"/></g>` +
     `<circle cx="30" cy="47" r="8" fill="${ink}"/>` +
     `<rect x="39" y="54.5" width="15" height="15" rx="3.5" fill="none" stroke="${ink}" stroke-width="6"/>`
   );

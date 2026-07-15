@@ -12,8 +12,8 @@
   <svg class="mark" viewBox="18 13 66 75" aria-hidden="true">
     <g fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round">
       <path d="M30 18 L30 84" />
-      <path d="M42 45 L75 28" />
-      <path d="M56 63 L79 77" />
+      <path d="M34 51 L78 20" />
+      <path d="M56 63 L82 82" />
     </g>
     <circle cx="30" cy="47" r="8" fill="currentColor" />
     <rect x="39" y="54.5" width="15" height="15" rx="3.5" fill="none" stroke="currentColor" stroke-width="6" />
