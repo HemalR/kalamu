@@ -16,6 +16,8 @@ under `Added` / `Changed` / `Fixed` / `Removed`.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-07-15
+
 ### Fixed
 
 - Installed web app (PWA) now presents a single, stable "Kalamu" identity
