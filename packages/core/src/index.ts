@@ -8,3 +8,4 @@ export * from "./validate.js";
 export * from "./tokens.js";
 export * from "./tags.js";
 export * from "./markdown.js";
+export * from "./icon.js";

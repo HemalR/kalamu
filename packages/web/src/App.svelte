@@ -37,7 +37,15 @@
   let markColor = $state<string | null>(null);
   $effect(() => {
     setFavicon(markColor ?? BRAND_BRONZE);
+    // Browser UI / installed-app title bar follows the project colour too.
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", markColor ?? BRAND_BRONZE);
   });
+  // In the hub, point the install manifest at this project's dynamic one (name
+  // + colour); standalone keeps the static bronze manifest from index.html.
+  if (apiBase !== "") {
+    const manifestLink = document.querySelector('link[rel="manifest"]');
+    if (manifestLink instanceof HTMLLinkElement) manifestLink.href = `${apiBase}/manifest.webmanifest`;
+  }
 
   const visibleRoots = $derived(store.visibleChildren(null));
 
