@@ -16,6 +16,8 @@ under `Added` / `Changed` / `Fixed` / `Removed`.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-15
+
 ### Added
 
 - Visual identity: a bronze fanned-k wordmark and matching favicon that recolour
