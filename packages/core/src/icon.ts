@@ -13,9 +13,9 @@ export const BRAND_BRONZE = "#9a6a2e";
 
 /** sRGB relative luminance (WCAG), 0 (black) … 1 (white); unparseable → 0. */
 export function relativeLuminance(hex: string): number {
-  const match = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
-  if (match === null) return 0;
-  const int = Number.parseInt(match[1], 16);
+  const [, hex6] = /^#?([0-9a-f]{6})$/i.exec(hex.trim()) ?? [];
+  if (hex6 === undefined) return 0;
+  const int = Number.parseInt(hex6, 16);
   const lin = (byte: number): number => {
     const s = byte / 255;
     return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
