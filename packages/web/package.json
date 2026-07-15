@@ -13,6 +13,7 @@
     "dev": "vite",
     "build": "vite build",
     "check": "svelte-check --tsconfig ./tsconfig.json",
+    "typecheck": "pnpm run check",
     "test": "vitest run"
   },
   "dependencies": {

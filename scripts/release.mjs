@@ -10,7 +10,8 @@
  *
  * Steps: clean-tree check -> bump packages/cli/package.json (single source
  * of truth; the build injects it into the binary) -> sync README version line
- * -> stamp CHANGELOG's [Unreleased] to this version + date -> test -> build ->
+ * -> stamp CHANGELOG's [Unreleased] to this version + date -> test (which
+ * typechecks every package first, then runs unit tests) -> build ->
  * verify the built binary reports the new version -> commit + tag ->
  * npm publish -> push. Aborts on the first failure; nothing is pushed or
  * published until tests and the version check pass.
@@ -112,8 +113,7 @@ writeFileSync(
   changelog.replace("## [Unreleased]\n", `## [Unreleased]\n\n## [${version}] - ${today}\n`),
 );
 
-run("pnpm -r --if-present typecheck");
-run("pnpm test");
+run("pnpm test"); // typechecks every package (incl. web svelte-check), then runs unit tests
 run("pnpm build");
 
 // The binary must report the version we are about to publish.
