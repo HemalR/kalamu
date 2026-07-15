@@ -18,12 +18,17 @@ under `Added` / `Changed` / `Fixed` / `Removed`.
 
 ### Added
 
-- Bronze fanned-k wordmark and matching favicon, tinted with the active
-  project's colour.
-- PWA manifest and app icons so installed apps use the Kalamu mark; installed-app
-  icons in the hub are coloured to match their project.
-- Landing page for [kalamu.dev](https://kalamu.dev) with a hero, plus Wrangler
-  config for deploying it.
+- Visual identity: a bronze fanned-k wordmark and matching favicon that recolour
+  to the active project's colour, in both the app and the hub.
+- PWA manifest and app icons, so installing the web UI as an app uses the Kalamu
+  mark; installed-app icons in the hub are tinted per project.
+
+### Changed
+
+- Interactive `kalamu init` now confirms before scaffolding `.kalamu/` in a
+  directory that doesn't look like a code repository (no `.git`, `.gitignore`, or
+  `package.json`), so a mistyped path can't create an outline in the wrong place.
+  Agents and non-interactive runs are never prompted.
 
 ## [0.6.0] - 2026-07-13
 
