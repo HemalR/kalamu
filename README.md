@@ -1,3 +1,5 @@
+<img src="assets/logo.svg" alt="" width="72" align="left" hspace="16" />
+
 # Kalamu
 
 [![skills.sh](https://skills.sh/b/hemalr/kalamu)](https://skills.sh/hemalr/kalamu)

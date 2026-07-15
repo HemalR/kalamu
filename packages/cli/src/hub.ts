@@ -4,6 +4,7 @@
  * instance of the ordinary per-project server, torn down again after idling,
  * so the hub never holds file watchers for dormant projects.
  */
+import { appIconSvg } from "@kalamu/core";
 import { pathsFor, readOutline } from "@kalamu/core/store";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
@@ -146,6 +147,37 @@ export function createHubServer(assetsDir: string | null, options: HubOptions = 
     }
     closeInstance(slug);
     return c.body(null, 204);
+  });
+
+  // Per-project installed-app (PWA) identity: a manifest + icon rendered in
+  // the project's colour, so an installed hub project's dock/home-screen icon
+  // matches its sidebar colour. The SPA repoints <link rel="manifest"> here
+  // (index.html ships a static bronze manifest for standalone). Registered
+  // before the catch-all proxy below so these literal paths win.
+  app.get("/p/:slug/icon.svg", (c) => {
+    const entry = readRegistry(options.registryFile).projects.find((p) => p.slug === c.req.param("slug"));
+    if (!entry) return c.text("not found", 404);
+    return c.body(appIconSvg(projectColor(entry)), 200, { "Content-Type": "image/svg+xml" });
+  });
+  app.get("/p/:slug/manifest.webmanifest", (c) => {
+    const slug = c.req.param("slug");
+    const entry = readRegistry(options.registryFile).projects.find((p) => p.slug === slug);
+    if (!entry) return c.text("not found", 404);
+    const name = entry.name ?? projectName(entry.path);
+    const manifest = {
+      name,
+      short_name: name,
+      start_url: `/p/${slug}/`,
+      scope: `/p/${slug}`,
+      display: "standalone",
+      theme_color: projectColor(entry),
+      background_color: "#17191d",
+      icons: [
+        { src: `/p/${slug}/icon.svg`, sizes: "any", type: "image/svg+xml", purpose: "any" },
+        { src: `/p/${slug}/icon.svg`, sizes: "any", type: "image/svg+xml", purpose: "maskable" },
+      ],
+    };
+    return c.body(JSON.stringify(manifest), 200, { "Content-Type": "application/manifest+json" });
   });
 
   // Project traffic routes into that project's own server instance; everything

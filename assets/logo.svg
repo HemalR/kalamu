@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="18 10 66 82" width="132" height="164" role="img" aria-label="Kalamu">
+  <!-- The fanned-k mark: a tiny outline — a bullet on the stem (a thought,
+       connected) and a checkbox nested beneath it (a task, indented) — that
+       reads as the letter k. Bronze ink; recolour by editing the values. -->
+  <g fill="none" stroke="#9a6a2e" stroke-width="7" stroke-linecap="round">
+    <path d="M30 18 L30 84" />
+    <path d="M42 45 L75 28" />
+    <path d="M56 63 L79 77" />
+  </g>
+  <circle cx="30" cy="47" r="8" fill="#9a6a2e" />
+  <rect x="39" y="54.5" width="15" height="15" rx="3.5" fill="none" stroke="#9a6a2e" stroke-width="6" />
+</svg>

@@ -8,7 +8,9 @@
   import Sidebar from "./components/Sidebar.svelte";
   import Toast from "./components/Toast.svelte";
   import UpdateChip from "./components/UpdateChip.svelte";
+  import Wordmark from "./components/Wordmark.svelte";
   import { api, apiBase, type ProjectInfo } from "./lib/api";
+  import { BRAND_BRONZE, setFavicon } from "./lib/favicon";
   import { OutlineStore } from "./lib/outline.svelte";
   import { matches, SHORTCUTS as S } from "./lib/shortcuts";
   import { theme } from "./lib/theme.svelte";
@@ -29,6 +31,21 @@
 
   /** At most one overlay at a time; Overlay.svelte owns Escape while one is open. */
   let overlay = $state<"palette" | "help" | "cli" | null>(null);
+
+  /** Active project's colour (hub only), reported by the Sidebar; null falls
+      back to the bronze brand. Tints the wordmark and the favicon. */
+  let markColor = $state<string | null>(null);
+  $effect(() => {
+    setFavicon(markColor ?? BRAND_BRONZE);
+    // Browser UI / installed-app title bar follows the project colour too.
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", markColor ?? BRAND_BRONZE);
+  });
+  // In the hub, point the install manifest at this project's dynamic one (name
+  // + colour); standalone keeps the static bronze manifest from index.html.
+  if (apiBase !== "") {
+    const manifestLink = document.querySelector('link[rel="manifest"]');
+    if (manifestLink instanceof HTMLLinkElement) manifestLink.href = `${apiBase}/manifest.webmanifest`;
+  }
 
   const visibleRoots = $derived(store.visibleChildren(null));
 
@@ -78,7 +95,7 @@
 {#snippet app()}
 <main>
   <header>
-    <span class="wordmark">kalamu{#if project !== null}<span class="project">| {project.name}</span>{/if}</span>
+    <span class="brandline"><Wordmark />{#if project !== null}<span class="project">| {project.name}</span>{/if}</span>
     <div class="actions">
       <button class="clean-up" title="Delete completed tasks and their subtrees" onclick={() => store.clean()}>
         Clean up
@@ -165,12 +182,13 @@
 
 {#if apiBase !== ""}
   <!-- Hub mode: project sidebar beside the regular app. -->
-  <div class="hub">
+  <div class="hub" style:--mark={markColor ?? undefined}>
     <Sidebar
       onrename={(name) => {
         if (project !== null) project.name = name;
         document.title = `Kalamu | ${name}`;
       }}
+      oncolor={(color) => (markColor = color)}
     />
     <div class="hub-main">{@render app()}</div>
   </div>
@@ -214,17 +232,18 @@
     margin-bottom: 20px;
   }
 
-  .wordmark {
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    color: var(--muted);
+  .brandline {
+    display: flex;
+    align-items: center;
   }
 
   /* Project name stays in the wordmark's muted tone, just less bold. */
-  .wordmark .project {
-    margin-left: 0.4em;
+  .brandline .project {
+    margin-left: 0.5em;
+    font-size: 12px;
     font-weight: 400;
+    letter-spacing: 0.02em;
+    color: var(--muted);
   }
 
   /* Right-aligned header actions; more buttons will land here later. */

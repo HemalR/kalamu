@@ -7,6 +7,7 @@
   import type { Attachment } from "svelte/attachments";
   import { apiBase } from "../lib/api";
   import ColorPopover from "./ColorPopover.svelte";
+  import Wordmark from "./Wordmark.svelte";
 
   interface HubProject {
     slug: string;
@@ -18,8 +19,13 @@
     lastSeenAt: string;
   }
 
-  /** Called with the effective name after the ACTIVE project is renamed. */
-  let { onrename }: { onrename?: (name: string) => void } = $props();
+  /** onrename: effective name after the ACTIVE project is renamed.
+      oncolor: the active project's colour (override or derived), null when
+      unknown — drives the wordmark/favicon tint (bronze default). */
+  let {
+    onrename,
+    oncolor,
+  }: { onrename?: (name: string) => void; oncolor?: (color: string | null) => void } = $props();
 
   const activeSlug = apiBase.slice("/p/".length);
 
@@ -68,6 +74,13 @@
 
   /** The row whose theme colours the sidebar; null if it left the registry. */
   const activeProject = $derived(projects?.find((project) => project.slug === activeSlug) ?? null);
+
+  // Report the active colour up (bronze default until the list loads, and if
+  // the active project leaves the registry). Re-fires when a swatch pick
+  // changes it, so the wordmark and favicon recolour live.
+  $effect(() => {
+    oncolor?.(activeProject?.color ?? null);
+  });
 
   /** Slug of the row whose colour popover is open; null when none. */
   let colorSlug = $state<string | null>(null);
@@ -195,7 +208,7 @@
     <div class="backdrop" aria-hidden="true" onclick={() => (drawerOpen = false)}></div>
   {/if}
   <nav class="sidebar" class:open={drawerOpen} aria-label="Projects" style:--project-color={activeProject?.color}>
-    <span class="brand">kalamu</span>
+    <span class="brand"><Wordmark size={13} /></span>
     <!-- Presentational: with the numbered swatches below it spells Mod+Shift+N. -->
     <span class="hint" aria-hidden="true">
       <kbd>{isMac ? "⌘" : "Ctrl"}</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span>
@@ -276,25 +289,20 @@
     background: color-mix(in srgb, var(--project-color, transparent) 5%, transparent);
   }
 
-  /* Same tone as the header wordmark. */
+  /* The header wordmark, repeated for the hub. */
   .brand {
-    display: block;
+    display: flex;
+    align-items: center;
     padding: 0 10px;
     margin-bottom: 4px;
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    color: var(--muted);
   }
   /* Echo of the active project's colour beside the brand. */
   .brand::after {
     content: "";
-    display: inline-block;
     width: 7px;
     height: 7px;
     margin-left: 7px;
     border-radius: 50%;
-    vertical-align: middle; /* centred on the lowercase wordmark */
     background: var(--project-color, transparent);
   }
 
