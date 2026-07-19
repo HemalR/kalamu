@@ -16,6 +16,8 @@ under `Added` / `Changed` / `Fixed` / `Removed`.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-07-19
+
 ### Added
 
 - Zoom: focus any item as a temporary root, with a breadcrumb trail above the

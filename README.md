@@ -8,7 +8,7 @@ A repo-local, keyboard-first outliner for turning developer thoughts into agent-
 
 Your outline lives in your repository as one diffable file — `.kalamu/outline.jsonl` — with no cloud, no account, and no daemon. You brainstorm in a fast keyboard-first web UI; your coding agents consume the same outline through a CLI built for them.
 
-**Current version: v0.7.1**
+**Current version: v0.8.0**
 
 ## Install
 
