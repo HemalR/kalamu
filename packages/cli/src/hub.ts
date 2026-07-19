@@ -19,6 +19,7 @@ import {
   readRegistry,
   recolorProject,
   renameProject,
+  reorderProject,
   unregisterProject,
   type RegistryEntry,
 } from "./registry.js";
@@ -94,8 +95,11 @@ export function createHubServer(assetsDir: string | null, options: HubOptions = 
   // Lets `kalamu open` (and the UI) tell a hub apart from anything else on the port.
   app.get("/api/hub", (c) => c.json({ hub: true }));
 
+  // Registry array order IS the sidebar order (manual, drag-to-reorder) —
+  // stable positions keep the Mod+Shift+1…9 shortcuts stable. Recency only
+  // picks where the hub root lands.
   app.get("/api/projects", (c) => {
-    const projects = [...readRegistry(options.registryFile).projects].sort(byMostRecent).map((entry) => ({
+    const projects = readRegistry(options.registryFile).projects.map((entry) => ({
       slug: entry.slug,
       name: entry.name ?? projectName(entry.path),
       path: entry.path,
@@ -106,10 +110,10 @@ export function createHubServer(assetsDir: string | null, options: HubOptions = 
     return c.json({ projects });
   });
 
-  // Update a project's display name and/or theme colour (slug — route
-  // identity — never changes). A blank value clears that override, reverting
-  // to the derived name/colour; the response carries the effective values so
-  // the UI can show what a clear reverted to.
+  // Update a project's display name, theme colour and/or sidebar position
+  // (slug — route identity — never changes). A blank name/colour clears that
+  // override, reverting to the derived value; the response carries the
+  // effective values so the UI can show what a clear reverted to.
   app.patch("/api/projects/:slug", async (c) => {
     const slug = c.req.param("slug");
     let body: unknown;
@@ -118,18 +122,24 @@ export function createHubServer(assetsDir: string | null, options: HubOptions = 
     } catch {
       return c.json({ error: "invalid JSON body" }, 400);
     }
-    const { name, color } = body !== null && typeof body === "object" ? (body as Record<string, unknown>) : {};
-    if (name === undefined && color === undefined) {
-      return c.json({ error: `expected {"name"?: string, "color"?: string}` }, 400);
+    const { name, color, index } = body !== null && typeof body === "object" ? (body as Record<string, unknown>) : {};
+    if (name === undefined && color === undefined && index === undefined) {
+      return c.json({ error: `expected {"name"?: string, "color"?: string, "index"?: number}` }, 400);
     }
     if (name !== undefined && typeof name !== "string") return c.json({ error: `expected {"name": string}` }, 400);
     if (color !== undefined && (typeof color !== "string" || (color.trim() !== "" && !isHexColor(color.trim())))) {
       return c.json({ error: `expected {"color": "#rrggbb"} (blank clears the override)` }, 400);
     }
+    if (index !== undefined && (typeof index !== "number" || !Number.isInteger(index) || index < 0)) {
+      return c.json({ error: `expected {"index": <non-negative integer>}` }, 400);
+    }
     if (name !== undefined && renameProject(slug, name, options.registryFile) === null) {
       return c.json({ error: `no registered project "${slug}"` }, 404);
     }
     if (color !== undefined && recolorProject(slug, color, options.registryFile) === null) {
+      return c.json({ error: `no registered project "${slug}"` }, 404);
+    }
+    if (index !== undefined && !reorderProject(slug, index, options.registryFile)) {
       return c.json({ error: `no registered project "${slug}"` }, 404);
     }
     const entry = readRegistry(options.registryFile).projects.find((p) => p.slug === slug);
@@ -335,6 +345,39 @@ export function uninstallHubAgent(): void {
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
+/** Poll until a hub answers on the hub port (~3s); false when none appears. */
+async function awaitHub(): Promise<boolean> {
+  for (let i = 0; i < 10; i++) {
+    await sleep(300);
+    if (await detectHub()) return true;
+  }
+  return false;
+}
+
+/**
+ * Start the launchd-installed hub when it exists but isn't answering (booted
+ * out, crashed past KeepAlive's patience). False when there is nothing to
+ * wake (not macOS, not installed) or launchd/the hub doesn't come up —
+ * callers fall back to whatever they were doing. `kalamu open` uses this so
+ * an installed hub is always the destination, never a standalone server.
+ */
+export async function wakeInstalledHub(): Promise<boolean> {
+  if (process.platform !== "darwin" || !existsSync(hubLaunchAgentPlist())) return false;
+  const domain = `gui/${process.getuid?.() ?? 0}`;
+  try {
+    // Without -k: starts the job if stopped, no-op if it is already running.
+    launchctl(["kickstart", `${domain}/${HUB_LAUNCHD_LABEL}`]);
+  } catch {
+    // Installed but not loaded (e.g. booted out) — load it instead.
+    try {
+      launchctl(["bootstrap", domain, hubLaunchAgentPlist()]);
+    } catch {
+      return false;
+    }
+  }
+  return awaitHub();
+}
+
 /**
  * Restart the installed hub so it picks up updated code (a running process
  * never notices a new bundle on disk). Only launchd-managed hubs can be
@@ -353,13 +396,10 @@ export async function restartHub(): Promise<void> {
         throw new Error(`launchd could not start ${HUB_LAUNCHD_LABEL} — try \`kalamu hub install\` again`);
       }
     }
-    for (let i = 0; i < 10; i++) {
-      await sleep(300);
-      if (await detectHub()) {
-        console.log(`Restarted ${HUB_LAUNCHD_LABEL}`);
-        console.log(`  http://127.0.0.1:${HUB_PORT}`);
-        return;
-      }
+    if (await awaitHub()) {
+      console.log(`Restarted ${HUB_LAUNCHD_LABEL}`);
+      console.log(`  http://127.0.0.1:${HUB_PORT}`);
+      return;
     }
     throw new Error(`restarted ${HUB_LAUNCHD_LABEL}, but no hub answered on port ${HUB_PORT} — check ~/.kalamu/hub.log`);
   }

@@ -4,12 +4,14 @@ import { digitPick, filterItems, snapSelection, stepSelection } from "../src/lib
 
 const items = [{ label: "Priority" }, { label: "Labels" }, { label: "Assign" }, { label: "#v2" }];
 
-// The fixed root list with no node focused: items 1-5 disabled, the rest enabled.
+// The fixed root list with no node focused: items 1-7 disabled, the rest enabled.
 const noFocusRoot = [
   { label: "Priority…", disabled: true },
   { label: "Labels…", disabled: true },
   { label: "Assign…", disabled: true },
   { label: "Toggle done", disabled: true },
+  { label: "Collapse parent", disabled: true },
+  { label: "Expand children", disabled: true },
   { label: "Copy CLI command…", disabled: true },
   { label: "Activate dark mode" },
   { label: "Clean up" },
@@ -45,8 +47,8 @@ describe("snapSelection", () => {
   });
 
   it("snaps forward past disabled items, wrapping", () => {
-    expect(snapSelection(noFocusRoot, 0)).toBe(5);
-    expect(snapSelection(noFocusRoot, 6)).toBe(6);
+    expect(snapSelection(noFocusRoot, 0)).toBe(7);
+    expect(snapSelection(noFocusRoot, 8)).toBe(8);
   });
 
   it("returns -1 when nothing is selectable", () => {
@@ -63,9 +65,9 @@ describe("stepSelection", () => {
   });
 
   it("skips disabled items in both directions", () => {
-    expect(stepSelection(noFocusRoot, 5, 1)).toBe(6);
-    expect(stepSelection(noFocusRoot, 8, 1)).toBe(5); // wraps past 0-4
-    expect(stepSelection(noFocusRoot, 5, -1)).toBe(8); // wraps backwards past 4-0
+    expect(stepSelection(noFocusRoot, 7, 1)).toBe(8);
+    expect(stepSelection(noFocusRoot, 10, 1)).toBe(7); // wraps past 0-6
+    expect(stepSelection(noFocusRoot, 7, -1)).toBe(10); // wraps backwards past 6-0
   });
 
   it("stays put when nothing else is enabled", () => {
@@ -82,8 +84,8 @@ describe("digitPick", () => {
 
   it("swallows digits that point at disabled items", () => {
     expect(digitPick(noFocusRoot, "", 1)).toEqual({ kind: "swallow" });
-    expect(digitPick(noFocusRoot, "", 5)).toEqual({ kind: "swallow" });
-    expect(digitPick(noFocusRoot, "", 6)).toEqual({ kind: "activate", item: { label: "Activate dark mode" } });
+    expect(digitPick(noFocusRoot, "", 7)).toEqual({ kind: "swallow" });
+    expect(digitPick(noFocusRoot, "", 8)).toEqual({ kind: "activate", item: { label: "Activate dark mode" } });
   });
 
   it("treats digits as query text once anything is typed", () => {

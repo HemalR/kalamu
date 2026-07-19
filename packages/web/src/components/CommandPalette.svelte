@@ -117,10 +117,11 @@
         run: () => void copyCommand(command),
       }));
     }
-    // Root level: a fixed nine-item list with stable numbers (SPEC). Items
+    // Root level: a fixed eleven-item list with stable numbers (SPEC). Items
     // that don't apply — node actions without a target, Priority / Assign on
-    // a bullet, or Assign on a discussion (never assigned — SPEC key
-    // decision 12) — are disabled rather than hidden.
+    // a bullet, Assign on a discussion (never assigned — SPEC key
+    // decision 12), or Collapse parent with nothing rendered above to fold —
+    // are disabled rather than hidden.
     const task = target?.kind === "task" ? target : undefined;
     const workItem = target !== undefined && target.kind !== "bullet" ? target : undefined;
     return [
@@ -137,6 +138,34 @@
           if (!target) return;
           store.toggleDone(target.id);
           close();
+        },
+      },
+      {
+        // Structural, so it applies to every kind; inert on root-level nodes
+        // and on the zoom root (canCollapseParent mirrors the store's guards).
+        id: "collapse-parent",
+        label: "Collapse parent",
+        disabled: !target || !store.canCollapseParent(target.id),
+        run: () => {
+          if (!target) return;
+          store.collapseParent(target.id);
+          // Not close(): its focus restore would put the caret back in the
+          // acted-on node — this action must leave it on the PARENT.
+          onclose();
+        },
+      },
+      {
+        // The inverse: structural too, inert on leaves (canExpandChildren
+        // mirrors the store's guard — no zoom guard, expanding descends
+        // into the view).
+        id: "expand-children",
+        label: "Expand children",
+        disabled: !target || !store.canExpandChildren(target.id),
+        run: () => {
+          if (!target) return;
+          store.expandChildren(target.id);
+          // Not close(): this action must leave the caret on the FIRST CHILD.
+          onclose();
         },
       },
       // Copy CLI command works on bullets too — only a target is required.

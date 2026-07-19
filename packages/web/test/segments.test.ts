@@ -65,9 +65,80 @@ describe("segmentText", () => {
   });
 
   it("only matches images under .kalamu/assets/", () => {
-    expect(segmentText("![](https://evil.example/x.png)")).toEqual([
-      { kind: "text", text: "![](https://evil.example/x.png)", start: 0 },
+    const segs = segmentText("![](https://evil.example/x.png)");
+    expect(segs.filter((s) => s.kind === "image")).toEqual([]);
+  });
+
+  it("renders a mid-text URL as a link segment in place", () => {
+    expect(segmentText("see https://example.com for details")).toEqual([
+      { kind: "text", text: "see ", start: 0 },
+      { kind: "link", href: "https://example.com", start: 4, length: 19 },
+      { kind: "text", text: " for details", start: 23 },
     ]);
+  });
+
+  it("handles a URL at the start and at the end", () => {
+    expect(segmentText("https://a.io first")).toEqual([
+      { kind: "link", href: "https://a.io", start: 0, length: 12 },
+      { kind: "text", text: " first", start: 12 },
+    ]);
+    expect(segmentText("read https://a.io")).toEqual([
+      { kind: "text", text: "read ", start: 0 },
+      { kind: "link", href: "https://a.io", start: 5, length: 12 },
+    ]);
+  });
+
+  it("matches http as well as https, and two URLs in one node", () => {
+    const segs = segmentText("http://a.io vs https://b.io");
+    expect(segs.filter((s) => s.kind === "link").map((s) => s.href)).toEqual(["http://a.io", "https://b.io"]);
+  });
+
+  it("trims trailing punctuation that is not part of the URL", () => {
+    for (const [text, href] of [
+      ["see https://a.io.", "https://a.io"],
+      ["see https://a.io, then", "https://a.io"],
+      ["see https://a.io) end", "https://a.io"],
+    ] as const) {
+      const link = segmentText(text).find((s) => s.kind === "link");
+      expect(link?.href).toBe(href);
+      expect(link?.length).toBe(href.length);
+    }
+  });
+
+  it("keeps a balanced closing paren but drops an unbalanced one", () => {
+    const wiki = "https://en.wikipedia.org/wiki/Foo_(bar)";
+    expect(segmentText(`see ${wiki} now`).find((s) => s.kind === "link")?.href).toBe(wiki);
+    expect(segmentText("(https://x.com)")).toEqual([
+      { kind: "text", text: "(", start: 0 },
+      { kind: "link", href: "https://x.com", start: 1, length: 13 },
+      { kind: "text", text: ")", start: 14 },
+    ]);
+  });
+
+  it("keeps a URL #fragment as one link segment with no tag", () => {
+    const segs = segmentText("read https://a.io/docs#setup now");
+    expect(segs).toEqual([
+      { kind: "text", text: "read ", start: 0 },
+      { kind: "link", href: "https://a.io/docs#setup", start: 5, length: 23 },
+      { kind: "text", text: " now", start: 28 },
+    ]);
+  });
+
+  it("still chips a real #tag adjacent to a URL", () => {
+    const segs = segmentText("https://a.io/x#y is #docs work");
+    expect(segs.filter((s) => s.kind === "link").map((s) => s.href)).toEqual(["https://a.io/x#y"]);
+    expect(segs.filter((s) => s.kind === "tag").map((s) => s.name)).toEqual(["docs"]);
+  });
+
+  it("ignores a URL inside an image token", () => {
+    const segs = segmentText("x ![see https://a.io](.kalamu/assets/img-a.png)");
+    expect(segs.filter((s) => s.kind === "link")).toEqual([]);
+    expect(segs.filter((s) => s.kind === "image")).toHaveLength(1);
+  });
+
+  it("does not link a bare scheme", () => {
+    expect(segmentText("type https:// to link")).toEqual([{ kind: "text", text: "type https:// to link", start: 0 }]);
+    expect(segmentText("https://.")).toEqual([{ kind: "text", text: "https://.", start: 0 }]);
   });
 });
 

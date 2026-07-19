@@ -9,6 +9,9 @@
 
 export interface Combo {
   key: string;
+  /** Physical key (event.code), matched instead of `key` when present —
+      shifted punctuation's event.key varies by layout (Shift+. is ">" on US). */
+  code?: string;
   mod?: boolean;
   shift?: boolean;
   alt?: boolean;
@@ -29,6 +32,7 @@ export function matches(event: KeyboardEvent, shortcut: Shortcut): boolean {
   if ((combo.mod ?? false) !== (event.metaKey || event.ctrlKey)) return false;
   if ((combo.shift ?? false) !== event.shiftKey) return false;
   if ((combo.alt ?? false) !== event.altKey) return false;
+  if (combo.code !== undefined) return event.code === combo.code;
   return event.key.toLowerCase() === combo.key.toLowerCase();
 }
 
@@ -45,6 +49,13 @@ export const SHORTCUTS = {
   // bookmark dialog when no node is focused.
   toggleDone: { combo: { key: "Enter", mod: true, shift: true }, keys: "Mod+Shift+Enter", does: "Done / reopen" },
   toggleCollapse: { combo: { key: ".", mod: true }, keys: "Mod+.", does: "Collapse / expand children" },
+  // These two override the browser's select-to-start/-end on macOS —
+  // deliberate, same family as Mod+↑/↓ overriding the native caret jumps.
+  collapseParent: { combo: { key: "ArrowUp", mod: true, shift: true }, keys: "Mod+Shift+↑", does: "Collapse the parent — the caret jumps up to it" },
+  expandChildren: { combo: { key: "ArrowDown", mod: true, shift: true }, keys: "Mod+Shift+↓", does: "Expand the children — the caret jumps down into the first" },
+  zoomIn: { combo: { key: ".", code: "Period", mod: true, shift: true }, keys: "Mod+Shift+.", does: "Zoom in — show only this item and its subtree" },
+  zoomOut: { combo: { key: ",", code: "Comma", mod: true, shift: true }, keys: "Mod+Shift+,", does: "Zoom out one level" },
+  toggleHideDone: { combo: { key: "h", mod: true, shift: true }, keys: "Mod+Shift+H", does: "Show / hide completed items" },
   clearPriority: { keys: "Backspace", does: "At the start of the text: clear the item's priority" },
   deleteEmpty: { keys: "Backspace", does: "On an empty item: delete it" },
   deleteSubtree: { combo: { key: "Backspace", mod: true, shift: true }, keys: "Mod+Shift+Backspace", does: "Delete item with its subtree (undoable)" },
@@ -56,7 +67,7 @@ export const SHORTCUTS = {
   openProject: { keys: "Mod+Shift+1…9", does: "Open the nth sidebar project", hubOnly: true },
   help: { combo: { key: "/", mod: true }, keys: "Mod+/", does: "Show this cheat sheet" },
   helpQuestion: { keys: "?", does: "Show this cheat sheet (when not editing)" },
-  escape: { keys: "Esc", does: "Close this cheat sheet; clear the active tag filter (when not editing)" },
+  escape: { keys: "Esc", does: "Close this cheat sheet; clear the active tag filter, else zoom all the way out (when not editing)" },
 } satisfies Record<string, Shortcut>;
 
 export const TOKEN_HINTS: readonly { token: string; does: string }[] = [
@@ -65,4 +76,5 @@ export const TOKEN_HINTS: readonly { token: string; does: string }[] = [
   { token: "@", does: "Opens the assign menu — pick human or agent for the task" },
   { token: "@human / @agent", does: "Assigns the task directly — human-assigned tasks are skipped by agents and `kalamu next`" },
   { token: "![](…)", does: "Paste an image — stored in .kalamu/assets/ and shown as a thumbnail in place" },
+  { token: "https://…", does: "Renders as a clickable link (opens in a new tab); edit it as plain text while the item is focused" },
 ];

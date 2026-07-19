@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tagColor } from "@kalamu/core";
+  import Breadcrumbs from "./components/Breadcrumbs.svelte";
   import CheatSheet from "./components/CheatSheet.svelte";
   import CliSheet from "./components/CliSheet.svelte";
   import CommandPalette from "./components/CommandPalette.svelte";
@@ -14,9 +15,28 @@
   import { OutlineStore } from "./lib/outline.svelte";
   import { matches, SHORTCUTS as S } from "./lib/shortcuts";
   import { theme } from "./lib/theme.svelte";
+  import { parseZoomHash } from "./lib/zoom";
 
   const store = new OutlineStore();
-  void store.init();
+  void store.init().then(() => {
+    // A #z=<id> hash restores zoom across reloads; garbage or a since-deleted
+    // id is dropped without polluting history.
+    if (!store.loaded || location.hash === "") return;
+    const id = parseZoomHash(location.hash);
+    const local = id === null ? null : store.localId(id);
+    if (local !== null && store.tree.byId.has(local)) store.setZoom(local);
+    else history.replaceState(null, "", location.pathname + location.search);
+  });
+
+  /** Back/forward (and hand-edited hashes): mirror the hash into the store.
+      An already-applied hash is a no-op, so setZoom's own write can't loop. */
+  function onHashChange(): void {
+    if (!store.loaded) return;
+    const id = parseZoomHash(location.hash);
+    const local = id === null ? null : store.localId(id);
+    if (local === store.zoomId) return;
+    if (local === null || store.tree.byId.has(local)) store.setZoom(local);
+  }
 
   /** Project this instance serves (name for the title, platform/hubInstalled
       for HubHint); null until (and unless) it loads. */
@@ -40,8 +60,6 @@
     // Browser UI / installed-app title bar follows the project colour too.
     document.querySelector('meta[name="theme-color"]')?.setAttribute("content", markColor ?? BRAND_BRONZE);
   });
-  const visibleRoots = $derived(store.visibleChildren(null));
-
   function onWindowKeydown(event: KeyboardEvent): void {
     if (event.isComposing) return;
     // The palette owns the keyboard while open: it stops propagation of the
@@ -60,10 +78,24 @@
       overlay = "palette";
       return;
     }
+    // Mod+Shift+H toggles done visibility from anywhere, including while editing.
+    if (matches(event, S.toggleHideDone)) {
+      event.preventDefault();
+      store.toggleHideDone();
+      return;
+    }
+    // Mod+Shift+, zooms out from anywhere too — it needs no focused node.
+    if (matches(event, S.zoomOut)) {
+      event.preventDefault();
+      store.zoomOut();
+      return;
+    }
     if (event.target instanceof HTMLElement && event.target.isContentEditable) return;
     // From here on: no node is being edited.
-    if (event.key === "Escape" && store.filterTag !== null) {
-      store.setFilter(null);
+    if (event.key === "Escape") {
+      // Escape cascade: clear the tag filter first, then the zoom.
+      if (store.filterTag !== null) store.setFilter(null);
+      else if (store.zoomNode !== null) store.setZoom(null);
       return;
     }
     if (event.key === "?" && !event.metaKey && !event.ctrlKey) {
@@ -85,6 +117,7 @@
 
 <svelte:window
   onkeydown={onWindowKeydown}
+  onhashchange={onHashChange}
   onpagehide={() => store.pauseEvents()}
   onpageshow={() => store.resumeEvents()}
 />
@@ -94,6 +127,28 @@
   <header>
     <span class="brandline"><Wordmark />{#if project !== null}<span class="project">| {project.name}</span>{/if}</span>
     <div class="actions">
+      <button
+        class="done-toggle"
+        aria-label={store.hideDone ? "Show completed items" : "Hide completed items"}
+        title={store.hideDone ? "Show completed items" : "Hide completed items"}
+        onclick={() => store.toggleHideDone()}
+      >
+        {#if store.hideDone}
+          <!-- eye-off -->
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
+            <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
+            <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
+            <line x1="2" x2="22" y1="2" y2="22" />
+          </svg>
+        {:else}
+          <!-- eye -->
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+        {/if}
+      </button>
       <button class="clean-up" title="Delete completed tasks and their subtrees" onclick={() => store.clean()}>
         Clean up
       </button>
@@ -142,13 +197,14 @@
         </button>
       </div>
     {/if}
+    <Breadcrumbs {store} rootLabel={project?.name ?? "Home"} />
     <div class="outline">
-      {#each visibleRoots as node (node.id)}
+      {#each store.displayRoots as node (node.id)}
         <OutlineNode {node} {store} />
       {/each}
     </div>
     <button class="tail" onclick={() => store.focusTail()} aria-label="Continue the outline">
-      {#if visibleRoots.length === 0 && store.filterTag === null}
+      {#if store.displayRoots.length === 0 && store.filterTag === null}
         <span>Click here (or press Enter) to start your outline</span>
       {/if}
     </button>

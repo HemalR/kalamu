@@ -40,6 +40,7 @@ const TOUR: TourNode = {
         { kind: "bullet", text: "Promoted a task to GitHub/Linear/your backlog? kalamu handoff <id> --target github --ref … keeps the record here but drops it from the agent queue" },
         { kind: "bullet", text: "Cmd/Ctrl+Z undoes anything; Cmd/Ctrl+C copies an item with its sub-items as markdown; paste images straight in — they land in .kalamu/assets/" },
         { kind: "bullet", text: "When done work piles up, Clean up in the palette (or kalamu clean) deletes it all — undoable in-session" },
+        { kind: "bullet", text: "Zoom into any item (Cmd/Ctrl+Shift+.) to focus just its subtree, with a breadcrumb trail above — Escape backs out; Cmd/Ctrl+Shift+H hides completed items when the list gets long" },
       ],
     },
     { kind: "task", text: "Done touring? Focus the top 'Welcome to Kalamu' line and press Cmd/Ctrl+Shift+Backspace to delete the whole tour (it's undoable)" },

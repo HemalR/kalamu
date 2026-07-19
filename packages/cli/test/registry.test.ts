@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { readRegistry, registerProject, renameProject, slugify, unregisterProject } from "../src/registry.js";
+import { readRegistry, registerProject, renameProject, reorderProject, slugify, unregisterProject } from "../src/registry.js";
 
 let base: string;
 let file: string;
@@ -111,6 +111,27 @@ describe("renameProject", () => {
     expect(renameProject("iota", "   ", file)).toBe("iota");
     expect(readRegistry(file).projects[0]?.name).toBeUndefined();
     expect(renameProject("nope", "x", file)).toBeNull();
+  });
+});
+
+describe("reorderProject", () => {
+  it("moves the entry to the given position, clamping out-of-range indexes", () => {
+    for (const dir of ["one", "two", "three"]) registerProject(makeProject(dir), file);
+    expect(reorderProject("three", 0, file)).toBe(true);
+    expect(readRegistry(file).projects.map((p) => p.slug)).toEqual(["three", "one", "two"]);
+    expect(reorderProject("three", 99, file)).toBe(true);
+    expect(readRegistry(file).projects.map((p) => p.slug)).toEqual(["one", "two", "three"]);
+  });
+
+  it("keeps the order across re-registration and returns false for an unknown slug", () => {
+    const one = makeProject("one");
+    registerProject(one, file);
+    registerProject(makeProject("two"), file);
+    reorderProject("two", 0, file);
+    // Re-registration only touches lastSeenAt — the manual order stands.
+    registerProject(one, file);
+    expect(readRegistry(file).projects.map((p) => p.slug)).toEqual(["two", "one"]);
+    expect(reorderProject("nope", 0, file)).toBe(false);
   });
 });
 

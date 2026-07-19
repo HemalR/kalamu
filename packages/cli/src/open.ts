@@ -1,6 +1,6 @@
 import { findRoot, initKalamu, pathsFor } from "@kalamu/core/store";
 import { serve } from "@hono/node-server";
-import { detectHub, HUB_PORT } from "./hub.js";
+import { detectHub, HUB_PORT, wakeInstalledHub } from "./hub.js";
 import { openBrowser, pickPort, webAssetsDir } from "./launch.js";
 import { readRegistry, registerProject } from "./registry.js";
 import { createServer } from "./server.js";
@@ -19,15 +19,19 @@ export async function open(cwd: string, options: OpenOptions): Promise<void> {
   const paths = pathsFor(root);
 
   // A running hub already serves every registered project — reuse it instead
-  // of starting one more server (SPEC "Hub"). An explicit --port opts out.
-  if (options.port === undefined && (await detectHub())) {
-    const slug = readRegistry().projects.find((p) => p.path === root)?.slug;
-    if (slug) {
-      const url = `http://127.0.0.1:${HUB_PORT}/p/${slug}`;
-      console.log(`Kalamu hub is already serving this project`);
-      console.log(`  ${url}`);
-      if (options.browser !== false) openBrowser(url);
-      return;
+  // of starting one more server, and wake a launchd-installed hub that isn't
+  // answering (SPEC "Hub"). An explicit --port opts out.
+  if (options.port === undefined) {
+    const running = await detectHub();
+    if (running || (await wakeInstalledHub())) {
+      const slug = readRegistry().projects.find((p) => p.path === root)?.slug;
+      if (slug) {
+        const url = `http://127.0.0.1:${HUB_PORT}/p/${slug}`;
+        console.log(running ? "Kalamu hub is already serving this project" : "Started the installed Kalamu hub");
+        console.log(`  ${url}`);
+        if (options.browser !== false) openBrowser(url);
+        return;
+      }
     }
   }
 

@@ -170,6 +170,28 @@ export function recolorProject(slug: string, color: string, file = defaultRegist
   }
 }
 
+/**
+ * Move the project with `slug` to 0-based position `index` (clamped to the
+ * list). Registry array order is the hub sidebar's display order (SPEC
+ * "Hub"), so this is the primitive behind drag-and-drop reordering. Returns
+ * false — never throws — when the slug is unknown or the registry could not
+ * be written.
+ */
+export function reorderProject(slug: string, index: number, file = defaultRegistryFile()): boolean {
+  try {
+    const registry = readRegistry(file);
+    const from = registry.projects.findIndex((p) => p.slug === slug);
+    if (from === -1) return false;
+    const [entry] = registry.projects.splice(from, 1);
+    if (entry === undefined) return false;
+    registry.projects.splice(Math.max(0, Math.min(index, registry.projects.length)), 0, entry);
+    writeRegistry(registry, file);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function writeRegistry(registry: Registry, file: string): void {
   mkdirSync(dirname(file), { recursive: true });
   const temp = `${file}.${process.pid}.tmp`;

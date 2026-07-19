@@ -560,6 +560,25 @@
     if (matches(event, S.toggleCollapse)) {
       event.preventDefault();
       store.toggleCollapse(node.id);
+      return;
+    }
+    if (matches(event, S.collapseParent)) {
+      event.preventDefault();
+      commit();
+      store.collapseParent(node.id);
+      return;
+    }
+    if (matches(event, S.expandChildren)) {
+      event.preventDefault();
+      commit();
+      store.expandChildren(node.id);
+      return;
+    }
+    // zoomOut needs no focused node; it lives in App's window handler.
+    if (matches(event, S.zoomIn)) {
+      event.preventDefault();
+      commit();
+      store.zoomIn(node.id);
     }
   }
 
@@ -580,7 +599,7 @@
 />
 
 <div class="node" {@attach registerHandle}>
-  <div class={["row", { done: isDone }]} bind:this={rowEl}>
+  <div class={["row", { done: isDone, discussion: node.kind === "discussion" }]} bind:this={rowEl}>
     {#if hasChildren}
       <button
         class={["chevron", { closed: isCollapsed }]}
@@ -666,7 +685,16 @@
         {/if}
       </span>
     {:else}
-      <span class={["glyph", "dot", { ringed: hasChildren && isCollapsed }]} aria-hidden="true"></span>
+      <!-- The dot doubles as the zoom target (Workflowy-style); task check and
+           discussion bubble keep their toggle-done click — keyboard and
+           breadcrumbs cover zooming those kinds. -->
+      <button
+        class={["glyph", "dot", { ringed: hasChildren && isCollapsed }]}
+        aria-label="Zoom in"
+        title="Zoom in"
+        tabindex="-1"
+        onclick={() => store.zoomIn(node.id)}
+      ></button>
     {/if}
 
     <!-- pointer-only widening of the textbox's click target; keyboard users focus the textbox directly -->
@@ -735,6 +763,18 @@
                   onFilter={() => store.setFilter(seg.name)}
                 />
               </span>
+            {:else if seg.kind === "link"}
+              <!-- data-chip: the anchor handles its own click (opens the URL), like the image thumb;
+                   inline (no chip-slot wrapper) so long URLs wrap with the text -->
+              <a
+                class="link"
+                href={seg.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                data-chip
+                data-start={seg.start}
+                data-length={seg.length}>{seg.href}</a
+              >
             {:else if seg.kind === "image"}
               <!-- data-chip: handles its own clicks (opens the asset), like tag chips -->
               <span class="chip-slot" data-chip data-start={seg.start} data-length={seg.length}>
@@ -778,10 +818,22 @@
       {#if node.handoff}
         <span class="handoff" title={node.handoff.ref}>→ {node.handoff.target}</span>
       {/if}
-      {#if node.kind === "discussion" && !editing}
-        <!-- Always visible (not hover-gated) so the flow is discoverable; hidden while editing. -->
-        <button class="copy-prompt" tabindex="-1" onclick={() => store.copyDiscussionPrompt(node.id)}>
-          Copy prompt
+      {#if node.kind === "discussion"}
+        <!-- Absolute in the row's right gutter and mounted even while editing, so
+             entering/leaving edit mode never shifts the row; CSS reveals it on
+             row hover/focus. Clicking mid-edit blurs the editable, which commits
+             the draft before the copy reads the tree. Mod+Shift+C is the keyboard twin. -->
+        <button
+          class="copy-prompt"
+          aria-label="Copy agent prompt"
+          title="Copy agent prompt"
+          tabindex="-1"
+          onclick={() => store.copyDiscussionPrompt(node.id)}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+            <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+          </svg>
         </button>
       {/if}
     </div>
@@ -842,6 +894,12 @@
     justify-content: center;
   }
 
+  .dot {
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: pointer;
+  }
   .dot::before {
     content: "";
     width: 6px;
@@ -850,6 +908,9 @@
     background: var(--bullet);
   }
   .dot.ringed::before {
+    box-shadow: 0 0 0 3.5px var(--ring);
+  }
+  .dot:hover::before {
     box-shadow: 0 0 0 3.5px var(--ring);
   }
 
@@ -934,6 +995,17 @@
   .chip-slot {
     display: inline-block;
     text-decoration: none;
+  }
+
+  /* Quiet link: text keeps the row's colour, only the underline marks it. */
+  .link {
+    color: inherit;
+    text-decoration: underline;
+    text-decoration-color: var(--muted);
+    text-underline-offset: 2px;
+  }
+  .link:hover {
+    text-decoration-color: currentcolor;
   }
 
   .thumb {
@@ -1057,25 +1129,46 @@
     color: var(--muted);
   }
 
-  /* Quiet link-style affordance, same visual weight as .handoff. */
+  /* In the row's right gutter (main's 32px right padding, which every nesting
+     depth keeps — children indent only on the left), anchored to .row like the
+     chevron is on the left. Absolute, so it never reshapes the row. */
   .copy-prompt {
-    flex: none;
-    align-self: center;
+    position: absolute;
+    right: -24px;
+    top: 6px;
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     padding: 0;
     border: none;
     background: none;
-    font: inherit;
-    font-size: 12px;
     color: var(--muted);
-    text-decoration: underline;
-    text-decoration-color: color-mix(in srgb, var(--muted) 45%, transparent);
-    text-underline-offset: 3px;
     cursor: pointer;
-    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.1s;
+  }
+  .row:hover .copy-prompt,
+  .row:focus-within .copy-prompt,
+  .copy-prompt:focus-visible {
+    opacity: 1;
+    pointer-events: auto;
   }
   .copy-prompt:hover {
     color: var(--fg);
-    text-decoration-color: currentColor;
+  }
+  /* Forgiving hover: approaching a discussion row through the left gutter
+     counts as hovering the row (the row box already spans the full column
+     width on the right). The chevron renders later, so it stays clickable. */
+  .row.discussion::before {
+    content: "";
+    position: absolute;
+    left: -20px;
+    top: 0;
+    bottom: 0;
+    width: 20px;
   }
 
   .children {

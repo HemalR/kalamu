@@ -74,10 +74,13 @@ export const metaSchema = z.object({
 
 export interface UiState {
   collapsed: string[];
+  /** Hide completed nodes in the UI; omitted means false. */
+  hideDone?: boolean;
 }
 
 export const uiStateSchema = z.object({
   collapsed: z.array(z.string()),
+  hideDone: z.boolean().optional(),
 }) satisfies z.ZodType<UiState>;
 
 export function effectivePriority(node: KalamuNode): number {

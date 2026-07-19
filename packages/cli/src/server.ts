@@ -81,7 +81,7 @@ const moveBody = z.object({
 
 const handoffBody = z.object({ target: z.string().min(1), ref: z.string().min(1) });
 const tagBody = z.object({ color: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable() });
-const uiStateBody = z.object({ collapsed: z.array(z.string()) });
+const uiStateBody = z.object({ collapsed: z.array(z.string()), hideDone: z.boolean().optional() });
 
 const CONTENT_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",

@@ -50,9 +50,38 @@ describe("hub", () => {
     const { projects } = (await res.json()) as {
       projects: { slug: string; name: string; openTasks: number | null }[];
     };
-    expect(projects.map((p) => p.slug).sort()).toEqual(["alpha", "beta"]);
+    // Registry order — registration order until reordered — not recency.
+    expect(projects.map((p) => p.slug)).toEqual(["alpha", "beta"]);
     expect(projects.find((p) => p.slug === "alpha")?.name).toBe("@acme/alpha");
     expect(projects.every((p) => p.openTasks === 0)).toBe(true);
+  });
+
+  it("moves a project to a new sidebar position on PATCH {index}", async () => {
+    const res = await hub.app.request("/api/projects/beta", {
+      method: "PATCH",
+      body: JSON.stringify({ index: 0 }),
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(res.status).toBe(200);
+    const { projects } = (await (await hub.app.request("/api/projects")).json()) as { projects: { slug: string }[] };
+    expect(projects.map((p) => p.slug)).toEqual(["beta", "alpha"]);
+  });
+
+  it("rejects a non-integer or negative index, and 404s an unknown slug", async () => {
+    for (const index of [1.5, -1, "0"]) {
+      const bad = await hub.app.request("/api/projects/alpha", {
+        method: "PATCH",
+        body: JSON.stringify({ index }),
+        headers: { "Content-Type": "application/json" },
+      });
+      expect(bad.status).toBe(400);
+    }
+    const missing = await hub.app.request("/api/projects/nope", {
+      method: "PATCH",
+      body: JSON.stringify({ index: 0 }),
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(missing.status).toBe(404);
   });
 
   it("routes /p/:slug/api/* into that project's server, writes included", async () => {

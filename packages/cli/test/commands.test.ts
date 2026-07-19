@@ -148,6 +148,84 @@ describe("init agent docs", () => {
   });
 });
 
+describe("init gitignore", () => {
+  /** Fresh dir with a repo marker (package.json) so init writes .gitignore. */
+  function repoDir(): string {
+    const dir = mkdtempSync(join(tmpdir(), "kalamu-ignore-"));
+    writeFileSync(join(dir, "package.json"), "{}");
+    return dir;
+  }
+
+  it("creates .gitignore with the entries when a repo marker exists; re-init adds nothing", () => {
+    const dir = repoDir();
+    try {
+      const result = commands.init(dir);
+      expect((result.json as { gitignore: string[] }).gitignore).toEqual([
+        ".kalamu/cache.sqlite",
+        ".kalamu/ui-state.json",
+        ".kalamu/*.lock",
+      ]);
+      expect(result.text).toContain("Added 3 .kalamu ignore entries to .gitignore.");
+      const content = readFileSync(join(dir, ".gitignore"), "utf8");
+      expect(content).toContain(".kalamu/ui-state.json");
+      const again = commands.init(dir);
+      expect((again.json as { gitignore: string[] }).gitignore).toEqual([]);
+      expect(readFileSync(join(dir, ".gitignore"), "utf8")).toBe(content);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("appends only the missing entries to an existing .gitignore", () => {
+    const dir = repoDir();
+    try {
+      writeFileSync(join(dir, ".gitignore"), "node_modules\n.kalamu/cache.sqlite\n");
+      const result = commands.init(dir);
+      expect((result.json as { gitignore: string[] }).gitignore).toEqual([".kalamu/ui-state.json", ".kalamu/*.lock"]);
+      const content = readFileSync(join(dir, ".gitignore"), "utf8");
+      expect(content.startsWith("node_modules\n.kalamu/cache.sqlite\n")).toBe(true);
+      expect(content.match(/\.kalamu\/cache\.sqlite/g)).toHaveLength(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves a .gitignore that ignores the whole .kalamu directory alone", () => {
+    const dir = repoDir();
+    try {
+      writeFileSync(join(dir, ".gitignore"), ".kalamu/\n");
+      const result = commands.init(dir);
+      expect((result.json as { gitignore: string[] }).gitignore).toEqual([]);
+      expect(readFileSync(join(dir, ".gitignore"), "utf8")).toBe(".kalamu/\n");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("without a repo marker writes nothing and prints the suggestion instead", () => {
+    // The shared beforeEach cwd has no repo marker (AGENTS.md is not one).
+    const dir = mkdtempSync(join(tmpdir(), "kalamu-norepo-"));
+    try {
+      const result = commands.init(dir);
+      expect(existsSync(join(dir, ".gitignore"))).toBe(false);
+      expect(result.text).toContain("Suggested .gitignore entries:");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("gitignore: false (--no-gitignore) writes nothing and drops the suggestion", () => {
+    const dir = repoDir();
+    try {
+      const result = commands.init(dir, { gitignore: false });
+      expect(existsSync(join(dir, ".gitignore"))).toBe(false);
+      expect(result.text).not.toContain("Suggested .gitignore entries:");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("filters and outputs", () => {
   it("list --tasks --open --tag --assignee filter correctly (tags derived from inline tokens)", () => {
     const a = addTask("open one", { tag: ["backend"] });

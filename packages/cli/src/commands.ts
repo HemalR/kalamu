@@ -30,7 +30,8 @@ import {
 import { initKalamu, readOutline, withOutline } from "@kalamu/core/store";
 import { readFileSync } from "node:fs";
 import { ensureAgentDocs } from "./agent-docs.js";
-import { CliError, resolvePaths, type CommandResult } from "./context.js";
+import { CliError, looksLikeRepo, resolvePaths, type CommandResult } from "./context.js";
+import { ensureGitignore, IGNORE_ENTRIES } from "./gitignore.js";
 import { registerProject } from "./registry.js";
 import { glyphFor, prefixFor, renderOutline } from "./render.js";
 import { seedTour } from "./tour.js";
@@ -62,27 +63,28 @@ export function parseAssignee(value: string, allowNone: boolean): Assignee | nul
   return value;
 }
 
-export function init(cwd: string, options: { agentDocs?: boolean } = {}): CommandResult {
+export function init(cwd: string, options: { agentDocs?: boolean; gitignore?: boolean } = {}): CommandResult {
   const { created, paths } = initKalamu(cwd);
   registerProject(paths.root);
   const docs = options.agentDocs === false ? [] : ensureAgentDocs(cwd);
-  const docsLine = docs.length ? [`Added the agent standing instruction to ${docs.join(" and ")}.`] : [];
+  // Only write .gitignore where a repo marker exists — elsewhere init just
+  // prints the entries as a suggestion (SPEC ".gitignore entries").
+  const inRepo = looksLikeRepo(cwd);
+  const ignores = options.gitignore === false || !inRepo ? [] : ensureGitignore(cwd);
+  const lines = [
+    ...(docs.length ? [`Added the agent standing instruction to ${docs.join(" and ")}.`] : []),
+    ...(ignores.length ? [`Added ${ignores.length} .kalamu ignore entr${ignores.length === 1 ? "y" : "ies"} to .gitignore.`] : []),
+  ];
+  const json = { created, dir: paths.dir, agentDocs: docs, gitignore: ignores };
   if (!created) {
-    return {
-      text: [`Already initialised (${paths.dir})`, ...docsLine].join("\n"),
-      json: { created: false, dir: paths.dir, agentDocs: docs },
-    };
+    return { text: [`Already initialised (${paths.dir})`, ...lines].join("\n"), json };
   }
-  const text = [
-    `Initialised Kalamu in ${paths.dir}`,
-    ...docsLine,
-    "",
-    "Suggested .gitignore entries:",
-    "  .kalamu/cache.sqlite",
-    "  .kalamu/ui-state.json",
-    "  .kalamu/*.lock",
-  ].join("\n");
-  return { text, json: { created: true, dir: paths.dir, agentDocs: docs } };
+  const suggestion =
+    inRepo || options.gitignore === false
+      ? []
+      : ["", "Suggested .gitignore entries:", ...IGNORE_ENTRIES.map((entry) => `  ${entry}`)];
+  const text = [`Initialised Kalamu in ${paths.dir}`, ...lines, ...suggestion].join("\n");
+  return { text, json };
 }
 
 export function tour(cwd: string): CommandResult {

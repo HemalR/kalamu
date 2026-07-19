@@ -185,10 +185,10 @@ UI view state (collapse/expand), gitignored:
 Shape:
 
 ```json
-{"collapsed": ["n_002", "n_014"]}
+{"collapsed": ["n_002", "n_014"], "hideDone": true}
 ```
 
-`ui-state.json` is written by the server (debounced, atomic) and is never canonical: missing or corrupt means every node renders expanded. `kalamu validate` ignores it. IDs of since-deleted nodes are harmless and may be pruned opportunistically.
+`ui-state.json` is written by the server (debounced, atomic) and is never canonical: missing or corrupt means every node renders expanded. `kalamu validate` ignores it. IDs of since-deleted nodes are harmless and may be pruned opportunistically. `hideDone` (the UI's "hide completed items" eye toggle) is omitted when false, per the omit-defaults convention.
 
 Optional runtime cache, if needed later:
 
@@ -198,13 +198,21 @@ Optional runtime cache, if needed later:
 
 But `cache.sqlite` is never canonical and is gitignored.
 
-Recommended `.gitignore` entries:
+`.gitignore` entries:
 
 ```gitignore
 .kalamu/cache.sqlite
 .kalamu/ui-state.json
 .kalamu/*.lock
 ```
+
+`kalamu init` writes these itself when the directory carries a repo marker
+(the `looksLikeRepo` heuristic): missing entries are appended to the root
+`.gitignore` (created when absent) under a `# Kalamu` comment. Idempotent per
+line, it also runs on re-init so existing projects adopt it; a `.gitignore`
+that already ignores the whole `.kalamu/` directory is left alone.
+`--no-gitignore` skips it. Without a repo marker nothing is written — init
+prints the entries as a suggestion instead.
 
 The canonical JSONL file should be suitable for:
 
@@ -569,6 +577,10 @@ appended to every `CLAUDE.md`/`AGENTS.md` that exists at the root, or a new
 `AGENTS.md` is created when neither does. Idempotent (the `<!-- kalamu:agents -->`
 marker is the already-installed check), so it also runs on re-init — existing
 projects adopt it by re-running `kalamu init`. `--no-agent-docs` skips it.
+
+In the same spirit, `init` maintains the repo's `.gitignore`: when the
+directory carries a repo marker it appends the missing `.kalamu` view-state and
+cache entries (see ".gitignore entries" above); `--no-gitignore` skips it.
 
 When run interactively (TTY), `init` then offers to install the **Kalamu agent
 skill** by delegating to `npx skills add <owner/repo>` — the skills.sh CLI asks
@@ -1189,8 +1201,10 @@ The UI should feel like Workflowy:
 * Done tasks greyed out and struck through
 * Priority visible only when useful, as a badge at the START of the row (scannable column)
 * Tags as small coloured chips rendered IN PLACE within the text (raw `#token` text while the node is focused)
+* URLs recognised in text (`http://`/`https://` schemes only — no bare-domain guessing) render underlined and clickable, opening in a new tab; while the node is focused the URL is raw editable text, like tags. Trailing sentence punctuation is not part of the link, and a `#fragment` inside a URL never becomes a tag chip
 * Assigned tasks visibly distinct: a small user icon marks human-assigned tasks, a robot icon marks agent-assigned ones; unassigned tasks show neither
 * Discussions marked with a speech-bubble glyph in place of the checkbox (clicking it toggles done, like a task's checkbox); an unfocused discussion shows a subtle "Copy prompt" affordance at the end of its text that copies the topic plus its subtree and a "discussion only — no code changes yet" instruction, then toasts that the prompt is ready to paste into an agent. Cmd/Ctrl+Shift+C is the keyboard path: on a discussion it copies the same prompt instead of the node id (Cmd/Ctrl+C stays uniform markdown copy on every kind)
+* Zoom (Workflowy-style): any node can become the temporary root — only its subtree is displayed, with a sticky breadcrumb trail above the outline (project name › ancestors › current node) whose crumbs are clickable to change the zoom level. The zoom target lives in the URL hash (`#z=<id>`), so reload restores it and browser Back unwinds it; zoom is per-tab view state, never in `ui-state.json` or the outline file. Operations that would move a node outside the zoomed subtree (indent/outdent/move on the zoom root, outdenting its direct children) are inert; Enter on the zoom root creates a child rather than an invisible sibling; deleting the zoom root lands the zoom on its parent; Escape (when not editing, once no tag filter is active) zooms fully out
 * Minimal visual clutter
 * Light/dark theme follows the system by default; an explicit switcher (navbar button, or the palette's "Activate dark/light mode") overrides it, persisted in the browser's localStorage — per-browser view state, never in the repo
 
@@ -1273,6 +1287,15 @@ Cmd/Ctrl+Shift+Enter     mark item done/reopen — visual-only strikethrough on
                          no node is focused)
 Cmd/Ctrl+K               open the command palette (priority, labels, assign)
 Cmd/Ctrl+.               toggle collapse/expand
+Cmd/Ctrl+Shift+ArrowUp   collapse the parent — the caret jumps up to it (inert on
+                         root-level nodes and on the zoom root)
+Cmd/Ctrl+Shift+ArrowDown expand the children — the caret jumps down into the first
+                         visible child; on an already-expanded node it is pure
+                         descent, so repeated presses walk down the tree (inert
+                         on leaves)
+Cmd/Ctrl+Shift+.         zoom in on the focused item (only its subtree displayed)
+Cmd/Ctrl+Shift+,         zoom out one level (Escape when not editing zooms all
+                         the way out, after clearing any active tag filter)
 Backspace (empty node)   delete node
 Backspace (caret at 0)   clear the node's priority (tags are plain text — backspace them directly)
 Cmd/Ctrl+Shift+Backspace delete node with subtree (undoable)
@@ -1308,26 +1331,34 @@ acts on the last-focused node and offers, at the top level:
 3  Assign    ->  submenu: Human / Agent / Unassigned, current value marked;
                  selecting sets the task's assignee (Unassigned clears it), closes
 4  Toggle done   direct action: marks the task done / reopens it, closes
-5  Copy CLI command -> submenu: ready-to-run CLI commands for this node with its
+5  Collapse parent          direct action: folds the current node's parent and
+                 moves the caret to the parent (same as Cmd/Ctrl+Shift+ArrowUp),
+                 closes with focus on the PARENT, not the node it acted on
+6  Expand children          direct action: unfolds the current node's children and
+                 moves the caret into the first visible child (same as
+                 Cmd/Ctrl+Shift+ArrowDown), closes with focus on that CHILD
+7  Copy CLI command -> submenu: ready-to-run CLI commands for this node with its
                  real (server) id filled in — show --children always; done or
                  reopen (by state) and a handoff template on tasks; add-child-task;
                  delete (--recursive when the node has children). Picking one
                  copies it to the clipboard, shows a toast, closes with focus
                  restore.
-6  Activate dark mode       direct action: switches the theme, closes; the label
+8  Activate dark mode       direct action: switches the theme, closes; the label
                  reads "Activate light mode" when the current mode is dark
-7  Clean up                 direct action: deletes every done task with its
+9  Clean up                 direct action: deletes every done task with its
                  subtree, plus done bullets and blank nodes (same as
                  `kalamu clean`), applied through the UI's undo stack so it
                  is undoable in-session; toasts the result ("Deleted 4 nodes
                  (3 done tasks)" / "Nothing to clean."), closes
-8  View keyboard shortcuts   opens the keyboard cheat sheet
-9  View CLI commands         opens the CLI commands sheet
+10 View keyboard shortcuts   opens the keyboard cheat sheet
+11 View CLI commands         opens the CLI commands sheet
 ```
 
-The list is fixed: all nine items always render, in this order, with stable
-numbers — the two view sheets are always the last items. Items that don't apply
-are greyed out and disabled rather than hidden — with no node focused, 1–5 are
+The list is fixed: all eleven items always render, in this order, with stable
+numbers — the two view sheets are always the last items (numbering badges and
+digit activation cover items 1–9 only, so the view sheets are reached by
+arrows or filtering). Items that don't apply
+are greyed out and disabled rather than hidden — with no node focused, 1–7 are
 disabled (the theme, clean and view items need no target and are always
 enabled — Clean up with nothing to clean just toasts "Nothing to clean."); on a
 bullet, only Priority and Assign are disabled — Toggle done
@@ -1335,7 +1366,11 @@ works on bullets as a visual-only strikethrough (Copy CLI command stays
 enabled, with task-only commands omitted from its submenu; done/reopen appear
 for bullets too). On a discussion, only Assign is disabled (discussions are
 never assigned); Priority, Toggle done, and Copy CLI command all apply —
-handoff is omitted from the copy submenu. Disabled items don't respond to digits, Enter, or clicks, and
+handoff is omitted from the copy submenu. Collapse parent and Expand children
+apply to every kind (they are structural, not metadata) but carry their own
+disabled cases: Collapse parent on root-level nodes and on the zoom root
+(nothing rendered above them to fold), Expand children on leaves (nothing
+beneath to unfold). Disabled items don't respond to digits, Enter, or clicks, and
 arrow navigation skips them. The CLI commands sheet mirrors `kalamu --help` —
 command names with one-line descriptions — as a reference for the developer;
 agents use `--help` itself.
@@ -1602,7 +1637,7 @@ Rules:
 * Every CLI command that resolves a project (`init`, `open`, `add`, `next`, …) upserts that project's entry — registration is a side effect of use, never a setup step. Existing entry: touch `lastSeenAt` only.
 * Entries whose `path` no longer contains `.kalamu/outline.jsonl` are pruned silently on read. The outline file — not the bare directory — is the project test everywhere (`findRoot` included), so the machine-global `~/.kalamu` (registry, hub log) can never make the home directory masquerade as a project.
 * Writes use the same temp-file + atomic-rename pattern as everything else. Registry failures must never break the command that triggered them — a broken registry degrades the hub, not the CLI.
-* The registry is plumbing, not data: deleting it loses nothing except the sidebar list (plus slug assignments and display-name overrides), which repopulates on use.
+* The registry is plumbing, not data: deleting it loses nothing except the sidebar list (plus slug assignments, name/colour overrides, and the manual sidebar order), which repopulates on use.
 
 ### Slugs
 
@@ -1632,7 +1667,7 @@ Routes:
 
 ```http
 GET /api/projects                    (registered projects: slug, display name, path, theme colour, open-task count)
-PATCH /api/projects/:slug            (set/clear the display-name and/or theme-colour override; returns the effective values; 200/400/404)
+PATCH /api/projects/:slug            (set/clear the display-name and/or theme-colour override, and/or move the project to sidebar position {"index": n}; returns the effective values; 200/400/404)
 DELETE /api/projects/:slug           (forget: drop the registry entry, tear down any live instance; 204/404)
 ALL /p/:slug/api/*                   (routed into that project's server instance)
 GET /p/:slug/assets/*                (same)
@@ -1643,6 +1678,7 @@ GET /p/:slug                         (deep link, sidebar pre-selected)
 Behaviour:
 
 * Per-project server instances are the existing `createServer()` — created lazily on first request for a slug, torn down after an idle period so the hub doesn't hold file watchers for dormant projects.
+* The sidebar lists projects in **registry array order** — a manual order, dragged into place row by row in the UI (`PATCH {"index": n}` moves a project to 0-based position n, clamped). New projects register at the end; re-registration touches `lastSeenAt` only and never moves an entry. Recency deliberately does not order the sidebar — a stable order is what keeps the `Mod+Shift+1…9` project shortcuts stable — and only picks which project `GET /` lands on.
 * Every project has a **theme colour** so multiple Kalamus are tellable apart at a glance: the sidebar is tinted with the active project's colour and each row carries a swatch. Like tag colours (key decision 7), the colour is the slug hashed into the shared palette — automatic, stable, stored nowhere — until a swatch pick stores an override in the registry (`PATCH {"color": "#rrggbb"}`; blank clears back to derived).
 * Removing a project from the sidebar is a **forget**, consistent with the registry being plumbing: the entry is dropped, the project's `.kalamu/` data is untouched, and the next kalamu command run inside the project re-registers it. Because it is non-destructive, the UI's per-entry remove affordance asks for no confirmation.
 * SSE live reload, mtime-checked atomic writes, and undo work unchanged per project; hub, standalone `kalamu open` servers, and CLI agents can all write concurrently because every writer already does mtime-checked atomic writes.
@@ -1650,7 +1686,7 @@ Behaviour:
 
 ### `kalamu open` integration
 
-When a hub is already listening on the hub port, `kalamu open` opens `http://localhost:4400/p/<slug>` instead of starting a standalone server; otherwise today's behaviour is unchanged. Agents are unaffected — the hub exists for the human at the keyboard, and no agent-facing command needs it.
+When a hub is already listening on the hub port, `kalamu open` opens `http://localhost:4400/p/<slug>` instead of starting a standalone server. When no hub answers but the launchd agent is installed (macOS, plist present), `open` wakes it (`launchctl kickstart`, falling back to `bootstrap`) and routes there once it responds — an installed hub is always the destination, never a standalone server. Only when neither applies (or the wake fails, or `--port` opts out) does `open` start a standalone server. Agents are unaffected — the hub exists for the human at the keyboard, and no agent-facing command needs it.
 
 ### Discovery
 

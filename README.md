@@ -51,7 +51,7 @@ Commit `.kalamu/` with your code — the outline's line order is the outline, so
 kalamu hub
 ```
 
-One local server for every Kalamu project on your machine: `http://127.0.0.1:4400` shows them all in a sidebar, and any repo you've run a `kalamu` command in appears there automatically. It runs in the foreground and installs nothing — Ctrl+C and it's gone. While a hub is running, `kalamu open` routes your browser to it instead of starting another server.
+One local server for every Kalamu project on your machine: `http://127.0.0.1:4400` shows them all in a sidebar, and any repo you've run a `kalamu` command in appears there automatically. It runs in the foreground and installs nothing — Ctrl+C and it's gone. While a hub is running, `kalamu open` routes your browser to it instead of starting another server — and if you've `hub install`ed but it's not currently running, `open` wakes it first.
 
 Like it? Make it permanent (macOS):
 
@@ -128,7 +128,7 @@ kalamu validate                # before finishing
 
 ## The data
 
-`.kalamu/outline.jsonl` — one node per line, line order **is** sibling order. Nodes are bullets (thoughts), tasks (agent-executable work), or discussions. Tags live inline in node text as `#tokens`; priority and `assignee` are fields. `ui-state.json` (collapse state) and `meta.json` (tag colours) are cosmetic and safe to ignore or delete. See [SPEC.md](SPEC.md) for the full data model.
+`.kalamu/outline.jsonl` — one node per line, line order **is** sibling order. Nodes are bullets (thoughts), tasks (agent-executable work), or discussions. Tags live inline in node text as `#tokens`; priority and `assignee` are fields. `ui-state.json` (collapse state) and `meta.json` (tag colours) are cosmetic and safe to ignore or delete — `kalamu init` adds them, plus the local cache, to your `.gitignore` automatically. See [SPEC.md](SPEC.md) for the full data model.
 
 ## Development
 

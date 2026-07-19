@@ -52,6 +52,7 @@ interface InitOptions {
   tour?: boolean;
   skill?: boolean;
   agentDocs?: boolean;
+  gitignore?: boolean;
   format?: string;
 }
 
@@ -76,7 +77,7 @@ async function initWithOffers(opts: InitOptions, guard: { skipRepoGuard?: boolea
       return false;
     }
   }
-  const result = run(() => commands.init(process.cwd(), { agentDocs: opts.agentDocs }), opts);
+  const result = run(() => commands.init(process.cwd(), { agentDocs: opts.agentDocs, gitignore: opts.gitignore }), opts);
   if (!result || process.exitCode) return false;
   const fresh = (result.json as { created: boolean }).created;
   if (opts.tour === true) {
@@ -101,6 +102,7 @@ program
   .option("--skill", "install the Kalamu agent skill via skills.sh (asks which agents)")
   .option("--no-skill", "never offer the agent-skill install")
   .option("--no-agent-docs", "do not add the standing instruction to CLAUDE.md/AGENTS.md")
+  .option("--no-gitignore", "do not add the .kalamu view-state/cache entries to .gitignore")
   .option("--open", "open the web UI when done (default when run interactively)")
   .option("--no-open", "do not open the web UI")
   .option("--format <format>", "output format (text|json)")

@@ -11,6 +11,7 @@
  */
 import {
   addNode,
+  ancestors,
   appendTags,
   buildTree,
   cleanDone,
@@ -35,6 +36,8 @@ import type { CaretPosition } from "./caret";
 import { commitPatch, tokenPatch, type CommitPatch } from "./commit";
 import { discussionPrompt, serializeSubtree, writeClipboard } from "./copy";
 import { filterVisibleIds } from "./filter";
+import { nextNumberPrefix } from "./numbering";
+import { formatZoomHash } from "./zoom";
 
 const UNDO_LIMIT = 100;
 const UI_STATE_DEBOUNCE_MS = 400;
@@ -68,6 +71,8 @@ export class OutlineStore {
 
   /** Active tag filter — session-only view state, never persisted (SPEC "Tags"). */
   filterTag = $state<string | null>(null);
+  /** Hide completed nodes — persisted in ui-state.json like collapse state (view state, never document content); a hidden done node hides its whole subtree. */
+  hideDone = $state(false);
   /** Nodes created while a filter is active stay visible until it changes. */
   private filterExtras = new SvelteSet<string>();
 
@@ -82,9 +87,10 @@ export class OutlineStore {
     return this.filterMatches === null || this.filterMatches.has(id) || this.filterExtras.has(id);
   }
 
-  /** The children of `id` that the active filter leaves visible (render order). */
+  /** The children of `id` that the active filters leave visible (render order). */
   visibleChildren(id: string | null): KalamuNode[] {
-    const children = this.tree.children.get(id) ?? [];
+    let children = this.tree.children.get(id) ?? [];
+    if (this.hideDone) children = children.filter((child) => child.doneAt === null);
     return this.filterMatches === null ? children : children.filter((child) => this.isVisible(child.id));
   }
 
@@ -93,7 +99,56 @@ export class OutlineStore {
     this.filterExtras.clear();
   }
 
-  /** Pre-order ids of nodes currently rendered (collapse- and filter-aware); drives focus movement. */
+  // ---- zoom (session view state; the URL hash is its only persistence) -------
+
+  /** Never written to ui-state.json — that file is shared across tabs/agents. */
+  zoomId = $state<string | null>(null);
+
+  /**
+   * All zoom behaviour keys off this: null when unzoomed OR when the node no
+   * longer exists (deleted remotely), so a vanished zoom root degrades to the
+   * unzoomed view; if an undo restores it, zoom resumes.
+   */
+  zoomNode = $derived(this.zoomId === null ? null : (this.tree.byId.get(this.zoomId) ?? null));
+
+  /** What App renders at the top level: the zoomed node alone (its subtree beneath), else the visible roots. */
+  displayRoots = $derived(this.zoomNode === null ? this.visibleChildren(null) : [this.zoomNode]);
+
+  /** The zoomed node's ancestors, root→parent — the breadcrumb trail. */
+  zoomPath = $derived(this.zoomNode === null ? [] : ancestors(this.tree, this.zoomNode));
+
+  /**
+   * Sets the zoom and syncs the URL hash (server ids, so links survive
+   * reloads). Assigning location.hash pushes a history entry — Back then
+   * unwinds zoom levels; applying an already-current hash (Back itself, or a
+   * hashchange echo) writes nothing, so no loop and no duplicate entry.
+   */
+  setZoom(id: string | null): void {
+    this.zoomId = id;
+    const hash = formatZoomHash(id === null ? null : this.serverId(id));
+    if (hash === "") {
+      // hash = "" would leave a dangling "#"; pushState keeps Back unwinding.
+      if (location.hash !== "") history.pushState(null, "", location.pathname + location.search);
+    } else if (location.hash !== hash) {
+      location.hash = hash;
+    }
+  }
+
+  zoomIn(id: string): void {
+    if (!this.tree.byId.has(id) || this.zoomId === id) return;
+    this.setZoom(id);
+    void this.focus(id, "end");
+  }
+
+  /** One level up; the previously-zoomed node is now visible, so focus it. */
+  zoomOut(): void {
+    const node = this.zoomNode;
+    if (node === null) return;
+    this.setZoom(node.parentId);
+    void this.focus(node.id, "end");
+  }
+
+  /** Pre-order ids of nodes currently rendered (zoom-, collapse- and filter-aware); drives focus movement. */
   visibleIds = $derived.by(() => {
     const out: string[] = [];
     const walk = (parentId: string | null): void => {
@@ -102,7 +157,15 @@ export class OutlineStore {
         if (!this.collapsed.has(child.id)) walk(child.id);
       }
     };
-    walk(null);
+    const root = this.zoomNode;
+    if (root === null) {
+      walk(null);
+    } else {
+      // The zoom root is always rendered, even when a tag filter would hide
+      // it (same spirit as filterExtras); its descendants walk as usual.
+      out.push(root.id);
+      if (!this.collapsed.has(root.id)) walk(root.id);
+    }
     return out;
   });
 
@@ -128,6 +191,7 @@ export class OutlineStore {
       this.nodes = nodesResult.nodes;
       this.meta = meta;
       for (const id of uiState.collapsed) this.collapsed.add(id);
+      this.hideDone = uiState.hideDone ?? false;
       this.loaded = true;
     } catch (err) {
       this.loadError = err instanceof Error ? err.message : "unknown error";
@@ -260,6 +324,11 @@ export class OutlineStore {
     return this.toServer.get(id) ?? id;
   }
 
+  /** Inverse of serverId — the URL zoom hash carries server ids. */
+  localId(id: string): string {
+    return this.toLocal.get(id) ?? id;
+  }
+
   private adopt(localId: string, serverId: string): void {
     if (localId === serverId) return;
     this.toServer.set(localId, serverId);
@@ -304,14 +373,21 @@ export class OutlineStore {
 
   // ---- node operations -------------------------------------------------------
 
-  /** New empty sibling below `id`, inheriting its kind; focuses it. */
+  /** New sibling below `id`, inheriting its kind and continuing an `N.` numbering prefix (else empty); focuses it. */
   createAfter(id: string): void {
     const node = this.tree.byId.get(id);
     if (!node) return;
+    if (this.zoomNode?.id === id) {
+      // A sibling of the zoom root would be invisible: create a first child
+      // inside the zoom instead (no numbering — that's sibling semantics).
+      this.createFirstChild(node);
+      return;
+    }
+    const text = nextNumberPrefix(node.text);
     let localId = "";
     const applied = this.mutate(
       (nodes) => {
-        const result = addNode(nodes, { parentId: node.parentId ?? undefined, kind: node.kind, text: "", afterId: id });
+        const result = addNode(nodes, { parentId: node.parentId ?? undefined, kind: node.kind, text, afterId: id });
         localId = result.node.id;
         return result.nodes;
       },
@@ -319,13 +395,39 @@ export class OutlineStore {
         const created = await api.createNode({
           parentId: node.parentId === null ? null : this.serverId(node.parentId),
           kind: node.kind,
-          text: "",
+          text,
           afterId: this.serverId(id),
         });
         this.adopt(localId, created.id);
       },
     );
-    if (applied) this.revealNewNode(localId);
+    if (applied) this.revealNewNode(localId, text === "" ? "start" : "end");
+  }
+
+  /** Enter on the zoom root: new empty first child (its kind inherited), focused. */
+  private createFirstChild(node: KalamuNode): void {
+    const beforeId = (this.tree.children.get(node.id) ?? [])[0]?.id;
+    let localId = "";
+    const applied = this.mutate(
+      (nodes) => {
+        const result = addNode(nodes, { parentId: node.id, kind: node.kind, text: "", beforeId });
+        localId = result.node.id;
+        return result.nodes;
+      },
+      async () => {
+        const created = await api.createNode({
+          parentId: this.serverId(node.id),
+          kind: node.kind,
+          text: "",
+          ...(beforeId === undefined ? {} : { beforeId: this.serverId(beforeId) }),
+        });
+        this.adopt(localId, created.id);
+      },
+    );
+    if (!applied) return;
+    // Expand the zoom root so the new child doesn't vanish into a fold.
+    if (this.collapsed.delete(node.id)) this.persistUiStateSoon();
+    this.revealNewNode(localId);
   }
 
   /**
@@ -336,6 +438,13 @@ export class OutlineStore {
   splitNode(id: string, before: string, after: string): void {
     const node = this.tree.byId.get(id);
     if (!node) return;
+    if (this.zoomNode?.id === id) {
+      // Splitting the zoom root: a sibling would be invisible, so the after-
+      // text becomes a new FIRST child instead — and the existing children
+      // stay put (continuation semantics only make sense between siblings).
+      this.splitIntoFirstChild(node, before, after);
+      return;
+    }
     // mutate runs `local` synchronously, so the tree snapshot is still current.
     const childIds = (this.tree.children.get(id) ?? []).map((child) => child.id);
     let localId = "";
@@ -361,6 +470,28 @@ export class OutlineStore {
       () => api.replaceNodes(this.serverize(next)),
     );
     if (applied) this.revealNewNode(localId);
+  }
+
+  /** splitNode's zoom-root variant. One mutate call, so one undo step. */
+  private splitIntoFirstChild(node: KalamuNode, before: string, after: string): void {
+    const beforeId = (this.tree.children.get(node.id) ?? [])[0]?.id;
+    let localId = "";
+    let next: KalamuNode[] = [];
+    const applied = this.mutate(
+      (nodes) => {
+        const patch = commitPatch(node, before);
+        const trimmed = patch ? updateNode(nodes, node.id, patch).nodes : nodes;
+        const added = addNode(trimmed, { parentId: node.id, kind: node.kind, text: after, beforeId });
+        localId = added.node.id;
+        next = added.nodes;
+        return next;
+      },
+      // Whole-outline replace (like splitNode): the server keeps client ids.
+      () => api.replaceNodes(this.serverize(next)),
+    );
+    if (!applied) return;
+    if (this.collapsed.delete(node.id)) this.persistUiStateSoon();
+    this.revealNewNode(localId);
   }
 
   /**
@@ -422,9 +553,9 @@ export class OutlineStore {
   }
 
   /** Fresh nodes must not vanish mid-typing under an active tag filter. */
-  private revealNewNode(id: string): void {
+  private revealNewNode(id: string, caret: CaretPosition = "start"): void {
     if (this.filterTag !== null) this.filterExtras.add(id);
-    void this.focus(id, "start");
+    void this.focus(id, caret);
   }
 
   /**
@@ -499,6 +630,7 @@ export class OutlineStore {
 
   /** Tab: become the last child of the previous sibling. */
   indent(id: string): boolean {
+    if (this.zoomNode?.id === id) return false; // its siblings aren't rendered
     const node = this.tree.byId.get(id);
     if (!node) return false;
     const siblings = this.tree.children.get(node.parentId) ?? [];
@@ -517,6 +649,8 @@ export class OutlineStore {
   outdent(id: string): boolean {
     const node = this.tree.byId.get(id);
     if (!node || node.parentId === null) return false;
+    // Refuse when the move would leave the zoomed subtree.
+    if (this.zoomNode !== null && (id === this.zoomNode.id || node.parentId === this.zoomNode.id)) return false;
     const parent = this.tree.byId.get(node.parentId);
     if (!parent) return false;
     return this.mutate(
@@ -531,6 +665,7 @@ export class OutlineStore {
 
   /** Cmd/Ctrl+ArrowUp/Down: swap with the previous/next sibling. */
   moveBySibling(id: string, delta: -1 | 1): boolean {
+    if (this.zoomNode?.id === id) return false; // its siblings aren't rendered
     const node = this.tree.byId.get(id);
     if (!node) return false;
     const siblings = this.tree.children.get(node.parentId) ?? [];
@@ -579,11 +714,21 @@ export class OutlineStore {
   private deleteAndRefocus(id: string, recursive: boolean): void {
     if (!this.tree.byId.has(id)) return;
     const fallback = this.neighborOf(id);
+    // Deleting the zoom root must not leave the view zoomed on a ghost:
+    // capture its parent before the mutate and land the zoom there.
+    const wasZoomRoot = this.zoomNode?.id === id;
+    const zoomParent = this.zoomNode?.parentId ?? null;
     const applied = this.mutate(
       (nodes) => deleteNode(nodes, id, { recursive }).nodes,
       () => api.deleteNode(this.serverId(id), recursive),
     );
-    if (applied && fallback !== null) void this.focus(fallback, "end");
+    if (!applied) return;
+    if (wasZoomRoot) {
+      this.setZoom(zoomParent);
+      if (zoomParent !== null) void this.focus(zoomParent, "end");
+      return;
+    }
+    if (fallback !== null) void this.focus(fallback, "end");
   }
 
   /** Nearest visible node outside `id`'s subtree — where focus lands after deletion. */
@@ -634,13 +779,67 @@ export class OutlineStore {
     this.persistUiStateSoon();
   }
 
+  /**
+   * The parent collapseParent would fold, or null when there is nothing
+   * rendered above to fold: the node is gone, root-level, or the zoom root
+   * (its parent is outside the view). Direct children of the zoom root have a
+   * rendered parent — the zoom root — so they resolve normally.
+   */
+  private collapseParentTarget(id: string): string | null {
+    if (this.zoomNode?.id === id) return null;
+    return this.tree.byId.get(id)?.parentId ?? null;
+  }
+
+  /** Whether collapseParent would act — the palette greys its item on this. */
+  canCollapseParent(id: string): boolean {
+    return this.collapseParentTarget(id) !== null;
+  }
+
+  /** Mod+Shift+↑ / palette "Collapse parent": fold the parent's children and land the caret at its end. */
+  collapseParent(id: string): void {
+    const parentId = this.collapseParentTarget(id);
+    if (parentId === null) return;
+    // The parent cannot already be collapsed (its child was focused), but a
+    // stale ui-state could say otherwise — then only the focus move remains.
+    if (!this.collapsed.has(parentId)) {
+      this.collapsed.add(parentId);
+      this.persistUiStateSoon();
+    }
+    void this.focus(parentId, "end");
+  }
+
+  /** Whether expandChildren would act — the palette greys its item on this.
+      No zoom guard: expanding descends INTO the view, never out of it. */
+  canExpandChildren(id: string): boolean {
+    return (this.tree.children.get(id) ?? []).length > 0;
+  }
+
+  /**
+   * Mod+Shift+↓ / palette "Expand children": unfold the node's children and
+   * land the caret at the end of the first visible child. On an already-
+   * expanded node this is pure descent, so repeated presses walk down the
+   * tree. When a filter/hideDone leaves no child visible, only the unfold
+   * happens — focus never moves to a hidden node.
+   */
+  expandChildren(id: string): void {
+    if (!this.canExpandChildren(id)) return;
+    if (this.collapsed.delete(id)) this.persistUiStateSoon();
+    const first = this.visibleChildren(id)[0];
+    if (first !== undefined) void this.focus(first.id, "end");
+  }
+
+  toggleHideDone(): void {
+    this.hideDone = !this.hideDone;
+    this.persistUiStateSoon();
+  }
+
   private persistUiStateSoon(): void {
     clearTimeout(this.uiStateTimer);
     this.uiStateTimer = setTimeout(() => {
       const collapsed = [...this.collapsed]
         .filter((id) => this.tree.byId.has(id)) // prune deleted ids opportunistically
         .map((id) => this.serverId(id));
-      api.putUiState({ collapsed }).catch(() => {
+      api.putUiState({ collapsed, ...(this.hideDone ? { hideDone: true } : {}) }).catch(() => {
         // View state only; losing a fold is harmless.
       });
     }, UI_STATE_DEBOUNCE_MS);

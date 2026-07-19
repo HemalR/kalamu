@@ -34,17 +34,23 @@
 
   /** null until the hub list loads; stays null (no sidebar) if it fails. */
   let projects = $state<HubProject[] | null>(null);
-  // Hub-global endpoint — deliberately NOT prefixed with apiBase.
-  void fetch("/api/projects")
-    .then((response) => {
+
+  /** Also the resync path after a failed reorder — quiet on failure, so the
+      list keeps whatever it was showing. */
+  async function loadProjects(): Promise<void> {
+    try {
+      // Hub-global endpoint — deliberately NOT prefixed with apiBase.
+      const response = await fetch("/api/projects");
       if (!response.ok) return;
-      return response.json().then((body: unknown) => {
-        if (body !== null && typeof body === "object" && "projects" in body && Array.isArray(body.projects)) {
-          projects = body.projects as HubProject[];
-        }
-      });
-    })
-    .catch(() => {});
+      const body: unknown = await response.json();
+      if (body !== null && typeof body === "object" && "projects" in body && Array.isArray(body.projects)) {
+        projects = body.projects as HubProject[];
+      }
+    } catch {
+      // Quiet failure, same as the mutations below.
+    }
+  }
+  void loadProjects();
 
   /** Non-destructive: deregisters the project; it re-registers on next CLI use. */
   async function removeProject(slug: string): Promise<void> {
@@ -113,6 +119,81 @@
   function onWindowPointerDown(event: PointerEvent): void {
     if (!(event.target instanceof Element) || event.target.closest(".popover, .swatch") === null) {
       colorSlug = null;
+    }
+  }
+
+  /** Slug of the row being dragged; null when no drag is in flight. */
+  let dragSlug = $state<string | null>(null);
+  /** Row the drop line sits on, and which edge; null when not over a row. */
+  let dropTarget = $state<{ slug: string; after: boolean } | null>(null);
+
+  // The li is the drag source (the anchor opts out with draggable="false",
+  // clicks are unaffected), so the payload is the slug — not a link drag
+  // that browsers would treat as a URL drop.
+  function onDragStart(event: DragEvent, project: HubProject): void {
+    if (event.dataTransfer === null) return;
+    event.dataTransfer.setData("text/plain", project.slug);
+    event.dataTransfer.effectAllowed = "move";
+    dragSlug = project.slug;
+    colorSlug = null; // a drag and an open popover don't mix
+  }
+
+  /** Before/after the target row, split at its vertical midpoint. */
+  function isBelowMidpoint(event: DragEvent & { currentTarget: HTMLElement }): boolean {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return event.clientY > rect.top + rect.height / 2;
+  }
+
+  function onRowDragOver(event: DragEvent & { currentTarget: HTMLElement }, slug: string): void {
+    if (dragSlug === null) return; // foreign drags (text, files) fall through
+    event.preventDefault();
+    if (event.dataTransfer !== null) event.dataTransfer.dropEffect = "move";
+    // No line over the dragged row itself — dropping there is a no-op.
+    dropTarget = slug === dragSlug ? null : { slug, after: isBelowMidpoint(event) };
+  }
+
+  // Rows touch, so leaving one row usually enters the next; only a pointer
+  // leaving the list altogether clears the line.
+  function onListDragLeave(event: DragEvent & { currentTarget: HTMLElement }): void {
+    if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return;
+    dropTarget = null;
+  }
+
+  function onRowDrop(event: DragEvent & { currentTarget: HTMLElement }, targetSlug: string): void {
+    const slug = dragSlug;
+    if (slug === null || projects === null) return;
+    event.preventDefault();
+    const from = projects.findIndex((entry) => entry.slug === slug);
+    const targetIndex = projects.findIndex((entry) => entry.slug === targetSlug);
+    if (from === -1 || targetIndex === -1) return;
+    // Insertion point in the current list, minus one when the dragged row
+    // sits above it (its removal shifts the rest up) — i.e. the final
+    // 0-based index, which is what the server's remove-then-insert takes.
+    let to = isBelowMidpoint(event) ? targetIndex + 1 : targetIndex;
+    if (from < to) to -= 1;
+    if (to === from) return;
+    projects.splice(to, 0, ...projects.splice(from, 1));
+    void moveProject(slug, to);
+  }
+
+  /** Fires on the source row after drops and cancelled drags (Escape) alike. */
+  function onDragEnd(): void {
+    dragSlug = null;
+    dropTarget = null;
+  }
+
+  /** Optimistic: the list is already reordered; failure re-syncs from the
+      server instead of guessing how to undo. */
+  async function moveProject(slug: string, index: number): Promise<void> {
+    try {
+      const response = await fetch(`/api/projects/${slug}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ index }),
+      });
+      if (!response.ok) void loadProjects();
+    } catch {
+      void loadProjects();
     }
   }
 
@@ -213,9 +294,18 @@
     <span class="hint" aria-hidden="true">
       <kbd>{isMac ? "⌘" : "Ctrl"}</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span>
     </span>
-    <ul>
+    <ul ondragleave={onListDragLeave}>
       {#each projects as project, index (project.slug)}
-        <li>
+        <li
+          draggable={editingSlug !== project.slug}
+          class:dragging={dragSlug === project.slug}
+          class:drop-before={dropTarget !== null && dropTarget.slug === project.slug && !dropTarget.after}
+          class:drop-after={dropTarget !== null && dropTarget.slug === project.slug && dropTarget.after}
+          ondragstart={(event) => onDragStart(event, project)}
+          ondragover={(event) => onRowDragOver(event, project.slug)}
+          ondrop={(event) => onRowDrop(event, project.slug)}
+          ondragend={onDragEnd}
+        >
           {#if editingSlug === project.slug}
             <input
               class="rename"
@@ -239,6 +329,7 @@
             >{#if index < 9}<span aria-hidden="true">{index + 1}</span>{/if}</button>
             <a
               href={`/p/${project.slug}`}
+              draggable="false"
               class:active={project.slug === activeSlug}
               aria-current={project.slug === activeSlug ? "page" : undefined}
               title={project.path}
@@ -336,6 +427,29 @@
   /* Hover target for the row: anchor and remove button are siblings. */
   li {
     position: relative;
+  }
+
+  /* Row being dragged: ghosted, so the drop line reads as its destination. */
+  li.dragging {
+    opacity: 0.4;
+  }
+  /* 2px drop line in the sidebar's accent, riding the seam between rows. */
+  li.drop-before::before,
+  li.drop-after::after {
+    content: "";
+    position: absolute;
+    left: 6px;
+    right: 6px;
+    height: 2px;
+    border-radius: 1px;
+    background: var(--project-color, var(--fg));
+    pointer-events: none;
+  }
+  li.drop-before::before {
+    top: -1px;
+  }
+  li.drop-after::after {
+    bottom: -1px;
   }
 
   a {

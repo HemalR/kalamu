@@ -16,6 +16,30 @@ under `Added` / `Changed` / `Fixed` / `Removed`.
 
 ## [Unreleased]
 
+### Added
+
+- Zoom: focus any item as a temporary root, with a breadcrumb trail above the
+  outline (Cmd/Ctrl+Shift+. to zoom in, Cmd/Ctrl+Shift+, or Escape to zoom
+  out). The zoom level lives in the URL, so it survives reload and Back
+  unwinds it.
+- Hide completed items with Cmd/Ctrl+Shift+H (or the palette) when a list gets
+  long; the setting persists per project.
+- `http://` and `https://` URLs in item text now render as clickable links.
+- Cmd/Ctrl+Shift+↑/↓ (and matching palette items) collapse the current item's
+  parent or expand its children, moving the caret along with the fold.
+- Pressing Enter on a numbered-list item (`1. …`) continues the numbering on
+  the new sibling.
+- `kalamu init` now adds `.kalamu`'s view-state and cache files to your
+  `.gitignore` automatically when run inside a repo (`--no-gitignore` to skip);
+  outside a repo it still just prints the suggested entries.
+- The hub sidebar can be reordered by drag-and-drop; the order is remembered
+  and keeps the Cmd/Ctrl+Shift+1…9 project shortcuts stable.
+
+### Changed
+
+- `kalamu open` now wakes an installed-but-stopped hub (macOS, `hub install`)
+  and routes there, instead of falling back to a standalone server.
+
 ## [0.7.1] - 2026-07-15
 
 ### Fixed
