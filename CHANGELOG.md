@@ -16,6 +16,8 @@ under `Added` / `Changed` / `Fixed` / `Removed`.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-07-20
+
 ### Changed
 
 - The two Enter shortcuts swapped: Cmd/Ctrl+Enter now marks an item
