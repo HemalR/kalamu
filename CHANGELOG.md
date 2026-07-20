@@ -16,6 +16,44 @@ under `Added` / `Changed` / `Fixed` / `Removed`.
 
 ## [Unreleased]
 
+### Changed
+
+- The two Enter shortcuts swapped: Cmd/Ctrl+Enter now marks an item
+  done/reopens it, and Cmd/Ctrl+Shift+Enter cycles the kind
+  (bullet → task → discussion). Done is the more frequent action and gets
+  the lighter combo.
+- Priorities are now three levels instead of five: p1 = high, p2 = medium (the
+  default — shows no badge), p3 = low. The CLI accepts `--p 1-3` (or
+  `default`), inline `p1`–`p3` tokens still parse, and sorting is unchanged
+  (p1 first). Existing files migrate automatically on read: legacy `4`/`5`
+  become `3` (low); a stored `2` — previously "high" — now reads as medium.
+- Every row now reserves the priority-badge column — bullets included — so
+  text aligns vertically across bullets, tasks, and discussions. Hovering a
+  bullet shows the same ghost badge as a default-priority task; picking p1 or
+  p3 there (badge or palette) converts the bullet into a task.
+- The priority menu dropped its separate "clear" entry: choosing
+  p2 · medium (default) is how a priority is cleared.
+
+### Added
+
+- The right-gutter copy button now appears on every row, not just
+  discussions: discussions keep "Copy agent prompt" (Mod+Shift+C twin),
+  everything else copies the item and its sub-items as markdown (Mod+C twin).
+
+### Fixed
+
+- The right-gutter copy button vanished when the pointer travelled from the
+  row into the gutter to click it — the gutter now counts as hovering the
+  row, so the button stays put.
+- The tag-chip colour popover in the outline inherited the row text's
+  `pre-wrap` whitespace, leaving ~22px gaps between its sections; the popover
+  now resets to normal whitespace (the sidebar's popover was unaffected).
+- A launchd-installed hub kept serving old server code after a CLI update
+  (assets refreshed from disk, the process didn't). The hub now watches its
+  own bundle and exits once a replaced one settles on disk, letting launchd's
+  KeepAlive restart it on the new code — `kalamu restart` still forces it
+  immediately.
+
 ## [0.8.0] - 2026-07-19
 
 ### Added

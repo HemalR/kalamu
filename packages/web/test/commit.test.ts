@@ -16,39 +16,39 @@ function task(overrides: Partial<KalamuNode> = {}): KalamuNode {
 }
 
 describe("commitPatch priority override", () => {
-  // Regression: a p2 token on a task that already stored p4 must end up p2,
+  // Regression: a p1 token on a task that already stored p3 must end up p1,
   // never cleared.
   it("token overrides an existing stored priority", () => {
-    expect(commitPatch(task({ priority: 4 }), "Fix upload p2")).toEqual({ priority: 2 });
+    expect(commitPatch(task({ priority: 3 }), "Fix upload p1")).toEqual({ priority: 1 });
   });
 
   it("token sets priority when none is stored", () => {
     expect(commitPatch(task(), "Fix upload p1")).toEqual({ priority: 1 });
   });
 
-  it("p3 token clears a stored priority to default", () => {
-    expect(commitPatch(task({ priority: 4 }), "Fix upload p3")).toEqual({ priority: "default" });
+  it("p2 token clears a stored priority to default", () => {
+    expect(commitPatch(task({ priority: 3 }), "Fix upload p2")).toEqual({ priority: "default" });
   });
 
-  it("p3 token with no stored priority is a no-op", () => {
-    expect(commitPatch(task(), "Fix upload p3")).toBeNull();
+  it("p2 token with no stored priority is a no-op", () => {
+    expect(commitPatch(task(), "Fix upload p2")).toBeNull();
   });
 
   it("token equal to the stored priority is a no-op", () => {
-    expect(commitPatch(task({ priority: 4 }), "Fix upload p4")).toBeNull();
+    expect(commitPatch(task({ priority: 3 }), "Fix upload p3")).toBeNull();
   });
 
   it("re-committing an already-committed draft is a no-op", () => {
     // The blur that follows an Enter commit re-runs with the stale raw draft;
     // the second pass must produce no patch.
-    const before = task({ priority: 4 });
-    expect(commitPatch(before, "Fix upload p2")).toEqual({ priority: 2 });
-    const after = task({ priority: 2 });
-    expect(commitPatch(after, "Fix upload p2")).toBeNull();
+    const before = task({ priority: 3 });
+    expect(commitPatch(before, "Fix upload p1")).toEqual({ priority: 1 });
+    const after = task({ priority: 1 });
+    expect(commitPatch(after, "Fix upload p1")).toBeNull();
   });
 
   it("last priority token wins", () => {
-    expect(commitPatch(task({ priority: 4 }), "Fix upload p1 p2")).toEqual({ priority: 2 });
+    expect(commitPatch(task(), "Fix upload p1 p3")).toEqual({ priority: 3 });
   });
 });
 
@@ -58,9 +58,9 @@ describe("commitPatch text, tags, assignee", () => {
     expect(commitPatch(task({ text: "" }), "Build a new #feature to do xyz")).toEqual({
       text: "Build a new #feature to do xyz",
     });
-    expect(commitPatch(task(), "Fix upload now p2 #backend")).toEqual({
+    expect(commitPatch(task(), "Fix upload now p1 #backend")).toEqual({
       text: "Fix upload now #backend",
-      priority: 2,
+      priority: 1,
     });
   });
 
@@ -87,7 +87,7 @@ describe("commitPatch text, tags, assignee", () => {
 
 describe("tokenPatch (parse-on-space)", () => {
   it("applies a priority token against the node", () => {
-    expect(tokenPatch(task({ priority: 4 }), parseTokens("p2"))).toEqual({ priority: 2 });
+    expect(tokenPatch(task({ priority: 3 }), parseTokens("p1"))).toEqual({ priority: 1 });
   });
 
   it("never patches anything for #tags", () => {
@@ -97,8 +97,8 @@ describe("tokenPatch (parse-on-space)", () => {
 
 describe("discussions (SPEC key decision 12)", () => {
   it("a priority token patches priority alone — never the kind", () => {
-    expect(commitPatch(task({ kind: "discussion" }), "Fix upload p2")).toEqual({ priority: 2 });
-    expect(tokenPatch(task({ kind: "discussion", priority: 4 }), parseTokens("p1"))).toEqual({ priority: 1 });
+    expect(commitPatch(task({ kind: "discussion" }), "Fix upload p1")).toEqual({ priority: 1 });
+    expect(tokenPatch(task({ kind: "discussion", priority: 3 }), parseTokens("p1"))).toEqual({ priority: 1 });
   });
 
   it("@human/@agent are dropped on discussions, exactly like bullets", () => {

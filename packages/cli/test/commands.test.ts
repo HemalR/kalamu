@@ -51,7 +51,7 @@ describe("acceptance flow (SPEC MVP criteria)", () => {
     // Priority stored only when non-default; p1 present in the raw file.
     const raw = readFileSync(join(cwd, ".kalamu", "outline.jsonl"), "utf8");
     expect(raw).toContain('"priority":1');
-    expect(raw).not.toContain('"priority":3');
+    expect(raw).not.toContain('"priority":2');
   });
 
   it("init never overwrites, and re-init reports it", () => {
@@ -64,7 +64,7 @@ describe("acceptance flow (SPEC MVP criteria)", () => {
 
 describe("discussions", () => {
   it("adds, lists, renders, and completes a discussion without ever entering the agent queue", () => {
-    const added = commands.add(cwd, { text: "WorkOS or Auth0?", kind: "discussion", p: "2" });
+    const added = commands.add(cwd, { text: "WorkOS or Auth0?", kind: "discussion", p: "1" });
     const id = (added.json as { id: string }).id;
     addTask("Real agent work");
 
@@ -72,7 +72,7 @@ describe("discussions", () => {
     expect((commands.next(cwd).json as { text: string }).text).toBe("Real agent work");
 
     const listing = commands.list(cwd, { discussions: true });
-    expect(listing.text).toContain("? p2 WorkOS or Auth0?");
+    expect(listing.text).toContain("? p1 WorkOS or Auth0?");
     expect((listing.json as unknown[]).length).toBe(1);
 
     // discussions cannot be assigned or handed off
@@ -81,7 +81,7 @@ describe("discussions", () => {
 
     // done, then clean removes it (no surviving children) and reports it
     commands.done(cwd, id);
-    expect(commands.list(cwd, { discussions: true }).text).toContain("✓ p2 WorkOS or Auth0?");
+    expect(commands.list(cwd, { discussions: true }).text).toContain("✓ p1 WorkOS or Auth0?");
     const cleaned = commands.clean(cwd, {});
     expect(cleaned.text).toContain("1 done discussion(s)");
     expect(commands.validate(cwd).json).toMatchObject({ valid: true });
@@ -325,7 +325,7 @@ describe("filters and outputs", () => {
   });
 
   it("rejects invalid priority and kind with friendly errors", () => {
-    expect(() => commands.add(cwd, { text: "x", p: "9" })).toThrow(/1 \(urgent\) to 5 \(low\)/);
+    expect(() => commands.add(cwd, { text: "x", p: "9" })).toThrow(/1 \(high\), 2 \(medium\) or 3 \(low\)/);
     expect(() => commands.add(cwd, { text: "x", kind: "note" })).toThrow(/bullet, task or discussion/);
   });
 
@@ -404,7 +404,7 @@ describe("next context and scoping", () => {
     const area = commands.add(cwd, { text: "CLI", kind: "bullet" });
     const areaId = (area.json as { id: string }).id;
     addTask("Urgent elsewhere", { p: "1" });
-    const scopedId = addTask("Scoped task", { parent: areaId, p: "5" });
+    const scopedId = addTask("Scoped task", { parent: areaId, p: "3" });
 
     expect((commands.next(cwd, { under: areaId }).json as { id: string }).id).toBe(scopedId);
     expect(() => commands.next(cwd, { under: "n_404" })).toThrow(/n_404/);

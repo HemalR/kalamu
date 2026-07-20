@@ -9,10 +9,17 @@ import { pathsFor, readOutline } from "@kalamu/core/store";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { HUB_LAUNCHD_LABEL, hubLaunchAgentPlist, openBrowser, portIsFree, webAssetsDir } from "./launch.js";
+import {
+  HUB_LAUNCHD_LABEL,
+  hubAgentInstalled,
+  hubLaunchAgentPlist,
+  openBrowser,
+  portIsFree,
+  webAssetsDir,
+} from "./launch.js";
 import {
   isHexColor,
   projectColor,
@@ -251,6 +258,45 @@ export async function detectHub(port = HUB_PORT): Promise<boolean> {
   }
 }
 
+const BUNDLE_POLL_MS = 30_000;
+/** A fresh mtime may be an install/rebuild still writing — wait for it to settle. */
+const BUNDLE_SETTLE_MS = 10_000;
+
+/**
+ * Poll the bundle this process was started from and call `onStale` (once) when
+ * a different one lands on disk — a CLI update or a local rebuild. Transient
+ * stat failures (npm mid-reinstall) are skipped, and a changed mtime must be
+ * at least `settleMs` old so a half-written bundle never counts as arrived.
+ * Returns a stop function; the timer never keeps the process alive.
+ */
+export function watchBundle(
+  file: string,
+  onStale: () => void,
+  pollMs = BUNDLE_POLL_MS,
+  settleMs = BUNDLE_SETTLE_MS,
+): () => void {
+  let baseline: number;
+  try {
+    baseline = statSync(file).mtimeMs;
+  } catch {
+    return () => {};
+  }
+  const timer = setInterval(() => {
+    let mtimeMs: number;
+    try {
+      ({ mtimeMs } = statSync(file));
+    } catch {
+      return;
+    }
+    if (mtimeMs !== baseline && Date.now() - mtimeMs >= settleMs) {
+      clearInterval(timer);
+      onStale();
+    }
+  }, pollMs);
+  timer.unref();
+  return () => clearInterval(timer);
+}
+
 export async function runHub(options: { port?: string; browser?: boolean }): Promise<void> {
   const port = options.port === undefined ? HUB_PORT : Number(options.port);
   if (!(await portIsFree(port))) {
@@ -273,6 +319,17 @@ export async function runHub(options: { port?: string; browser?: boolean }): Pro
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
+
+  // A launchd-managed hub (installed plist, parent pid 1) outlives CLI
+  // updates: `npm i -g` replaces the bundle on disk but the running process
+  // keeps serving the old code. Watch our own entry bundle and exit once a
+  // newer one settles — KeepAlive restarts the hub on the new code.
+  if (hubAgentInstalled() && process.ppid === 1 && process.argv[1] !== undefined) {
+    watchBundle(resolve(process.argv[1]), () => {
+      console.log("newer kalamu bundle on disk — exiting so launchd restarts the hub on it");
+      shutdown();
+    });
+  }
 
   if (options.browser !== false) openBrowser(url);
 }
@@ -379,8 +436,9 @@ export async function wakeInstalledHub(): Promise<boolean> {
 }
 
 /**
- * Restart the installed hub so it picks up updated code (a running process
- * never notices a new bundle on disk). Only launchd-managed hubs can be
+ * Restart the installed hub so it picks up updated code right now — a
+ * launchd-managed hub also notices a replaced bundle on its own (watchBundle),
+ * but only within a poll interval. Only launchd-managed hubs can be
  * restarted — a foreground hub belongs to whoever's terminal it is running in.
  */
 export async function restartHub(): Promise<void> {

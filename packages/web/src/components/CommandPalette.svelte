@@ -52,11 +52,9 @@
 
   // Same wording as PriorityMenu, so the two priority surfaces read alike.
   const PRIORITIES = [
-    { p: 1, label: "p1 · urgent" },
-    { p: 2, label: "p2 · high" },
-    { p: 3, label: "p3 · normal (default)" },
-    { p: 4, label: "p4 · below normal" },
-    { p: 5, label: "p5 · low" },
+    { p: 1, label: "p1 · high" },
+    { p: 2, label: "p2 · medium (default)" },
+    { p: 3, label: "p3 · low" },
   ] as const;
 
   const items = $derived.by((): Item[] => {
@@ -118,14 +116,14 @@
       }));
     }
     // Root level: a fixed eleven-item list with stable numbers (SPEC). Items
-    // that don't apply — node actions without a target, Priority / Assign on
-    // a bullet, Assign on a discussion (never assigned — SPEC key
-    // decision 12), or Collapse parent with nothing rendered above to fold —
-    // are disabled rather than hidden.
+    // that don't apply — node actions without a target, Assign on a bullet or
+    // a discussion (never assigned — SPEC key decision 12), or Collapse
+    // parent with nothing rendered above to fold — are disabled rather than
+    // hidden. Priority works on every kind, matching the inline badge:
+    // p1/p3 on a bullet converts it to a task (core behavior).
     const task = target?.kind === "task" ? target : undefined;
-    const workItem = target !== undefined && target.kind !== "bullet" ? target : undefined;
     return [
-      { id: "priority", label: "Priority…", disabled: !workItem, run: () => enter("priority") },
+      { id: "priority", label: "Priority…", disabled: !target, run: () => enter("priority") },
       { id: "labels", label: "Labels…", disabled: !target, run: () => enter("labels") },
       { id: "assign", label: "Assign…", disabled: !task, run: () => enter("assign") },
       {

@@ -39,7 +39,7 @@ export function matches(event: KeyboardEvent, shortcut: Shortcut): boolean {
 export const SHORTCUTS = {
   newSibling: { combo: { key: "Enter" }, keys: "Enter", does: "New item below — on an empty item it cycles the kind instead" },
   lineBreak: { keys: "Shift+Enter", does: "Line break inside the item" },
-  cycleKind: { combo: { key: "Enter", mod: true }, keys: "Mod+Enter", does: "Cycle bullet / task / discussion" },
+  cycleKind: { combo: { key: "Enter", mod: true, shift: true }, keys: "Mod+Shift+Enter", does: "Cycle bullet / task / discussion" },
   indent: { combo: { key: "Tab" }, keys: "Tab", does: "Indent (become child of the previous sibling)" },
   outdent: { combo: { key: "Tab", shift: true }, keys: "Shift+Tab", does: "Outdent" },
   focusMove: { keys: "↑ / ↓", does: "Move focus between items (at the first/last line), keeping your column" },
@@ -47,7 +47,7 @@ export const SHORTCUTS = {
   moveDown: { combo: { key: "ArrowDown", mod: true }, keys: "Mod+↓", does: "Move item down among its siblings" },
   // Not Mod+D: preventable while editing, but it falls through to the browser's
   // bookmark dialog when no node is focused.
-  toggleDone: { combo: { key: "Enter", mod: true, shift: true }, keys: "Mod+Shift+Enter", does: "Done / reopen" },
+  toggleDone: { combo: { key: "Enter", mod: true }, keys: "Mod+Enter", does: "Done / reopen" },
   toggleCollapse: { combo: { key: ".", mod: true }, keys: "Mod+.", does: "Collapse / expand children" },
   // These two override the browser's select-to-start/-end on macOS —
   // deliberate, same family as Mod+↑/↓ overriding the native caret jumps.
@@ -71,7 +71,7 @@ export const SHORTCUTS = {
 } satisfies Record<string, Shortcut>;
 
 export const TOKEN_HINTS: readonly { token: string; does: string }[] = [
-  { token: "p1 … p5", does: "Priority in text — p1 urgent, p5 low; p3 is the default and shows no badge" },
+  { token: "p1 … p3", does: "Priority in text — p1 high, p3 low; p2 is the default and shows no badge" },
   { token: "#tag", does: "Stays in the text and renders as a coloured chip in place; typing # suggests existing tags; click a chip to recolour, edit it like any other word" },
   { token: "@", does: "Opens the assign menu — pick human or agent for the task" },
   { token: "@human / @agent", does: "Assigns the task directly — human-assigned tasks are skipped by agents and `kalamu next`" },

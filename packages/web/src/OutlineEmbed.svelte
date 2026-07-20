@@ -12,13 +12,13 @@
   ): KalamuNode => ({ id, parentId, kind, text, createdAt: T0, doneAt: null, handoff: null, ...extra });
 
   const DEMO_SEED: KalamuNode[] = [
-    seedNode("demo_hero", null, "task", "Ship the landing page hero #marketing", { priority: 2 }),
+    seedNode("demo_hero", null, "task", "Ship the landing page hero #marketing"),
     seedNode("demo_wire", "demo_hero", "task", "Wire up the interactive outline demo #svelte", { doneAt: T0 }),
     seedNode("demo_copy", "demo_hero", "task", "Write the section 2 copy", { assignee: "human" }),
     seedNode("demo_ci", null, "task", "Fix flaky CI test #bug", { priority: 1, assignee: "agent" }),
     seedNode("demo_naming", null, "discussion", "Naming for the v0.7 release"),
     seedNode("demo_names", "demo_naming", "bullet", "kalamu vs kalam vs outlinr #naming"),
-    seedNode("demo_coffee", null, "task", "Buy coffee", { doneAt: T0, priority: 5 }),
+    seedNode("demo_coffee", null, "task", "Buy coffee", { doneAt: T0, priority: 3 }),
   ];
 </script>
 

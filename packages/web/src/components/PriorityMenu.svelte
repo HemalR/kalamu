@@ -1,19 +1,17 @@
 <script lang="ts">
   interface Props {
-    /** Effective priority (missing stored priority = 3). */
+    /** Effective priority (missing stored priority = 2). */
     current: number;
-    /** 3 means "back to default" (stored priority cleared). */
-    onpick: (priority: 1 | 2 | 3 | 4 | 5) => void;
+    /** 2 means "back to default" (stored priority cleared). */
+    onpick: (priority: 1 | 2 | 3) => void;
   }
 
   let { current, onpick }: Props = $props();
 
   const options = [
-    { p: 1, label: "p1 · urgent" },
-    { p: 2, label: "p2 · high" },
-    { p: 3, label: "p3 · normal (default)" },
-    { p: 4, label: "p4 · below normal" },
-    { p: 5, label: "p5 · low" },
+    { p: 1, label: "p1 · high" },
+    { p: 2, label: "p2 · medium (default)" },
+    { p: 3, label: "p3 · low" },
   ] as const;
 </script>
 
@@ -30,7 +28,6 @@
       {#if current === option.p}<span class="tick" aria-hidden="true">✓</span>{/if}
     </button>
   {/each}
-  <button class="clear" role="menuitem" onclick={() => onpick(3)}>clear (default)</button>
 </div>
 
 <style>
@@ -77,6 +74,7 @@
   }
 
   .swatch {
+    /* Base (p3 · low) is muted — the same colour the low badge uses. */
     width: 8px;
     height: 8px;
     border-radius: 50%;
@@ -85,29 +83,8 @@
   .swatch.p1 {
     background: var(--p1);
   }
+  /* p2 is the default: same colour as the bullet dot, i.e. no emphasis. */
   .swatch.p2 {
-    background: var(--p2);
-  }
-  .swatch.p3 {
     background: var(--bullet);
-  }
-
-  .clear {
-    display: block;
-    width: 100%;
-    margin-top: 4px;
-    padding: 3px 8px;
-    border: none;
-    border-top: 1px solid var(--guide);
-    border-radius: 0 0 5px 5px;
-    background: none;
-    color: var(--muted);
-    font: inherit;
-    font-size: 11.5px;
-    text-align: left;
-    cursor: pointer;
-  }
-  .clear:hover {
-    color: var(--fg);
   }
 </style>

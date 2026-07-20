@@ -38,7 +38,7 @@ export interface AddInput {
   parentId?: string | undefined;
   kind?: NodeKind | undefined;
   text: string;
-  priority?: 1 | 2 | 3 | 4 | 5 | undefined;
+  priority?: 1 | 2 | 3 | undefined;
   tags?: string[] | undefined;
   assignee?: Assignee | undefined;
   afterId?: string | undefined;
@@ -61,8 +61,8 @@ export function addNode(nodes: readonly KalamuNode[], input: AddInput): { nodes:
     doneAt: null,
     handoff: null,
   };
-  // Missing priority means default (p3); never store the default.
-  if (input.priority !== undefined && input.priority !== 3) node.priority = input.priority;
+  // Missing priority means default (p2, medium); never store the default.
+  if (input.priority !== undefined && input.priority !== 2) node.priority = input.priority;
   if (input.assignee !== undefined) {
     if (node.kind === "discussion") {
       throw new OperationError("discussions involve both parties; only tasks can be assigned");
@@ -92,7 +92,7 @@ function validTags(tags: readonly string[]): string[] {
 export interface UpdateInput {
   text?: string | undefined;
   kind?: NodeKind | undefined;
-  priority?: 1 | 2 | 3 | 4 | 5 | "default" | undefined;
+  priority?: 1 | 2 | 3 | "default" | undefined;
   addTags?: string[] | undefined;
   removeTags?: string[] | undefined;
   /** "human" | "agent" assigns; null clears back to unassigned. */
@@ -109,7 +109,7 @@ export function updateNode(nodes: readonly KalamuNode[], id: string, input: Upda
   // inert on other kinds, restored if converted back (SPEC "kalamu update").
   if (input.kind !== undefined) updated.kind = input.kind;
   if (input.priority !== undefined) {
-    if (input.priority === "default" || input.priority === 3) delete updated.priority;
+    if (input.priority === "default" || input.priority === 2) delete updated.priority;
     else {
       updated.priority = input.priority;
       // Setting a real priority converts a bullet into a task; an explicit

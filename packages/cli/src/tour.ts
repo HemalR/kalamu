@@ -11,7 +11,7 @@ import { addNode, type KalamuNode, type NodeKind } from "@kalamu/core";
 interface TourNode {
   kind: NodeKind;
   text: string;
-  priority?: 1 | 2 | 4 | 5;
+  priority?: 1 | 3;
   tags?: string[];
   children?: TourNode[];
 }
@@ -24,8 +24,8 @@ const TOUR: TourNode = {
       kind: "bullet",
       text: "TL;DR",
       children: [
-        { kind: "task", text: "Everything is a bullet, a task, or a discussion — Cmd/Ctrl+Enter cycles the kind. Click my checkbox (or Cmd/Ctrl+Shift+Enter) to mark me done" },
-        { kind: "task", priority: 1, tags: ["demo"], text: "Metadata lives in the text: p1…p5 sets priority (p1 = urgent; the default p3 shows no badge), #tokens become tag chips, and @ assigns a task to human or agent" },
+        { kind: "task", text: "Everything is a bullet, a task, or a discussion — Cmd/Ctrl+Shift+Enter cycles the kind. Click my checkbox (or Cmd/Ctrl+Enter) to mark me done" },
+        { kind: "task", priority: 1, tags: ["demo"], text: "Metadata lives in the text: p1…p3 sets priority (p1 = high, p3 = low; the default p2 shows no badge), #tokens become tag chips, and @ assigns a task to human or agent" },
         { kind: "bullet", text: "Enter adds an item; Tab and Shift+Tab indent and outdent; Cmd/Ctrl+K is the do-everything command palette; ? shows the full cheat sheet" },
         { kind: "bullet", text: "The point: todos you write here are an agent work queue — agents run kalamu next to receive your most urgent task with its context, and kalamu done when finished" },
         { kind: "bullet", text: "Working on multiple projects? Run kalamu hub install (macOS) to manage multiple kalamus and have it ever-running — elsewhere, kalamu hub runs it in the foreground" },

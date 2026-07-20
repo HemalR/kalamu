@@ -31,7 +31,7 @@ pnpm monorepo:
 ## Conventions
 
 - TypeScript strict everywhere; never `any` (prefer `unknown` + narrowing).
-- Priority: p1 = urgent … p5 = low; missing = p3. Never write `"priority": 3` or a null/empty `assignee` — omit defaults.
+- Priority: p1 = high, p2 = medium, p3 = low; missing = p2. Never write `"priority": 2` or a null/empty `assignee` — omit defaults.
 - Tags live inline in node text as `#tokens` (no `tags` field); the tag set is derived from text. Priority stays a field.
 - `outline.jsonl` line order IS sibling order; writer emits pre-order traversal; all file writes are temp-file + atomic rename with mtime conflict check.
 - Svelte work goes through the svelte-developer agent with the svelte-code-writer skill.

@@ -17,7 +17,7 @@ describe("serializeMarkdown", () => {
         text: "Audit logs",
         handoff: { at: NOW, target: "github", ref: "#42" },
       }),
-      discussion("n_006", { parentId: "n_001", text: "WorkOS or Auth0?", priority: 2 }),
+      discussion("n_006", { parentId: "n_001", text: "WorkOS or Auth0?", priority: 3 }),
       discussion("n_007", { parentId: "n_006", text: "Settled: WorkOS", doneAt: NOW }),
     ];
     const tree = buildTree(nodes);
@@ -29,7 +29,7 @@ describe("serializeMarkdown", () => {
         "    - [x] Write tests",
         "  - [ ] Blog post @human",
         "  - [ ] Audit logs → github:#42",
-        "  - [?] p2 WorkOS or Auth0?",
+        "  - [?] p3 WorkOS or Auth0?",
         "    - [x?] Settled: WorkOS",
       ].join("\n"),
     );

@@ -36,6 +36,18 @@ describe("parseJsonl", () => {
     expect(errors).toHaveLength(4);
   });
 
+  it("reads legacy five-level priorities 4 and 5 as 3 (low)", () => {
+    const base = '"parentId":null,"text":"x","createdAt":"2026-07-09T07:00:00.000Z","doneAt":null,"handoff":null';
+    const content = [
+      `{"id":"a","kind":"task",${base},"priority":4}`,
+      `{"id":"b","kind":"task",${base},"priority":5}`,
+      `{"id":"c","kind":"task",${base},"priority":1}`,
+    ].join("\n");
+    const { nodes, errors } = parseJsonl(content);
+    expect(errors).toEqual([]);
+    expect(nodes.map((n) => n.priority)).toEqual([3, 3, 1]);
+  });
+
   it("keeps fields from a newer build through a parse/serialize round-trip", () => {
     const line =
       '{"id":"n_001","parentId":null,"kind":"task","text":"A","createdAt":"2026-07-09T07:00:00.000Z","doneAt":null,"handoff":null,"zeta":1,"alpha":"x"}';

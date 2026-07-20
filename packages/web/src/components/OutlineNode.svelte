@@ -499,7 +499,7 @@
       // At the start of the text, one press clears the priority back to default.
       if (atStart && node.kind !== "bullet" && node.priority !== undefined) {
         event.preventDefault();
-        store.setPriority(node.id, 3);
+        store.setPriority(node.id, 2);
         return;
       }
       if (draft === "") {
@@ -661,29 +661,6 @@
           </svg>
         </button>
       {/if}
-
-      <!-- Priority column at the row start, so priorities scan vertically. -->
-      <span class="prio-wrap" bind:this={prioWrap}>
-        <button
-          class={["prio", `p${priority}`, { ghost: priority === 3 }]}
-          aria-haspopup="menu"
-          aria-expanded={prioOpen}
-          title="Set priority"
-          tabindex="-1"
-          onclick={() => (prioOpen = !prioOpen)}
-        >
-          p{priority}
-        </button>
-        {#if prioOpen}
-          <PriorityMenu
-            current={priority}
-            onpick={(picked) => {
-              store.setPriority(node.id, picked);
-              prioOpen = false;
-            }}
-          />
-        {/if}
-      </span>
     {:else}
       <!-- The dot doubles as the zoom target (Workflowy-style); task check and
            discussion bubble keep their toggle-done click — keyboard and
@@ -696,6 +673,32 @@
         onclick={() => store.zoomIn(node.id)}
       ></button>
     {/if}
+
+    <!-- Priority column on EVERY row (bullets included) so text aligns
+         vertically across kinds. On bullets the badge is always ghost;
+         picking p1/p3 there converts the bullet to a task (settled SPEC
+         behavior, handled by core). -->
+    <span class="prio-wrap" bind:this={prioWrap}>
+      <button
+        class={["prio", `p${priority}`, { ghost: priority === 2 || node.kind === "bullet" }]}
+        aria-haspopup="menu"
+        aria-expanded={prioOpen}
+        title={node.kind === "bullet" ? "Set priority (makes this a task)" : "Set priority"}
+        tabindex="-1"
+        onclick={() => (prioOpen = !prioOpen)}
+      >
+        p{priority}
+      </button>
+      {#if prioOpen}
+        <PriorityMenu
+          current={priority}
+          onpick={(picked) => {
+            store.setPriority(node.id, picked);
+            prioOpen = false;
+          }}
+        />
+      {/if}
+    </span>
 
     <!-- pointer-only widening of the textbox's click target; keyboard users focus the textbox directly -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -818,29 +821,32 @@
       {#if node.handoff}
         <span class="handoff" title={node.handoff.ref}>→ {node.handoff.target}</span>
       {/if}
-      {#if node.kind === "discussion"}
-        <!-- Absolute in the row's right gutter and mounted even while editing, so
-             entering/leaving edit mode never shifts the row; CSS reveals it on
-             row hover/focus. Clicking mid-edit blurs the editable, which commits
-             the draft before the copy reads the tree. Mod+Shift+C is the keyboard twin. -->
-        <button
-          class="copy-prompt"
-          aria-label="Copy agent prompt"
-          title="Copy agent prompt"
-          tabindex="-1"
-          onclick={() => store.copyDiscussionPrompt(node.id)}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
-            <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
-          </svg>
-        </button>
-      {/if}
+      <!-- Absolute in the row's right gutter and mounted even while editing, so
+           entering/leaving edit mode never shifts the row; CSS reveals it on
+           row hover/focus. Clicking mid-edit blurs the editable, which commits
+           the draft before the copy reads the tree. Keyboard twins: Mod+Shift+C
+           for a discussion's agent prompt, Mod+C (nothing selected) for the
+           subtree copy on every other kind. -->
+      <button
+        class="copy-prompt"
+        aria-label={node.kind === "discussion" ? "Copy agent prompt" : "Copy item and sub-items"}
+        title={node.kind === "discussion" ? "Copy agent prompt" : "Copy item and sub-items"}
+        tabindex="-1"
+        onclick={() =>
+          node.kind === "discussion"
+            ? store.copyDiscussionPrompt(node.id)
+            : store.copySubtree(node.id)}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+          <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+        </svg>
+      </button>
     </div>
   </div>
 
   {#if hasChildren && !isCollapsed}
-    <div class={["children", { wide: node.kind !== "bullet" }]}>
+    <div class="children">
       {#each children as child (child.id)}
         <Self node={child} {store} />
       {/each}
@@ -1047,19 +1053,17 @@
     color: var(--p1);
     background: color-mix(in srgb, var(--p1) 14%, transparent);
   }
-  .prio.p2 {
-    color: var(--p2);
-    background: color-mix(in srgb, var(--p2) 14%, transparent);
-  }
-  .prio.p4,
-  .prio.p5 {
+  .prio.p3 {
     color: var(--muted);
     background: color-mix(in srgb, var(--muted) 12%, transparent);
     font-weight: 500;
   }
-  /* Default (p3) shows no badge — only a ghost affordance on hover/focus. */
+  /* Default (p2) — and any bullet — shows no badge, only a ghost affordance
+     on hover/focus. background: none beats .p1/.p3's tint on bullets that
+     carry an inert stored priority. */
   .prio.ghost {
     color: var(--muted);
+    background: none;
     font-weight: 500;
     opacity: 0;
     transition: opacity 0.1s;
@@ -1149,6 +1153,7 @@
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.1s;
+    z-index: 1;
   }
   .row:hover .copy-prompt,
   .row:focus-within .copy-prompt,
@@ -1159,10 +1164,10 @@
   .copy-prompt:hover {
     color: var(--fg);
   }
-  /* Forgiving hover: approaching a discussion row through the left gutter
-     counts as hovering the row (the row box already spans the full column
-     width on the right). The chevron renders later, so it stays clickable. */
-  .row.discussion::before {
+  /* Forgiving hover, left side: approaching a row through the left gutter
+     counts as hovering the row. The chevron renders later, so it stays
+     clickable. */
+  .row::before {
     content: "";
     position: absolute;
     left: -20px;
@@ -1171,15 +1176,24 @@
     width: 20px;
   }
 
+  /* Forgiving hover, right side: the copy button lives in main's 32px right
+     padding, outside the row box — without this, travelling from the row to
+     the button drops :hover and hides it mid-flight. Painted after the row's
+     children, so the button needs its z-index to stay clickable. */
+  .row::after {
+    content: "";
+    position: absolute;
+    right: -32px;
+    top: 0;
+    bottom: 0;
+    width: 32px;
+  }
+
+  /* Every row now carries the same gutter — glyph (18px) + prio column
+     (27px + 3px margin) — so a single indent step fits all kinds. */
   .children {
     margin-left: 8px;
-    padding-left: 21px;
-    border-left: 1px solid var(--guide);
-  }
-  /* Task/discussion rows start their text after the prio column (27px +
-     3px margin); indent children the same 30px so their bullets sit under
-     the parent's text, as they do under bullet parents. */
-  .children.wide {
     padding-left: 51px;
+    border-left: 1px solid var(--guide);
   }
 </style>

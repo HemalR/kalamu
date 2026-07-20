@@ -41,7 +41,7 @@ In the UI, everything is a keystroke away:
 - **⌘K** — command palette: priority, labels, done, mine, copy CLI commands
 - **⌘⇧Enter** — done/reopen · **⌘.** — collapse · **⌘⇧C** — copy the item's id
 - **?** — the full cheat sheet
-- Inline tokens as you type: `p1`…`p5` set priority, `#tag` becomes a coloured chip, `@human` keeps a task for yourself, `@agent` marks it as agent work
+- Inline tokens as you type: `p1`…`p3` set priority, `#tag` becomes a coloured chip, `@human` keeps a task for yourself, `@agent` marks it as agent work
 
 Commit `.kalamu/` with your code — the outline's line order is the outline, so diffs stay readable.
 
@@ -120,7 +120,7 @@ kalamu validate                # before finishing
 1. Only work on nodes where `kind` is `"task"` — plain bullets are context, not work.
 2. Never work on tasks with `"assignee": "human"` (rendered as `@human`; legacy files may write `"self": true`): they belong to the developer. `kalamu next` already excludes them. Tasks with `"assignee": "agent"` or no assignee are yours.
 3. A `discussion` node is a conversation deliverable, not coding work. Plain `next` never returns one; when the user points you at a discussion (or you query `next --discussion`), discuss — do not write code — record the outcome as child bullets, then mark it done.
-4. Priority runs p1 (urgent) to p5 (low); a missing priority means p3.
+4. Priority runs p1 (high) to p3 (low); a missing priority means p2 (medium).
 5. Before starting, run `kalamu next` or inspect the relevant task nodes.
 6. If you promote a task into another system, record it with `kalamu handoff`.
 7. After completing Kalamu-originated work, mark the originating task done and

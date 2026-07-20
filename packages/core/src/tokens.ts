@@ -9,15 +9,15 @@
 
 import type { Assignee } from "./model.js";
 
-const PRIORITY_TOKEN = /(?:^|\s)[pP]([1-5])(?=\s|$)/g;
+const PRIORITY_TOKEN = /(?:^|\s)[pP]([1-3])(?=\s|$)/g;
 const TAG_TOKEN = /(?:^|\s)#([a-zA-Z0-9][a-zA-Z0-9-]*)(?=\s|$)/g;
 const ASSIGNEE_TOKEN = /(?:^|\s)@(human|agent)(?=\s|$)/gi;
 
 export interface ParsedTokens {
   /** Input with pN/@human/@agent tokens stripped; #tags remain in place. */
   text: string;
-  /** Only set when a token was found; p3 comes back as 3 (caller omits default). */
-  priority?: 1 | 2 | 3 | 4 | 5;
+  /** Only set when a token was found; p2 comes back as 2 (caller omits default). */
+  priority?: 1 | 2 | 3;
   /** Derived from #tokens left in the text (lowercase, in order of appearance). */
   tags: string[];
   /** Only set when an @human/@agent token was found. */
@@ -29,7 +29,7 @@ export function parseTokens(input: string): ParsedTokens {
   let assignee: Assignee | undefined;
 
   let text = input.replace(PRIORITY_TOKEN, (_, digit: string) => {
-    priority = Number(digit) as 1 | 2 | 3 | 4 | 5; // last token wins
+    priority = Number(digit) as 1 | 2 | 3; // last token wins
     return " ";
   });
   text = text.replace(ASSIGNEE_TOKEN, (_, who: string) => {

@@ -48,7 +48,7 @@ describe("discussionPrompt", () => {
   const discussionTree = buildTree([
     node({ id: "n_d", kind: "discussion", text: "WorkOS or Auth0 for SSO" }),
     node({ id: "n_d1", parentId: "n_d", text: "Pricing notes" }),
-    node({ id: "n_d2", parentId: "n_d1", kind: "task", text: "Spike SAML", priority: 2 }),
+    node({ id: "n_d2", parentId: "n_d1", kind: "task", text: "Spike SAML", priority: 3 }),
     node({ id: "n_leaf", kind: "discussion", text: "Monorepo or polyrepo" }),
   ]);
 
@@ -59,7 +59,7 @@ describe("discussionPrompt", () => {
         "Kalamu discussion n_srv: WorkOS or Auth0 for SSO",
         "",
         "  - Pricing notes",
-        "    - [ ] p2 Spike SAML",
+        "    - [ ] p3 Spike SAML",
         "",
         'This is for discussion only — do not make any code changes yet. When we reach a conclusion, help me record the outcome as child bullets under n_srv (kalamu add --parent n_srv --text "..."), then mark the discussion done (kalamu done n_srv).',
       ].join("\n"),

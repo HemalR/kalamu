@@ -19,7 +19,7 @@ const NOW = "2026-07-09T09:00:00.000Z";
 
 describe("addNode", () => {
   it("adds top-level bullet by default and never stores default priority", () => {
-    const { nodes, node } = addNode([], { text: "Auth", priority: 3, now: NOW });
+    const { nodes, node } = addNode([], { text: "Auth", priority: 2, now: NOW });
     expect(node.kind).toBe("bullet");
     expect(node.parentId).toBeNull();
     expect(node.priority).toBeUndefined();
@@ -60,10 +60,10 @@ describe("updateNode", () => {
     let result = updateNode(start, "n_001", { text: "new", priority: "default" });
     expect(result.node.text).toBe("new");
     expect(result.node.priority).toBeUndefined();
-    result = updateNode(result.nodes, "n_001", { priority: 3 });
+    result = updateNode(result.nodes, "n_001", { priority: 2 });
     expect(result.node.priority).toBeUndefined();
-    result = updateNode(result.nodes, "n_001", { priority: 5 });
-    expect(result.node.priority).toBe(5);
+    result = updateNode(result.nodes, "n_001", { priority: 3 });
+    expect(result.node.priority).toBe(3);
   });
 
   it("setting a priority converts a bullet into a task; clearing or an explicit kind does not", () => {
@@ -72,7 +72,7 @@ describe("updateNode", () => {
     expect(converted.node.priority).toBe(1);
     const cleared = updateNode([bullet("n_002")], "n_002", { priority: "default" });
     expect(cleared.node.kind).toBe("bullet");
-    const explicit = updateNode([bullet("n_003")], "n_003", { priority: 2, kind: "bullet" });
+    const explicit = updateNode([bullet("n_003")], "n_003", { priority: 3, kind: "bullet" });
     expect(explicit.node.kind).toBe("bullet");
   });
 
@@ -109,9 +109,9 @@ describe("updateNode", () => {
 
 describe("discussions", () => {
   it("keep their kind when a priority is set, and carry it", () => {
-    const added = addNode([], { kind: "discussion", text: "WorkOS or Auth0?", priority: 2, now: NOW });
+    const added = addNode([], { kind: "discussion", text: "WorkOS or Auth0?", priority: 3, now: NOW });
     expect(added.node.kind).toBe("discussion");
-    expect(added.node.priority).toBe(2);
+    expect(added.node.priority).toBe(3);
     const updated = updateNode([discussion("n_001")], "n_001", { priority: 1 });
     expect(updated.node.kind).toBe("discussion");
     expect(updated.node.priority).toBe(1);

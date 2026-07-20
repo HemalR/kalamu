@@ -6,19 +6,25 @@ import { appendTags } from "./tokens.js";
  * Legacy fields readers still accept (and rewrite on the next write): a
  * `tags` array from before tags moved inline (SPEC key decision 7) merges
  * into the text as trailing #tokens; `self: true` from before assignment
- * (key decision 8) reads as `assignee: "human"`.
+ * (key decision 8) reads as `assignee: "human"`; priority 4/5 from the old
+ * five-level scale reads as 3 (low).
  */
 const legacyLineSchema = nodeSchema.extend({
   tags: z.array(z.string()).optional(),
   self: z.literal(true).optional(),
+  priority: z
+    .union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)])
+    .optional(),
 });
 
 function normalizeLegacy(raw: z.infer<typeof legacyLineSchema>): KalamuNode {
-  const { tags, self, ...node } = raw;
-  if (self && node.assignee === undefined) node.assignee = "human";
-  if (!tags?.length) return node;
+  const { tags, self, priority, ...node } = raw;
+  const out: KalamuNode = node;
+  if (priority !== undefined) out.priority = priority === 4 || priority === 5 ? 3 : priority;
+  if (self && out.assignee === undefined) out.assignee = "human";
+  if (!tags?.length) return out;
   const valid = tags.map((t) => t.toLowerCase()).filter((t) => TAG_PATTERN.test(t));
-  return { ...node, text: appendTags(node.text, valid) };
+  return { ...out, text: appendTags(out.text, valid) };
 }
 
 export interface ParseError {

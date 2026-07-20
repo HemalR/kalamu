@@ -22,7 +22,7 @@ export function commitPatch(node: KalamuNode, raw: string): CommitPatch | null {
 /**
  * Patch for extracted tokens only (used by parse-on-space, where the editor
  * handles the text itself). Rules:
- * - a priority token always overrides the stored priority; `p3` clears it
+ * - a priority token always overrides the stored priority; `p2` clears it
  *   back to default (stored priority removed) — on any kind, since core's
  *   updateNode converts only bullets (a discussion stays a discussion)
  * - `@human`/`@agent` sets the assignee on tasks only (dropped on bullets
@@ -32,7 +32,7 @@ export function commitPatch(node: KalamuNode, raw: string): CommitPatch | null {
 export function tokenPatch(node: KalamuNode, parsed: ParsedTokens): CommitPatch {
   const patch: CommitPatch = {};
   if (parsed.priority !== undefined) {
-    const target = parsed.priority === 3 ? undefined : parsed.priority;
+    const target = parsed.priority === 2 ? undefined : parsed.priority;
     if (target !== node.priority) patch.priority = target ?? "default";
   }
   if (parsed.assignee !== undefined && node.kind === "task" && node.assignee !== parsed.assignee) {

@@ -22,13 +22,14 @@ export interface KalamuNode {
   createdAt: string;
   doneAt: string | null;
   handoff: Handoff | null;
-  priority?: 1 | 2 | 3 | 4 | 5;
+  /** 1 = high, 2 = medium (the default — never persisted), 3 = low. */
+  priority?: 1 | 2 | 3;
   assignee?: Assignee;
 }
 // No tags field: a tag IS its inline #token in text; the set is derived
 // (SPEC key decision 7). No collapsed field: view state (key decision 10).
 
-export const DEFAULT_PRIORITY = 3;
+export const DEFAULT_PRIORITY = 2;
 
 export const TAG_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 
@@ -56,7 +57,7 @@ export const nodeSchema = z
     doneAt: isoTimestamp.nullable(),
     handoff: handoffSchema.nullable(),
     priority: z
-      .union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)])
+      .union([z.literal(1), z.literal(2), z.literal(3)])
       .optional(),
     assignee: z.enum(["human", "agent"]).optional(),
   })

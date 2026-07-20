@@ -1,10 +1,10 @@
 import { tagColor } from "@kalamu/core";
 import { initKalamu } from "@kalamu/core/store";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createHubServer } from "../src/hub.js";
+import { createHubServer, watchBundle } from "../src/hub.js";
 import { registerProject } from "../src/registry.js";
 import type { KalamuServer } from "../src/server.js";
 
@@ -219,5 +219,46 @@ describe("hub", () => {
     const res = await hub.app.request("/");
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toMatch(/^\/p\/(alpha|beta)$/);
+  });
+});
+
+describe("watchBundle", () => {
+  const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+  const setMtime = (file: string, msAgo: number): void => {
+    const when = new Date(Date.now() - msAgo);
+    utimesSync(file, when, when);
+  };
+  const untilFired = async (counter: () => number): Promise<void> => {
+    for (let i = 0; i < 200 && counter() === 0; i++) await sleep(5);
+  };
+
+  it("fires once a replaced bundle lands, surviving the transient gap mid-reinstall", async () => {
+    const bundle = join(base, "index.js");
+    writeFileSync(bundle, "old");
+    let fired = 0;
+    const stop = watchBundle(bundle, () => fired++, 5, 0);
+    rmSync(bundle);
+    await sleep(30);
+    expect(fired).toBe(0);
+    writeFileSync(bundle, "new");
+    setMtime(bundle, 60_000);
+    await untilFired(() => fired);
+    stop();
+    await sleep(30);
+    expect(fired).toBe(1);
+  });
+
+  it("holds off while the new mtime is still settling", async () => {
+    const bundle = join(base, "index.js");
+    writeFileSync(bundle, "old");
+    let fired = 0;
+    const stop = watchBundle(bundle, () => fired++, 5, 5 * 60_000);
+    setMtime(bundle, 0);
+    await sleep(30);
+    expect(fired).toBe(0);
+    setMtime(bundle, 6 * 60_000);
+    await untilFired(() => fired);
+    stop();
+    expect(fired).toBe(1);
   });
 });

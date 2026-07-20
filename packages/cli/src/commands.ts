@@ -37,13 +37,13 @@ import { glyphFor, prefixFor, renderOutline } from "./render.js";
 import { seedTour } from "./tour.js";
 import { depthOf, serializeMarkdown } from "@kalamu/core";
 
-export type Priority = 1 | 2 | 3 | 4 | 5;
+export type Priority = 1 | 2 | 3;
 
 export function parsePriority(value: string, allowDefault: boolean): Priority | "default" {
   if (allowDefault && value === "default") return "default";
   const n = Number(value);
-  if (!Number.isInteger(n) || n < 1 || n > 5) {
-    throw new CliError(`invalid priority "${value}" — use 1 (urgent) to 5 (low)${allowDefault ? ' or "default"' : ""}`);
+  if (!Number.isInteger(n) || n < 1 || n > 3) {
+    throw new CliError(`invalid priority "${value}" — use 1 (high), 2 (medium) or 3 (low)${allowDefault ? ' or "default"' : ""}`);
   }
   return n as Priority;
 }

@@ -559,7 +559,7 @@ export class OutlineStore {
   }
 
   /**
-   * Commit-time token parsing (SPEC key decision 9): extract p1–p5 / @human/@agent
+   * Commit-time token parsing (SPEC key decision 9): extract p1–p3 / @human/@agent
    * from the typed text; #tags stay in the text verbatim (key decision 7).
    * The delta rules — including "a typed priority token overrides the stored
    * priority" — live in commit.ts (pure, unit-tested).
@@ -617,11 +617,15 @@ export class OutlineStore {
     );
   }
 
-  /** Work items only — priority on a discussion never converts it (SPEC key decision 12). */
+  /**
+   * All kinds: core converts a bullet into a task when a real priority (1/3)
+   * is set; a discussion keeps its kind (SPEC key decision 12). Priority 2
+   * clears back to default.
+   */
   setPriority(id: string, priority: Priority): void {
     const node = this.tree.byId.get(id);
-    if (!node || node.kind === "bullet") return;
-    const value = priority === 3 ? "default" : priority;
+    if (!node) return;
+    const value = priority === 2 ? "default" : priority;
     this.mutate(
       (nodes) => updateNode(nodes, id, { priority: value }).nodes,
       () => api.patchNode(this.serverId(id), { priority: value }),

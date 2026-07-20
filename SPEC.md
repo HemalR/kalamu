@@ -35,7 +35,7 @@ Everything else is in service of those two. If a feature strengthens neither, it
 These were deliberated and are settled. Do not relitigate them during implementation.
 
 1. **Line position is canonical sibling order.** There is no `order` field. The writer always emits the file in pre-order traversal; the parser is lenient. See [Outline ordering](#outline-ordering).
-2. **`p1` is urgent, `p5` is low.** Matches P0/P1-is-highest developer convention. Missing priority means `p3` (normal). `next` sorts priority ascending.
+2. **`p1` is high, `p3` is low.** (Amended 2026-07-20: three levels replace the original five.) Matches P0/P1-is-highest developer convention. Missing priority means `p2` (medium, the default). `next` sorts priority ascending. Legacy files with `4`/`5` read as `3` and are rewritten on the next write.
 3. **`done` carries semantics on tasks only.** (Amended 2026-07-10: bullets CAN be marked done — strikethrough in the UI — and `clean` removes a done bullet once nothing beneath it survives. A bullet's `doneAt` never affects `next` eligibility or umbrella closing; bullets remain non-work-items.)
 4. **A done or handed-off ancestor TASK closes its subtree.** Tasks under it are ineligible for `next`. Done bullets never close anything (see 3).
 5. **Live reload is not optional.** The server watches the file and pushes changes to the UI; all writers use mtime-checked atomic writes. See [Concurrency](#concurrency).
@@ -354,24 +354,24 @@ Only meaningful for `kind: "task"` and `kind: "discussion"` (where it is purely 
 Allowed values:
 
 ```ts
-1 | 2 | 3 | 4 | 5
+1 | 2 | 3
 ```
 
-Default priority is `3`.
+Default priority is `2` (medium).
 
-Do not write `"priority": 3` unless there is a strong reason. Missing priority means default priority.
+Do not write `"priority": 2` unless there is a strong reason. Missing priority means default priority.
 
-Setting a priority (1–5) on a `bullet` — via `add`, `update`, or the UI — converts it into a `task`, unless a kind is passed explicitly in the same call. Priorities are never silently inert on bullets you just prioritized; clearing back to default (`--p default` or `3`) never converts. Setting a priority on a `discussion` never converts it — priority is meaningful there (key decision 12).
+Setting a priority (1–3) on a `bullet` — via `add`, `update`, or the UI — converts it into a `task`, unless a kind is passed explicitly in the same call. Priorities are never silently inert on bullets you just prioritized; clearing back to default (`--p default` or `2`) never converts. Setting a priority on a `discussion` never converts it — priority is meaningful there (key decision 12).
 
 Semantics — **lower number is more urgent**, matching P0/P1 developer convention:
 
 ```text
-p1 = urgent / pick first
-p2 = high
-p3 = normal/default
-p4 = below normal
-p5 = low
+p1 = high / pick first
+p2 = medium/default
+p3 = low
 ```
+
+Legacy note: files written under the original five-level scale may carry `4` or `5`; readers clamp both to `3` (low) and rewrite on the next write.
 
 #### tags (derived, not stored)
 
@@ -406,7 +406,7 @@ Legacy note: files written before this decision may carry `"self": true`; reader
 ```jsonl
 {"id":"n_001","parentId":null,"kind":"bullet","text":"Auth improvements","createdAt":"2026-07-09T07:00:00.000Z","doneAt":null,"handoff":null}
 {"id":"n_002","parentId":"n_001","kind":"bullet","text":"SSO","createdAt":"2026-07-09T07:01:00.000Z","doneAt":null,"handoff":null}
-{"id":"n_003","parentId":"n_002","kind":"task","text":"Investigate WorkOS org mapping #research","createdAt":"2026-07-09T07:02:00.000Z","doneAt":null,"handoff":null,"priority":2}
+{"id":"n_003","parentId":"n_002","kind":"task","text":"Investigate WorkOS org mapping #research","createdAt":"2026-07-09T07:02:00.000Z","doneAt":null,"handoff":null,"priority":3}
 {"id":"n_004","parentId":"n_002","kind":"task","text":"Add SAML config screen","createdAt":"2026-07-09T07:03:00.000Z","doneAt":null,"handoff":null}
 {"id":"n_005","parentId":"n_001","kind":"bullet","text":"Login UX","createdAt":"2026-07-09T07:04:00.000Z","doneAt":null,"handoff":null}
 {"id":"n_006","parentId":"n_005","kind":"task","text":"Fix password reset redirect","createdAt":"2026-07-09T07:05:00.000Z","doneAt":null,"handoff":null,"priority":1}
@@ -460,7 +460,7 @@ Human-assigned tasks (`assignee: "human"`) are never returned — they belong to
 
 Sorting:
 
-1. Priority **ascending** (p1 first), where missing priority means `3`
+1. Priority **ascending** (p1 first), where missing priority means `2`
 2. Outline order
 
 So a `p1` task is selected before a `p2` task, regardless of outline position.
@@ -752,7 +752,7 @@ Options:
 --parent <id>
 --kind bullet|task|discussion
 --text <text>
---p <1-5>
+--p <1-3>
 --tag <tag>
 --assign <human|agent>
 --after <id>
@@ -768,7 +768,7 @@ If `--kind` is omitted, default to `bullet`.
 
 If neither `--after` nor `--before` is given, append as last sibling.
 
-If priority is omitted for a task, do not write priority; treat it as default `3`.
+If priority is omitted for a task, do not write priority; treat it as default `2`.
 
 Return the created ID.
 
@@ -804,15 +804,15 @@ Options:
 ```bash
 --text <text>
 --kind bullet|task|discussion
---p <1-5|default>
+--p <1-3|default>
 --add-tag <tag>
 --remove-tag <tag>
 --assign <human|agent|none>
 ```
 
-`--p default` removes the stored priority (reverting to implicit `p3`).
+`--p default` removes the stored priority (reverting to implicit `p2`).
 
-`--p 1-5` on a bullet also converts it to a task (see the `priority` field), unless `--kind` is given in the same call.
+`--p 1-3` on a bullet also converts it to a task (see the `priority` field), unless `--kind` is given in the same call.
 
 `--add-tag` and `--remove-tag` are repeatable text surgery: add appends the `#tag` token, remove strips the token(s) from the text. `--assign` sets the assignee; `--assign none` clears it back to unassigned.
 
@@ -820,7 +820,7 @@ Converting a `task` back to `bullet` preserves `doneAt`, `handoff`, and `priorit
 
 Validation:
 
-* Do not allow priority outside 1–5.
+* Do not allow priority outside 1–3.
 * Do not allow unknown kind.
 
 ---
@@ -1006,7 +1006,7 @@ const eligible = nodes.filter(n =>
 );
 
 sort by:
-  priority ascending, default 3 (p1 first)
+  priority ascending, default 2 (p1 first)
   outline order ascending
 ```
 
@@ -1111,7 +1111,7 @@ Check:
 * `kind` is `bullet`, `task`, or `discussion`.
 * `doneAt` is either `null` or a valid ISO timestamp.
 * `handoff` is either `null` or has `at`, `target`, and `ref`.
-* `priority`, if present, is an integer 1–5.
+* `priority`, if present, is an integer 1–3 (legacy `4`/`5` values are clamped to `3` on read and rewritten on the next write).
 * `assignee`, if present, is `"human"` or `"agent"` and the node is not a discussion (setting one is rejected at the operation level; a stale value inherited from a past life as a task is inert).
 
 Unknown node fields are NOT an error: readers must preserve fields they don't recognize through parse → operate → write, so an older build can never erase what a newer one wrote. Writers emit unknown fields after the known keys, sorted by name.
@@ -1236,7 +1236,7 @@ High-priority task (badge leads the row so priorities align in a scannable colum
 ☐ p1 Fix password reset redirect
 ```
 
-Default priority `p3` should generally be hidden.
+Default priority `p2` should generally be hidden.
 
 Handed-off task:
 
@@ -1280,11 +1280,11 @@ ArrowUp/ArrowDown        move focus (goal column preserved: the caret keeps aimi
                          clamped to line length; any other key resets it)
 Cmd/Ctrl+ArrowUp         move node up
 Cmd/Ctrl+ArrowDown       move node down
-Cmd/Ctrl+Enter           cycle kind: bullet → task → discussion → bullet
-Cmd/Ctrl+Shift+Enter     mark item done/reopen — visual-only strikethrough on
+Cmd/Ctrl+Enter           mark item done/reopen — visual-only strikethrough on
                          bullets (not Cmd+D — it works while editing
                          but falls through to the browser's bookmark dialog when
                          no node is focused)
+Cmd/Ctrl+Shift+Enter     cycle kind: bullet → task → discussion → bullet
 Cmd/Ctrl+K               open the command palette (priority, labels, assign)
 Cmd/Ctrl+.               toggle collapse/expand
 Cmd/Ctrl+Shift+ArrowUp   collapse the parent — the caret jumps up to it (inert on
@@ -1324,7 +1324,7 @@ Cmd/Ctrl+K opens a command palette — including while a node is being edited. I
 acts on the last-focused node and offers, at the top level:
 
 ```text
-1  Priority  ->  submenu: 1-5 set the priority (3 = back to default), current level marked
+1  Priority  ->  submenu: 1-3 set the priority (2 = back to default), current level marked
 2  Labels    ->  submenu: every #tag in the outline, checkmark if the node has it;
                  selecting toggles the #token in the node's text (tags stay inline —
                  key decision 7); stays open for multi-toggle
@@ -1361,7 +1361,9 @@ arrows or filtering). Items that don't apply
 are greyed out and disabled rather than hidden — with no node focused, 1–7 are
 disabled (the theme, clean and view items need no target and are always
 enabled — Clean up with nothing to clean just toasts "Nothing to clean."); on a
-bullet, only Priority and Assign are disabled — Toggle done
+bullet, only Assign is disabled — Priority applies (picking 1 or 3 converts the
+bullet into a task, exactly like `--p` on the CLI; 2 clears back to default
+without converting) and Toggle done
 works on bullets as a visual-only strikethrough (Copy CLI command stays
 enabled, with task-only commands omitted from its submenu; done/reopen appear
 for bullets too). On a discussion, only Assign is disabled (discussions are
@@ -1414,23 +1416,23 @@ Do not store `p1` in text.
 Regex should be conservative:
 
 ```regex
-/(?:^|\s)p([1-5])(?:\s|$)/i
+/(?:^|\s)p([1-3])(?:\s|$)/i
 ```
 
 Rules:
 
-* `p1` to `p5` are valid.
-* `p3` means default; omit priority from stored JSON unless explicitly choosing to store it.
-* Do not parse `p10`, `p99`, `P256`, etc.
+* `p1` to `p3` are valid.
+* `p2` means default; omit priority from stored JSON unless explicitly choosing to store it.
+* Do not parse `p4`, `p10`, `p99`, `P256`, etc.
 * Do not parse inside longer words.
-* A priority token always OVERRIDES an existing stored priority (typing `p2` on a `p4` task makes it `p2`).
+* A priority token always OVERRIDES an existing stored priority (typing `p1` on a `p3` task makes it `p1`).
 * Parse timing: when the user types a space, parse ONLY the just-completed token immediately before the caret (instant badge feedback, no whole-text rescans per keystroke). Commit-time parsing (Enter/blur) remains as the backstop for pasted or mid-line-edited text. This applies to `pN` and `@human`/`@agent` tokens; `#tags` stay in the text by design.
 
-Unlike tags, priority is NOT stored in text — `p2` is metadata, not prose, and it drives the agent-facing `next` sort, so it stays a first-class field. Rendering gives it text-like ergonomics:
+Unlike tags, priority is NOT stored in text — `p1` is metadata, not prose, and it drives the agent-facing `next` sort, so it stays a first-class field. Rendering gives it text-like ergonomics:
 
-* The priority badge renders at the START of the row (after the checkbox, before the text) so priorities line up in a scannable column regardless of text length.
+* The priority badge renders at the START of the row (after the checkbox, before the text) so priorities line up in a scannable column regardless of text length. Every row — bullets included — reserves the same badge column, so text aligns vertically across kinds.
 * Backspace with the caret at position 0 of the node text clears the priority (reverts to default).
-* Clicking the badge opens a dropdown (p1–p5 + clear-to-default); tasks at default priority show a subtle ghost badge on row hover/focus that opens the same dropdown.
+* Clicking the badge opens a dropdown (p1–p3; picking p2/medium clears back to default — there is no separate clear entry); rows at default priority show a subtle ghost badge on row hover/focus that opens the same dropdown. On bullets the badge is always the ghost (stored priorities are inert there); picking p1/p3 from a bullet's dropdown converts it into a task, like `--p` on the CLI.
 
 ---
 
@@ -1683,6 +1685,7 @@ Behaviour:
 * Removing a project from the sidebar is a **forget**, consistent with the registry being plumbing: the entry is dropped, the project's `.kalamu/` data is untouched, and the next kalamu command run inside the project re-registers it. Because it is non-destructive, the UI's per-entry remove affordance asks for no confirmation.
 * SSE live reload, mtime-checked atomic writes, and undo work unchanged per project; hub, standalone `kalamu open` servers, and CLI agents can all write concurrently because every writer already does mtime-checked atomic writes.
 * `kalamu hub install` writes a launchd user agent (macOS first; systemd user unit later) so the hub is always up and `http://localhost:4400` becomes a permanent bookmark — the terminal disappears from the human workflow entirely.
+* A launchd-managed hub (installed plist, launchd is the parent process) polls the bundle it was started from (~30s) and exits once a replaced one has settled on disk (mtime changed and ≥10s old, so a mid-write install never counts), letting `KeepAlive` restart it on the new code. Otherwise a CLI update refreshes the web assets (served from disk) while the server process keeps running months-old code. This is a restart, not a self-update — the human still installs updates (key decision 14) — and `kalamu restart` remains the way to force it immediately. A foreground hub never self-exits; it belongs to whoever's terminal it runs in.
 
 ### `kalamu open` integration
 
@@ -1809,7 +1812,7 @@ The outliner UI is the hardest part of this project and its biggest risk. Prove 
 17. CLI `validate`
 18. Local server (API + file watching + SSE)
 19. Real Svelte UI, carrying over learnings from the spike
-20. Inline token parsing in UI (`p1`–`p5`, `#tag`, `@human`/`@agent`)
+20. Inline token parsing in UI (`p1`–`p3`, `#tag`, `@human`/`@agent`)
 21. Keyboard shortcuts, undo/redo
 22. Polish
 
@@ -1835,7 +1838,7 @@ Add tests for:
 * Preventing invalid moves
 * Delete: leaf, refusal with children, `--recursive`
 * mtime conflict detection and single retry
-* Regex parsing of `p1`–`p5`
+* Regex parsing of `p1`–`p3`
 * Not parsing invalid priority strings
 * Regex parsing of `#tag` and `@human`/`@agent` tokens
 * Not parsing `#` or `@human`/`@agent` inside longer words
@@ -1845,8 +1848,8 @@ Add tests for:
 Important `next` tests:
 
 ```text
-p1 task beats p2 task
-p2 task beats default (p3) task
+p1 task beats p3 task
+p1 task beats default (p2) task
 two p1 tasks preserve outline order
 done tasks are ignored
 handed-off tasks are ignored

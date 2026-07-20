@@ -16,9 +16,8 @@
   --check-border: light-dark(#aab2bb, #5c646e);
   --guide: light-dark(rgba(20, 30, 40, 0.09), rgba(220, 230, 240, 0.09));
   --p1: light-dark(#e5484d, #ff6369);
-  --p2: light-dark(#f76b15, #ff8d47);
   /* Brand accent (bronze ink) — the wordmark's k and the favicon. Lightened
-     in dark mode for contrast. Kept clear of p1/p2's red/orange. */
+     in dark mode for contrast. Kept clear of p1's red. */
   --brand: light-dark(#9a6a2e, #d0a256);
   --toast-bg: light-dark(#24292f, #e3e6ea);
   --toast-fg: light-dark(#f6f8fa, #17191d);

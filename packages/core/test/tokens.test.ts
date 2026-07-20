@@ -2,26 +2,26 @@ import { describe, expect, it } from "vitest";
 import { appendTags, deriveTags, parseTokens, stripTags } from "../src/tokens.js";
 
 describe("parseTokens", () => {
-  it("extracts p1-p5 and strips the token", () => {
+  it("extracts p1-p3 and strips the token", () => {
     expect(parseTokens("Fix broken upload p1")).toMatchObject({ text: "Fix broken upload", priority: 1 });
-    expect(parseTokens("p5 someday thing")).toMatchObject({ text: "someday thing", priority: 5 });
+    expect(parseTokens("p3 someday thing")).toMatchObject({ text: "someday thing", priority: 3 });
     expect(parseTokens("mid P2 token")).toMatchObject({ text: "mid token", priority: 2 });
   });
 
   it("does not parse invalid priority strings", () => {
-    for (const text of ["upgrade to p10", "P99 problems", "P256 hash", "loop", "stop3", "p3x marks"]) {
+    for (const text of ["upgrade to p10", "p4 backlog", "P5 someday", "P99 problems", "P256 hash", "loop", "stop3", "p3x marks"]) {
       const parsed = parseTokens(text);
       expect(parsed.priority).toBeUndefined();
       expect(parsed.text).toBe(text);
     }
   });
 
-  it("p3 is reported so callers can treat it as explicit default", () => {
-    expect(parseTokens("normal thing p3").priority).toBe(3);
+  it("p2 is reported so callers can treat it as explicit default", () => {
+    expect(parseTokens("normal thing p2").priority).toBe(2);
   });
 
   it("last priority token wins", () => {
-    expect(parseTokens("thing p4 p1")).toMatchObject({ priority: 1, text: "thing" });
+    expect(parseTokens("thing p3 p1")).toMatchObject({ priority: 1, text: "thing" });
   });
 
   it("derives #tags (lowercased, deduped) but leaves them in the text", () => {

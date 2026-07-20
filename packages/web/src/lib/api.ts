@@ -4,7 +4,7 @@
  */
 import type { Assignee, KalamuMeta, KalamuNode, NodeKind, UiState } from "@kalamu/core";
 
-export type Priority = 1 | 2 | 3 | 4 | 5;
+export type Priority = 1 | 2 | 3;
 
 /**
  * Under `kalamu hub` the same SPA is served at /p/<slug> with the project's

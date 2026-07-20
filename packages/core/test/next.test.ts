@@ -3,13 +3,13 @@ import { eligibleTasks, nextTask } from "../src/operations.js";
 import { bullet, discussion, task } from "./helpers.js";
 
 describe("nextTask", () => {
-  it("p1 task beats p2 task regardless of outline position", () => {
-    const nodes = [task("n_001", { priority: 2 }), task("n_002", { priority: 1 })];
+  it("p1 task beats p3 task regardless of outline position", () => {
+    const nodes = [task("n_001", { priority: 3 }), task("n_002", { priority: 1 })];
     expect(nextTask(nodes)?.node.id).toBe("n_002");
   });
 
-  it("p2 task beats default (p3) task", () => {
-    const nodes = [task("n_001"), task("n_002", { priority: 2 })];
+  it("p1 task beats default (p2) task", () => {
+    const nodes = [task("n_001"), task("n_002", { priority: 1 })];
     expect(nextTask(nodes)?.node.id).toBe("n_002");
   });
 
@@ -34,7 +34,7 @@ describe("nextTask", () => {
   });
 
   it("human-assigned tasks are ignored", () => {
-    const nodes = [task("n_001", { priority: 1, assignee: "human" }), task("n_002", { priority: 5 })];
+    const nodes = [task("n_001", { priority: 1, assignee: "human" }), task("n_002", { priority: 3 })];
     expect(nextTask(nodes)?.node.id).toBe("n_002");
   });
 
@@ -49,7 +49,7 @@ describe("nextTask", () => {
   });
 
   it("blank-text tasks are ignored", () => {
-    const nodes = [task("n_001", { text: "", priority: 1 }), task("n_002", { text: "  \t" }), task("n_003", { priority: 5 })];
+    const nodes = [task("n_001", { text: "", priority: 1 }), task("n_002", { text: "  \t" }), task("n_003", { priority: 3 })];
     expect(nextTask(nodes)?.node.id).toBe("n_003");
     expect(eligibleTasks(nodes).map((e) => e.node.id)).toEqual(["n_003"]);
   });
@@ -58,7 +58,7 @@ describe("nextTask", () => {
     const nodes = [
       task("n_001", { doneAt: "2026-07-09T08:00:00.000Z" }),
       task("n_002", { parentId: "n_001", priority: 1 }),
-      task("n_003", { priority: 5 }),
+      task("n_003", { priority: 3 }),
     ];
     expect(nextTask(nodes)?.node.id).toBe("n_003");
   });
@@ -99,7 +99,7 @@ describe("nextTask options", () => {
     const nodes = [
       task("n_001", { priority: 1 }),
       bullet("n_002"),
-      task("n_003", { parentId: "n_002", priority: 5 }),
+      task("n_003", { parentId: "n_002", priority: 3 }),
     ];
     expect(nextTask(nodes, { under: "n_002" })?.node.id).toBe("n_003");
     expect(nextTask(nodes, { under: "n_001" })?.node.id).toBe("n_001");
@@ -118,7 +118,7 @@ describe("nextTask options", () => {
     const nodes = [
       task("n_001", { priority: 1, handoff: HANDOFF }),
       task("n_002", { parentId: "n_001", priority: 2 }),
-      task("n_003", { priority: 5 }),
+      task("n_003", { priority: 3 }),
     ];
     expect(nextTask(nodes)?.node.id).toBe("n_003");
     expect(nextTask(nodes, { includeHandedOff: true })?.node.id).toBe("n_001");
@@ -133,7 +133,7 @@ describe("nextTask options", () => {
     const nodes = [
       task("n_001", { priority: 1, doneAt: "2026-07-09T08:00:00.000Z", handoff: HANDOFF }),
       task("n_002", { parentId: "n_001", priority: 1 }),
-      task("n_003", { priority: 5 }),
+      task("n_003", { priority: 3 }),
     ];
     expect(nextTask(nodes, { includeHandedOff: true })?.node.id).toBe("n_003");
   });
@@ -142,8 +142,8 @@ describe("nextTask options", () => {
     const nodes = [
       task("n_001", { priority: 1, handoff: HANDOFF }),
       bullet("n_002"),
-      task("n_003", { parentId: "n_002", priority: 4, handoff: HANDOFF }),
-      task("n_004", { parentId: "n_002", priority: 5 }),
+      task("n_003", { parentId: "n_002", priority: 1, handoff: HANDOFF }),
+      task("n_004", { parentId: "n_002", priority: 3 }),
     ];
     expect(nextTask(nodes, { under: "n_002", includeHandedOff: true })?.node.id).toBe("n_003");
   });
@@ -151,8 +151,8 @@ describe("nextTask options", () => {
   it("kind: discussion queues discussions with the same sort, skipping tasks entirely", () => {
     const nodes = [
       task("n_001", { priority: 1 }),
-      discussion("n_002", { priority: 4 }),
-      discussion("n_003", { priority: 2 }),
+      discussion("n_002", { priority: 3 }),
+      discussion("n_003", { priority: 1 }),
       discussion("n_004", { doneAt: "2026-07-09T08:00:00.000Z" }),
       discussion("n_005", { text: "  " }),
     ];

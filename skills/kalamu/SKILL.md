@@ -53,7 +53,7 @@ When your work needs the human to do something (a decision, a credential, a manu
 1. Only work on nodes where `kind` is `"task"`. Plain bullets are context, never work items.
 2. Nodes with `kind: "discussion"` are conversations the developer wants to have with an agent, never coding work. `kalamu next` never returns them. When the human raises one (usually by pasting a discussion prompt), discuss only — make no code changes, record the agreed outcome as child bullets under the discussion node (`kalamu add --parent <id> --text "..."`), then `kalamu done <id>`. Query them with `kalamu next --discussion` (most urgent first) or `kalamu list --discussions`.
 3. Never work on tasks with `"assignee": "human"` (rendered as `@human`; legacy files may write `"self": true`): they belong to the developer. `kalamu next` already excludes them — but they may appear as descendants of a returned task; leave those to the human. Tasks with `"assignee": "agent"` or no assignee are yours.
-4. Priority runs p1 (urgent) to p5 (low); a missing priority means p3. Set priority with `--p`; never write `"priority": 3` explicitly.
+4. Priority runs p1 (high) to p3 (low); a missing priority means p2 (medium). Set priority with `--p`; never write `"priority": 2` explicitly.
 5. Tags live inline in task text as `#tokens` (`#web`, `#bug`) — there is no separate tags field. Keep them when editing text.
 6. If you promote a task into another tracker (GitHub issue, Linear, a plan file), record it with `kalamu handoff` so other agents don't duplicate it.
 7. When your work completes a task, mark it done and run `kalamu validate` before finishing.

@@ -43,6 +43,7 @@
     background: var(--panel);
     border: 1px solid var(--guide);
     box-shadow: 0 6px 24px rgba(0, 0, 0, 0.16);
+    white-space: normal;
   }
 
   .filter {
