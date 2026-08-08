@@ -643,6 +643,21 @@ Expected behaviour:
 
 The browser never reads/writes files directly. The local server owns file access.
 
+While running, `open` writes a PID lock at `.kalamu/server.lock` (`{pid, port}`, JSON) so `kalamu stop` can find and stop it from a different terminal; graceful shutdown (`SIGINT`/`SIGTERM`) removes the lock. `.kalamu/*.lock` is already a `kalamu init` gitignore entry (view state, never canonical).
+
+---
+
+### `kalamu stop`
+
+Stops a server left running in a terminal tab nobody remembers, without needing to know which tab. From a project directory:
+
+1. If this project has a live `.kalamu/server.lock`, stop that process (`SIGTERM`, then a short poll) and remove the lock. A lock whose pid is no longer alive is stale — clean it up silently and report nothing running.
+2. Otherwise, if a foreground `kalamu hub` has a live lock at `~/.kalamu/hub.lock`, stop that instead — a project with no standalone server may still be served by a hub.
+3. A launchd-installed hub is left untouched (`kalamu hub uninstall` is the correct way to stop that one — `KeepAlive` would just relaunch it); `stop` says so instead of sending a signal.
+4. Otherwise, report that nothing was found running.
+
+`kalamu hub` writes the same kind of lock at `~/.kalamu/hub.lock` while running in the foreground (not when launchd-managed — see above).
+
 ---
 
 ### `kalamu list`
@@ -1663,6 +1678,7 @@ kalamu hub --no-browser
 kalamu hub install        # launchd user agent (macOS): start at login
 kalamu hub uninstall
 kalamu restart            # restart the installed hub (picks up updated code)
+kalamu stop              # stop a foreground (non-installed) hub, from another terminal
 ```
 
 Routes:

@@ -12,6 +12,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { kalamuHome } from "./config.js";
 import {
   HUB_LAUNCHD_LABEL,
   hubAgentInstalled,
@@ -20,6 +21,7 @@ import {
   portIsFree,
   webAssetsDir,
 } from "./launch.js";
+import { removeLock, writeLock } from "./lock.js";
 import {
   isHexColor,
   projectColor,
@@ -297,6 +299,11 @@ export function watchBundle(
   return () => clearInterval(timer);
 }
 
+/** Where a foreground hub's PID lock lives, so `kalamu stop` can find it. */
+export function hubLockPath(): string {
+  return join(kalamuHome(), "hub.lock");
+}
+
 export async function runHub(options: { port?: string; browser?: boolean }): Promise<void> {
   const port = options.port === undefined ? HUB_PORT : Number(options.port);
   if (!(await portIsFree(port))) {
@@ -312,7 +319,16 @@ export async function runHub(options: { port?: string; browser?: boolean }): Pro
   console.log(`Kalamu hub serving ${readRegistry().projects.length} project(s)`);
   console.log(`  ${url}`);
 
+  // So `kalamu stop`, run from anywhere, can find and stop a foreground hub
+  // without needing to know which terminal it's running in. A launchd-managed
+  // hub is left alone (`kalamu stop` checks hubAgentInstalled() first) since
+  // KeepAlive would just relaunch it.
+  const lockPath = hubLockPath();
+  mkdirSync(dirname(lockPath), { recursive: true });
+  writeLock(lockPath, { pid: process.pid, port });
+
   const shutdown = (): void => {
+    removeLock(lockPath);
     close();
     server.close();
     process.exit(0);

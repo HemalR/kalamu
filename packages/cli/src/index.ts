@@ -7,6 +7,7 @@ import { CliError, looksLikeRepo, type CommandResult } from "./context.js";
 import { installHubAgent, restartHub, runHub, uninstallHubAgent } from "./hub.js";
 import { open } from "./open.js";
 import { askYesNo, installSkill, isInteractive, offerSkillInstall } from "./skill.js";
+import { stopKalamu } from "./stop.js";
 import { refreshUpdate } from "./update-check.js";
 import { CURRENT_VERSION } from "./version.js";
 
@@ -166,6 +167,18 @@ program
   .action(async () => {
     try {
       await restartHub();
+    } catch (err) {
+      console.error(`kalamu: ${(err as Error).message}`);
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command("stop")
+  .description("stop a kalamu server left running in another terminal (this project's, or a foreground hub)")
+  .action(async () => {
+    try {
+      await stopKalamu(process.cwd());
     } catch (err) {
       console.error(`kalamu: ${(err as Error).message}`);
       process.exitCode = 1;

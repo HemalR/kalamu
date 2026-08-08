@@ -16,6 +16,15 @@ under `Added` / `Changed` / `Fixed` / `Removed`.
 
 ## [Unreleased]
 
+### Added
+
+- `kalamu stop`: stops a `kalamu open` server (or a foreground `kalamu hub`)
+  left running in a terminal tab you've lost track of. `open` and a
+  foreground `hub` now write a PID lock (`.kalamu/server.lock`,
+  `~/.kalamu/hub.lock`) on startup and clean it up on graceful shutdown; a
+  launchd-installed hub is left to `kalamu hub uninstall`/`restart` instead,
+  since `stop` would just get relaunched by `KeepAlive`.
+
 ## [0.9.0] - 2026-07-20
 
 ### Changed

@@ -1,7 +1,9 @@
 import { findRoot, initKalamu, pathsFor } from "@kalamu/core/store";
 import { serve } from "@hono/node-server";
+import { join } from "node:path";
 import { detectHub, HUB_PORT, wakeInstalledHub } from "./hub.js";
 import { openBrowser, pickPort, webAssetsDir } from "./launch.js";
+import { removeLock, writeLock } from "./lock.js";
 import { readRegistry, registerProject } from "./registry.js";
 import { createServer } from "./server.js";
 
@@ -44,7 +46,13 @@ export async function open(cwd: string, options: OpenOptions): Promise<void> {
   console.log(`Kalamu serving ${paths.outline}`);
   console.log(`  ${url}`);
 
+  // So `kalamu stop`, run from any terminal, can find and stop this process
+  // without needing to know which tab it's running in.
+  const lockPath = join(paths.dir, "server.lock");
+  writeLock(lockPath, { pid: process.pid, port });
+
   const shutdown = (): void => {
+    removeLock(lockPath);
     close();
     server.close();
     process.exit(0);
