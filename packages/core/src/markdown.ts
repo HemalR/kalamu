@@ -14,7 +14,6 @@ export function markdownLine(node: KalamuNode): string {
   const priority =
     node.kind !== "bullet" && effectivePriority(node) !== 2 ? `p${effectivePriority(node)} ` : "";
   let suffix = "";
-  if (node.handoff) suffix += ` → ${node.handoff.target}:${node.handoff.ref}`;
   if (node.assignee) suffix += ` @${node.assignee}`;
   return `${box} ${priority}${node.text}${suffix}`;
 }

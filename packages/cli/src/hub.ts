@@ -49,11 +49,11 @@ export interface HubOptions {
   idleMs?: number;
 }
 
-/** Open (not done, not handed off, non-blank) tasks — the sidebar badge. */
+/** Open (not done, non-blank) tasks — the sidebar badge. */
 function countOpenTasks(entry: RegistryEntry): number | null {
   try {
     return readOutline(pathsFor(entry.path).outline).nodes.filter(
-      (n) => n.kind === "task" && n.text.trim() !== "" && n.doneAt === null && n.handoff === null,
+      (n) => n.kind === "task" && n.text.trim() !== "" && n.doneAt === null,
     ).length;
   } catch {
     return null;

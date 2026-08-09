@@ -110,6 +110,14 @@ export interface Backend {
   moveNode(id: string, body: MoveNodeBody): Promise<KalamuNode>;
   markDone(id: string): Promise<KalamuNode>;
   reopen(id: string): Promise<KalamuNode>;
+  /** Claim a task (SPEC key decision 17); `force` re-claims one whose owner died. */
+  startTask(id: string, force?: boolean): Promise<KalamuNode>;
+  /** Release a claim, returning the task to the queue. */
+  endTask(id: string): Promise<KalamuNode>;
+  /** Record that `id` waits on `blockerId`; 400 on a self-reference or a cycle. */
+  addBlocker(id: string, blockerId: string): Promise<KalamuNode>;
+  /** Remove one blocker, or every blocker when `blockerId` is omitted. */
+  removeBlocker(id: string, blockerId?: string): Promise<KalamuNode>;
   getProject(): Promise<ProjectInfo>;
   getMeta(): Promise<KalamuMeta>;
   setTagColor(tag: string, color: string | null): Promise<KalamuMeta>;
@@ -178,6 +186,17 @@ const httpBackend: Backend = {
     request<KalamuNode>(`/api/nodes/${encodeURIComponent(id)}/move`, json("POST", body)),
   markDone: (id: string) => request<KalamuNode>(`/api/nodes/${encodeURIComponent(id)}/done`, { method: "POST" }),
   reopen: (id: string) => request<KalamuNode>(`/api/nodes/${encodeURIComponent(id)}/reopen`, { method: "POST" }),
+  startTask: (id: string, force?: boolean) =>
+    request<KalamuNode>(`/api/nodes/${encodeURIComponent(id)}/start`, json("POST", force === true ? { force: true } : {})),
+  endTask: (id: string) => request<KalamuNode>(`/api/nodes/${encodeURIComponent(id)}/end`, { method: "POST" }),
+  addBlocker: (id: string, blockerId: string) =>
+    request<KalamuNode>(`/api/nodes/${encodeURIComponent(id)}/block`, json("POST", { by: blockerId })),
+  // No blocker id clears them all — the route's :byId is optional.
+  removeBlocker: (id: string, blockerId?: string) =>
+    request<KalamuNode>(
+      `/api/nodes/${encodeURIComponent(id)}/block${blockerId === undefined ? "" : `/${encodeURIComponent(blockerId)}`}`,
+      { method: "DELETE" },
+    ),
   getProject: () => request<ProjectInfo>("/api/project"),
   getMeta: () => request<KalamuMeta>("/api/meta"),
   setTagColor: (tag: string, color: string | null) =>

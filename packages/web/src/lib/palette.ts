@@ -5,10 +5,17 @@
  * never be selected or activated.
  */
 
-export function filterItems<T extends { label: string }>(items: readonly T[], query: string): T[] {
+/**
+ * Rows whose label is a shortened form of something longer (a blocker
+ * candidate's node text) carry the full text as `search`, so the query keeps
+ * reaching what the row no longer shows.
+ */
+export function filterItems<T extends { label: string; search?: string }>(items: readonly T[], query: string): T[] {
   const needle = query.trim().toLowerCase();
   if (needle === "") return [...items];
-  return items.filter((item) => item.label.toLowerCase().includes(needle));
+  return items.filter(
+    (item) => item.label.toLowerCase().includes(needle) || item.search?.toLowerCase().includes(needle) === true,
+  );
 }
 
 /**

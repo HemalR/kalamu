@@ -10,7 +10,10 @@ import {
 export function glyphFor(node: KalamuNode): string {
   if (node.kind === "bullet") return "•";
   if (node.kind === "discussion") return node.doneAt !== null ? "✓" : "?";
-  return node.doneAt !== null ? "☑" : "☐";
+  if (node.doneAt !== null) return "☑";
+  // Claimed but not finished: visibly different from an open task, so a human
+  // scanning `list` can see what an agent is already holding.
+  return node.startedAt !== undefined ? "▶" : "☐";
 }
 
 /** Priority leads the row so priorities align in a scannable column. */
@@ -21,8 +24,8 @@ export function prefixFor(node: KalamuNode): string {
 
 export function suffixFor(node: KalamuNode): string {
   let out = "";
-  if (node.handoff) out += ` → ${node.handoff.target}:${node.handoff.ref}`;
   if (node.assignee) out += ` @${node.assignee}`;
+  if (node.blockedBy?.length) out += ` ⛔ ${node.blockedBy.join(" ")}`;
   return out;
 }
 

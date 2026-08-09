@@ -10,7 +10,6 @@ function task(overrides: Partial<KalamuNode> = {}): KalamuNode {
     text: "Fix upload",
     createdAt: "2026-07-09T00:00:00.000Z",
     doneAt: null,
-    handoff: null,
     ...overrides,
   };
 }

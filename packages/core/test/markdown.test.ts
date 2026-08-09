@@ -12,11 +12,7 @@ describe("serializeMarkdown", () => {
       task("n_002", { parentId: "n_001", text: "Fix redirect", priority: 1 }),
       task("n_003", { parentId: "n_002", text: "Write tests", doneAt: NOW }),
       task("n_004", { parentId: "n_001", text: "Blog post", assignee: "human" }),
-      task("n_005", {
-        parentId: "n_001",
-        text: "Audit logs",
-        handoff: { at: NOW, target: "github", ref: "#42" },
-      }),
+      task("n_005", { parentId: "n_001", text: "Audit logs" }),
       discussion("n_006", { parentId: "n_001", text: "WorkOS or Auth0?", priority: 3 }),
       discussion("n_007", { parentId: "n_006", text: "Settled: WorkOS", doneAt: NOW }),
     ];
@@ -28,7 +24,7 @@ describe("serializeMarkdown", () => {
         "  - [ ] p1 Fix redirect",
         "    - [x] Write tests",
         "  - [ ] Blog post @human",
-        "  - [ ] Audit logs → github:#42",
+        "  - [ ] Audit logs",
         "  - [?] p3 WorkOS or Auth0?",
         "    - [x?] Settled: WorkOS",
       ].join("\n"),

@@ -38,10 +38,12 @@ kalamu add --kind task --text "Fix login redirect" --p 1
 In the UI, everything is a keystroke away:
 
 - **Enter / Tab / Shift+Tab** — new item, indent, outdent
-- **⌘K** — command palette: priority, labels, done, mine, copy CLI commands
-- **⌘⇧Enter** — done/reopen · **⌘.** — collapse · **⌘⇧C** — copy the item's id
+- **⌘K** — command palette: priority, labels, done, mine, start/block, copy CLI commands
+- **⌘Enter** — done/reopen · **⌘⇧Enter** — cycle bullet/task/discussion · **⌘.** — collapse · **⌘⇧C** — copy the item's id
 - **?** — the full cheat sheet
 - Inline tokens as you type: `p1`…`p3` set priority, `#tag` becomes a coloured chip, `@human` keeps a task for yourself, `@agent` marks it as agent work
+
+Two view controls sit in the header. **Compact mode** shortens every row to a derived one-line label so a long outline stays scannable — nothing is stored, and the full text comes back the moment you edit. The **filter menu** hides items by who wrote them (you or an agent) and who they're assigned to, and holds the show/hide-completed toggle (⌘⇧H). Any item with work beneath it carries a segmented progress bar showing what's done, what's in progress, and what's left.
 
 Commit `.kalamu/` with your code — the outline's line order is the outline, so diffs stay readable.
 
@@ -74,7 +76,23 @@ kalamu next --discussion       # the discussion queue, kept separate from tasks
 kalamu list --discussions
 ```
 
-In the UI a discussion shows a speech-bubble glyph with a **Copy prompt** affordance: paste it into an agent session, talk it through, and the agent records the outcome as child bullets and marks the discussion done. Discussions can't be assigned or handed off, and completing one never blocks the follow-up tasks recorded beneath it.
+In the UI a discussion shows a speech-bubble glyph with a **Copy prompt** affordance: paste it into an agent session, talk it through, and the agent records the outcome as child bullets and marks the discussion done. Discussions can't be assigned, and completing one never blocks the follow-up tasks recorded beneath it.
+
+## Claims and blockers
+
+Two agent sessions running `kalamu next` used to receive the same task and both do the work. Now an agent claims a task before starting it, and Kalamu keeps the ordering that used to live in someone's head:
+
+```bash
+kalamu start <id>              # claim it — next stops offering it to other sessions
+kalamu end <id>                # abandoned without finishing: back in the queue
+kalamu list --started          # claims still open (--force re-claims a dead one)
+kalamu block <id> --by <id2>   # <id> waits on <id2>; next skips it until <id2> is done
+kalamu unblock <id>            # clear one blocker, or all of them
+```
+
+Blockers cross the tree freely — dependency order and outline order are different things — and a blocker cycle is a validation error, exactly like a parent cycle. In the UI, a claimed task shows a play glyph in its checkbox, and ⌘K offers **Start**, **Block on…**, and **Unblock**.
+
+Kalamu also records *who wrote* each node, without anyone having to remember a flag: anything created from the web UI is yours, anything an agent creates from a non-interactive shell is marked `createdBy: "agent"`. That's what makes it safe for an agent to keep its own forward work in your outline — filter agent-created items out while you're thinking.
 
 ## Agent guide
 
@@ -108,10 +126,11 @@ kalamu show <id> --children    # a node with its subtree
 **Recording work:**
 
 ```bash
+kalamu start <id>              # claim the task first, so a second session can't take it
 kalamu add --kind task --text "Found while fixing X" --p 2 --parent <id>
+kalamu block <id> --by <id2>   # record a dependency; blocked tasks are skipped by next
 kalamu done <id>               # after completing the originating task
-kalamu handoff <id> --target github --ref <url>   # promoted into another system
-kalamu unhandoff <id>          # the external plan fell through; work comes back
+kalamu end <id>                # abandoned without finishing — back in the queue
 kalamu validate                # before finishing
 ```
 
@@ -121,14 +140,14 @@ kalamu validate                # before finishing
 2. Never work on tasks with `"assignee": "human"` (rendered as `@human`; legacy files may write `"self": true`): they belong to the developer. `kalamu next` already excludes them. Tasks with `"assignee": "agent"` or no assignee are yours.
 3. A `discussion` node is a conversation deliverable, not coding work. Plain `next` never returns one; when the user points you at a discussion (or you query `next --discussion`), discuss — do not write code — record the outcome as child bullets, then mark it done.
 4. Priority runs p1 (high) to p3 (low); a missing priority means p2 (medium).
-5. Before starting, run `kalamu next` or inspect the relevant task nodes.
-6. If you promote a task into another system, record it with `kalamu handoff`.
+5. Before starting, run `kalamu next` or inspect the relevant task nodes, and claim the task with `kalamu start <id>` — an unclaimed task can be picked up twice.
+6. If you promote a task into another system (a GitHub issue, Linear, a plan file), move it there and delete it here — Kalamu keeps no forwarding record.
 7. After completing Kalamu-originated work, mark the originating task done and
    run `kalamu validate`. Do not run `kalamu done` for ordinary direct requests.
 
 ## The data
 
-`.kalamu/outline.jsonl` — one node per line, line order **is** sibling order. Nodes are bullets (thoughts), tasks (agent-executable work), or discussions. Tags live inline in node text as `#tokens`; priority and `assignee` are fields. `ui-state.json` (collapse state) and `meta.json` (tag colours) are cosmetic and safe to ignore or delete — `kalamu init` adds them, plus the local cache, to your `.gitignore` automatically. See [SPEC.md](SPEC.md) for the full data model.
+`.kalamu/outline.jsonl` — one node per line, line order **is** sibling order. Nodes are bullets (thoughts), tasks (agent-executable work), or discussions. Tags live inline in node text as `#tokens`; priority, `assignee`, `createdBy`, `startedAt`, and `blockedBy` are fields, each omitted at its default so lines stay short. `ui-state.json` (collapse state) and `meta.json` (tag colours) are cosmetic and safe to ignore or delete — `kalamu init` adds them, plus the local cache, to your `.gitignore` automatically. See [SPEC.md](SPEC.md) for the full data model.
 
 ## Development
 

@@ -9,7 +9,7 @@
     kind: KalamuNode["kind"],
     text: string,
     extra: Partial<Pick<KalamuNode, "doneAt" | "priority" | "assignee">> = {},
-  ): KalamuNode => ({ id, parentId, kind, text, createdAt: T0, doneAt: null, handoff: null, ...extra });
+  ): KalamuNode => ({ id, parentId, kind, text, createdAt: T0, doneAt: null, ...extra });
 
   const DEMO_SEED: KalamuNode[] = [
     seedNode("demo_hero", null, "task", "Ship the landing page hero #marketing"),

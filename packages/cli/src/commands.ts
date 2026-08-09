@@ -3,22 +3,24 @@
  * The commander wiring in index.ts only parses argv and prints.
  */
 import {
+  addBlocker,
   addNode,
   ancestors,
   buildTree,
   cleanDone,
-  clearHandoff,
   deleteNode,
   deriveTags,
+  endTask,
   effectivePriority,
   eligibleTasks,
   markDone,
   moveNode,
   nextTask,
   preorder,
+  removeBlocker,
   reopen as reopenOp,
   searchNodes,
-  setHandoff,
+  startTask,
   subtreeIds,
   updateNode,
   validateOutline,
@@ -29,6 +31,7 @@ import {
 } from "@kalamu/core";
 import { initKalamu, readOutline, withOutline } from "@kalamu/core/store";
 import { readFileSync } from "node:fs";
+import { parseActor, resolveActor } from "./actor.js";
 import { ensureAgentDocs } from "./agent-docs.js";
 import { CliError, looksLikeRepo, resolvePaths, type CommandResult } from "./context.js";
 import { ensureGitignore, IGNORE_ENTRIES } from "./gitignore.js";
@@ -107,6 +110,8 @@ export interface AddOptions {
   p?: string;
   tag?: string[];
   assign?: string;
+  by?: string;
+  blockedBy?: string[];
   after?: string;
   before?: string;
 }
@@ -121,12 +126,27 @@ export function add(cwd: string, options: AddOptions): CommandResult {
       priority: options.p !== undefined ? (parsePriority(options.p, false) as Priority) : undefined,
       tags: options.tag,
       assignee: options.assign !== undefined ? (parseAssignee(options.assign, false) as Assignee) : undefined,
+      createdBy: resolveActor(options.by),
       afterId: options.after,
       beforeId: options.before,
     });
-    return { nodes: result.nodes, result: result.node };
+    const blocked = applyBlockers(result.nodes, result.node, options.blockedBy ?? []);
+    return { nodes: blocked.nodes, result: blocked.node };
   });
   return { text: `Created ${node.id}`, json: { id: node.id } };
+}
+
+/**
+ * Folds each blocker through `addBlocker` in turn, so every one gets the same
+ * validation (existence, self-reference, cycles) as a standalone `kalamu
+ * block`. Returns the blocked node's final state.
+ */
+function applyBlockers(
+  nodes: KalamuNode[],
+  node: KalamuNode,
+  blockerIds: readonly string[],
+): { nodes: KalamuNode[]; node: KalamuNode } {
+  return blockerIds.reduce((acc, blockerId) => addBlocker(acc.nodes, acc.node.id, blockerId), { nodes, node });
 }
 
 export interface UpdateOptions {
@@ -136,6 +156,7 @@ export interface UpdateOptions {
   addTag?: string[];
   removeTag?: string[];
   assign?: string;
+  by?: string;
 }
 
 export function update(cwd: string, id: string, options: UpdateOptions): CommandResult {
@@ -148,6 +169,9 @@ export function update(cwd: string, id: string, options: UpdateOptions): Command
       addTags: options.addTag,
       removeTags: options.removeTag,
       assignee: options.assign !== undefined ? parseAssignee(options.assign, true) : undefined,
+      // Unlike add, update never resolves an actor: provenance only changes
+      // on an explicit --by (key decision 15's correction path).
+      createdBy: options.by !== undefined ? parseActor(options.by) : undefined,
     });
     return { nodes: result.nodes, result: result.node };
   });
@@ -205,35 +229,59 @@ export function reopen(cwd: string, id: string): CommandResult {
   return { text: `Reopened ${node.id}`, json: { id: node.id } };
 }
 
-export function handoff(cwd: string, id: string, options: { target?: string; ref?: string }): CommandResult {
-  if (!options.target || !options.ref) throw new CliError("both --target and --ref are required");
+export function start(cwd: string, id: string, options: { force?: boolean } = {}): CommandResult {
   const paths = resolvePaths(cwd);
   const node = withOutline(paths.outline, (nodes) => {
-    const result = setHandoff(nodes, id, options.target ?? "", options.ref ?? "");
+    const result = startTask(nodes, id, { force: options.force });
+    return { nodes: result.nodes, result: result.node };
+  });
+  return { text: `Started ${node.id}`, json: { id: node.id, startedAt: node.startedAt } };
+}
+
+export function end(cwd: string, id: string): CommandResult {
+  const paths = resolvePaths(cwd);
+  const node = withOutline(paths.outline, (nodes) => {
+    const result = endTask(nodes, id);
+    return { nodes: result.nodes, result: result.node };
+  });
+  return { text: `Ended ${node.id} — back in the queue`, json: { id: node.id } };
+}
+
+export function block(cwd: string, id: string, options: { by?: string[] }): CommandResult {
+  const blockers = options.by ?? [];
+  if (blockers.length === 0) throw new CliError("--by <id> is required (repeatable)");
+  const paths = resolvePaths(cwd);
+  const node = withOutline(paths.outline, (nodes) => {
+    const target = nodes.find((n) => n.id === id);
+    if (target === undefined) throw new CliError(`no node with id ${id}`);
+    const result = applyBlockers(nodes, target, blockers);
     return { nodes: result.nodes, result: result.node };
   });
   return {
-    text: `Handed off ${node.id} → ${options.target}:${options.ref}`,
-    json: { id: node.id, handoff: node.handoff },
+    text: `Blocked ${node.id} by ${blockers.join(", ")}`,
+    json: { id: node.id, blockedBy: node.blockedBy ?? [] },
   };
 }
 
-export function unhandoff(cwd: string, id: string): CommandResult {
+export function unblock(cwd: string, id: string, options: { by?: string }): CommandResult {
   const paths = resolvePaths(cwd);
   const node = withOutline(paths.outline, (nodes) => {
-    const result = clearHandoff(nodes, id);
+    const result = removeBlocker(nodes, id, options.by);
     return { nodes: result.nodes, result: result.node };
   });
-  return { text: `Cleared handoff on ${node.id}`, json: { id: node.id, handoff: null } };
+  const what = options.by !== undefined ? options.by : "all blockers";
+  return { text: `Unblocked ${node.id} (${what})`, json: { id: node.id, blockedBy: node.blockedBy ?? [] } };
 }
 
 export interface ListOptions {
   tasks?: boolean;
   open?: boolean;
   done?: boolean;
-  handoff?: boolean;
+  started?: boolean;
+  blocked?: boolean;
   discussions?: boolean;
   assignee?: string;
+  createdBy?: string;
   tag?: string;
   depth?: string;
 }
@@ -245,13 +293,20 @@ function parsePositiveInt(value: string): number {
 }
 
 function listFilter(options: ListOptions): (node: KalamuNode) => boolean {
+  // Flag values parse once, up front: a bad --assignee/--created-by must fail
+  // loudly even when the outline is empty and the closure never runs.
+  const assignee = options.assignee !== undefined ? parseAssignee(options.assignee, false) : undefined;
+  const createdBy = options.createdBy !== undefined ? parseActor(options.createdBy) : undefined;
   return (node) => {
     if (options.tasks && node.kind !== "task") return false;
     if (options.open && !(node.kind === "task" && node.doneAt === null)) return false;
     if (options.done && !(node.kind === "task" && node.doneAt !== null)) return false;
-    if (options.handoff && node.handoff === null) return false;
+    if (options.started && !(node.startedAt !== undefined && node.doneAt === null)) return false;
+    if (options.blocked && !node.blockedBy?.length) return false;
     if (options.discussions && node.kind !== "discussion") return false;
-    if (options.assignee !== undefined && node.assignee !== parseAssignee(options.assignee, false)) return false;
+    if (assignee !== undefined && node.assignee !== assignee) return false;
+    // Human authorship is the absent default, so "human" means "no createdBy".
+    if (createdBy !== undefined && (node.createdBy ?? "human") !== createdBy) return false;
     if (options.tag !== undefined && !deriveTags(node.text).includes(options.tag.toLowerCase())) return false;
     return true;
   };
@@ -315,7 +370,6 @@ export interface NextCommandOptions {
   limit?: string;
   all?: boolean;
   under?: string;
-  includeHandedOff?: boolean;
   /** Queue discussions instead of tasks (same eligibility/sort otherwise). */
   discussion?: boolean;
 }
@@ -324,7 +378,7 @@ export function next(cwd: string, options: NextCommandOptions = {}): CommandResu
   const paths = resolvePaths(cwd);
   const { nodes } = readOutline(paths.outline);
   const kind = options.discussion ? ("discussion" as const) : ("task" as const);
-  const scope: NextOptions = { under: options.under, includeHandedOff: options.includeHandedOff, kind };
+  const scope: NextOptions = { under: options.under, kind };
 
   // Batch mode: --all or --limit N returns the queue in next-order so an
   // agent can load several tasks into context at once.

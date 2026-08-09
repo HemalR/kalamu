@@ -57,7 +57,7 @@ describe("parseJsonl", () => {
     expect(node && (node as unknown as Record<string, unknown>)["alpha"]).toBe("x");
     // Extras serialize after the known keys, sorted, so output stays stable.
     expect(node && serializeNode(node)).toBe(
-      '{"id":"n_001","parentId":null,"kind":"task","text":"A","createdAt":"2026-07-09T07:00:00.000Z","doneAt":null,"handoff":null,"alpha":"x","zeta":1}',
+      '{"id":"n_001","parentId":null,"kind":"task","text":"A","createdAt":"2026-07-09T07:00:00.000Z","doneAt":null,"alpha":"x","zeta":1}',
     );
   });
 
@@ -86,6 +86,42 @@ describe("parseJsonl", () => {
     expect(nodes.every((n) => !("self" in n))).toBe(true);
   });
 
+  it("drops a legacy null handoff without touching the text", () => {
+    const line =
+      '{"id":"a","parentId":null,"kind":"task","text":"Plain task","createdAt":"2026-07-09T07:00:00.000Z","doneAt":null,"handoff":null}';
+    const { nodes, errors } = parseJsonl(line);
+    expect(errors).toEqual([]);
+    expect(nodes[0]?.text).toBe("Plain task");
+    expect(nodes.every((n) => !("handoff" in n))).toBe(true);
+  });
+
+  it("migrates a legacy handoff into the text so the reference is never lost", () => {
+    const line =
+      '{"id":"a","parentId":null,"kind":"task","text":"Add SSO","createdAt":"2026-07-09T07:00:00.000Z","doneAt":null,' +
+      '"handoff":{"at":"2026-07-09T08:00:00.000Z","target":"github","ref":"https://github.com/x/1"}}';
+    const { nodes, errors } = parseJsonl(line);
+    expect(errors).toEqual([]);
+    // Same `→ target:ref` suffix the CLI and Markdown export used to render.
+    expect(nodes[0]?.text).toBe("Add SSO → github:https://github.com/x/1");
+    expect(nodes.every((n) => !("handoff" in n))).toBe(true);
+    // And it survives the rewrite: the next write persists the migrated text.
+    expect(nodes[0] && serializeNode(nodes[0])).toContain("Add SSO → github:https://github.com/x/1");
+  });
+
+  it("folds a legacy handoff and legacy tags into one text, dropping both fields", () => {
+    const line =
+      '{"id":"a","parentId":null,"kind":"task","text":"Add SSO","createdAt":"2026-07-09T07:00:00.000Z","doneAt":null,' +
+      '"handoff":{"at":"2026-07-09T08:00:00.000Z","target":"github","ref":"12"},"tags":["backend"]}';
+    const { nodes, errors } = parseJsonl(line);
+    expect(errors).toEqual([]);
+    // The handoff suffix goes into the text first; tags append after it.
+    expect(nodes[0]?.text).toBe("Add SSO → github:12 #backend");
+    const written = nodes[0] && serializeNode(nodes[0]);
+    expect(written).toContain("Add SSO → github:12 #backend");
+    expect(written).not.toContain("handoff");
+    expect(written).not.toContain("tags");
+  });
+
   it("skips blank lines", () => {
     const { nodes, errors } = parseJsonl("\n\n");
     expect(nodes).toEqual([]);
@@ -97,7 +133,7 @@ describe("serializeNode", () => {
   it("emits stable key order and omits absent optionals", () => {
     const line = serializeNode(task("n_001", { text: "Fix it" }));
     expect(line).toBe(
-      '{"id":"n_001","parentId":null,"kind":"task","text":"Fix it","createdAt":"2026-07-09T07:00:00.000Z","doneAt":null,"handoff":null}',
+      '{"id":"n_001","parentId":null,"kind":"task","text":"Fix it","createdAt":"2026-07-09T07:00:00.000Z","doneAt":null}',
     );
     expect(line).not.toContain("priority");
     expect(line).not.toContain("assignee");

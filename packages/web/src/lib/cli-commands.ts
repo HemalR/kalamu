@@ -3,8 +3,6 @@
  * per-node command builder behind the palette's "Copy CLI command" submenu.
  * Maintained by hand — must track packages/cli's command table and flags.
  */
-import type { NodeKind } from "@kalamu/core";
-
 export interface CliCommand {
   name: string;
   does: string;
@@ -13,22 +11,34 @@ export interface CliCommand {
 export interface NodeCommandInput {
   /** The id as the server/CLI knows it — never the optimistic local alias. */
   serverId: string;
-  kind: NodeKind;
   done: boolean;
   hasChildren: boolean;
+  /** Tasks alone can be claimed — `start`/`end` refuse other kinds. */
+  isTask: boolean;
+  /** Whether a claim is recorded (`startedAt`), done or not. */
+  started: boolean;
 }
 
 /**
- * Ready-to-run CLI commands for one node, real id filled in. Done/reopen
- * apply to bullets and discussions too; handoff stays task-only (discussions
- * are never handed off — SPEC key decision 12).
+ * Ready-to-run CLI commands for one node, real id filled in. Every command
+ * applies to every kind — done/reopen included (on bullets it is visual only)
+ * — except the claim pair, which core refuses on anything but a task.
+ *
+ * Both of those pairs are also state-dependent: only the line that would do
+ * something is offered — reopen for a done node and done otherwise, end for a
+ * claimed task and start for an open unclaimed one.
+ *
+ * `block` is deliberately absent: it needs a second node's id, so it could
+ * only be a template, not a ready-to-run line. The palette's "Block on…"
+ * covers it with a picker.
  */
-export function nodeCommands({ serverId, kind, done, hasChildren }: NodeCommandInput): string[] {
+export function nodeCommands({ serverId, done, hasChildren, isTask, started }: NodeCommandInput): string[] {
   const commands = [`kalamu show ${serverId} --children`];
   commands.push(done ? `kalamu reopen ${serverId}` : `kalamu done ${serverId}`);
-  if (kind === "task") {
-    commands.push(`kalamu handoff ${serverId} --target backlog --ref ""`);
-  }
+  // A claim can be released even after the task is done; claiming a done task
+  // is refused (reopen it first), so that line is simply not offered.
+  if (isTask && started) commands.push(`kalamu end ${serverId}`);
+  else if (isTask && !done) commands.push(`kalamu start ${serverId}`);
   commands.push(`kalamu add --parent ${serverId} --kind task --text ""`);
   // Plain delete refuses nodes with children.
   commands.push(`kalamu delete ${serverId}${hasChildren ? " --recursive" : ""}`);
@@ -46,8 +56,10 @@ export const CLI_COMMANDS: readonly CliCommand[] = [
   { name: "delete", does: "Delete a node" },
   { name: "done", does: "Mark an item done — visual strikethrough on bullets" },
   { name: "reopen", does: "Reopen an item" },
-  { name: "handoff", does: "Record that a task was promoted into another system" },
-  { name: "unhandoff", does: "Clear a task's handoff record" },
+  { name: "start", does: "Claim a task so another agent session does not take it" },
+  { name: "end", does: "Release a claim, returning the task to the queue" },
+  { name: "block", does: "Record that a task waits on another node" },
+  { name: "unblock", does: "Remove one blocker, or all of them" },
   { name: "search", does: "Search node text" },
   { name: "next", does: "Print the next task for an agent" },
   { name: "all", does: "Print every eligible task (alias for next --all)" },

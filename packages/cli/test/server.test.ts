@@ -1,5 +1,5 @@
 import { initKalamu, readUiState, type KalamuPaths } from "@kalamu/core/store";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -106,14 +106,13 @@ describe("nodes API", () => {
     expect((await server.app.request("/api/nodes/n_missing")).status).toBe(404);
     expect((await post("/api/nodes/n_missing/done", {})).status).toBe(404);
     const bullet = await createNode({ text: "thought" });
-    // done on a bullet is allowed (visual strikethrough); handoff is not.
+    // done on a bullet is allowed (visual strikethrough).
     const struck = await post(`/api/nodes/${bullet.id}/done`, {});
     expect(struck.status).toBe(200);
     expect(((await struck.json()) as { doneAt: string | null }).doneAt).not.toBeNull();
-    expect((await post(`/api/nodes/${bullet.id}/handoff`, { target: "github", ref: "#1" })).status).toBe(400);
   });
 
-  it("done, reopen, handoff, next, validate, search", async () => {
+  it("done, reopen, next, validate, search", async () => {
     const task = await createNode({ text: "ship it", kind: "task" });
     await post(`/api/nodes/${task.id}/done`, {});
     expect(((await (await server.app.request("/api/next")).json()) as { id: null }).id).toBeNull();
@@ -121,14 +120,71 @@ describe("nodes API", () => {
     await post(`/api/nodes/${task.id}/reopen`, {});
     expect(((await (await server.app.request("/api/next")).json()) as { id: string }).id).toBe(task.id);
 
-    await post(`/api/nodes/${task.id}/handoff`, { target: "github", ref: "#1" });
-    expect(((await (await server.app.request("/api/next")).json()) as { id: null }).id).toBeNull();
-
     const found = (await (await server.app.request("/api/search?q=ship")).json()) as { nodes: unknown[] };
     expect(found.nodes).toHaveLength(1);
 
     const validation = (await (await server.app.request("/api/validate")).json()) as { valid: boolean };
     expect(validation.valid).toBe(true);
+  });
+
+  it("next reports the default priority for a task that stores none", async () => {
+    const task = await createNode({ text: "no priority stored", kind: "task" });
+    const next = (await (await server.app.request("/api/next")).json()) as { id: string; priority: number };
+    expect(next).toMatchObject({ id: task.id, priority: 2 });
+  });
+
+  it("never records createdBy — everything through the UI is the developer typing", async () => {
+    await createNode({ text: "typed by hand", kind: "task" });
+    expect(readFileSync(paths.outline, "utf8")).not.toContain("createdBy");
+  });
+});
+
+describe("claim and blocker API", () => {
+  it("start claims a task, refuses a second claim, and re-claims with force", async () => {
+    const task = await createNode({ text: "claim me", kind: "task" });
+
+    // The UI sends no body at all; the route reads that as no options.
+    const claimed = await server.app.request(`/api/nodes/${task.id}/start`, { method: "POST" });
+    expect(claimed.status).toBe(200);
+    expect(((await claimed.json()) as { startedAt?: string }).startedAt).toBeDefined();
+
+    expect((await post(`/api/nodes/${task.id}/start`, {})).status).toBe(400);
+    expect((await post(`/api/nodes/${task.id}/start`, { force: true })).status).toBe(200);
+  });
+
+  it("end releases the claim; ending a task that was never started is a 400", async () => {
+    const task = await createNode({ text: "release me", kind: "task" });
+    expect((await post(`/api/nodes/${task.id}/end`, {})).status).toBe(400);
+
+    await post(`/api/nodes/${task.id}/start`, {});
+    const ended = await post(`/api/nodes/${task.id}/end`, {});
+    expect(ended.status).toBe(200);
+    expect(((await ended.json()) as { startedAt?: string }).startedAt).toBeUndefined();
+  });
+
+  it("block records the blocker; a cycle is a 409, not a 400", async () => {
+    const a = await createNode({ text: "a", kind: "task" });
+    const b = await createNode({ text: "b", kind: "task" });
+
+    const blocked = await post(`/api/nodes/${a.id}/block`, { by: b.id });
+    expect(blocked.status).toBe(200);
+    expect(((await blocked.json()) as { blockedBy: string[] }).blockedBy).toEqual([b.id]);
+
+    expect((await post(`/api/nodes/${b.id}/block`, { by: a.id })).status).toBe(409);
+  });
+
+  it("DELETE clears one blocker, or every blocker when no id is given", async () => {
+    const blocked = await createNode({ text: "waits on two", kind: "task" });
+    const a = await createNode({ text: "a", kind: "task" });
+    const b = await createNode({ text: "b", kind: "task" });
+    await post(`/api/nodes/${blocked.id}/block`, { by: a.id });
+    await post(`/api/nodes/${blocked.id}/block`, { by: b.id });
+
+    const one = await server.app.request(`/api/nodes/${blocked.id}/block/${a.id}`, { method: "DELETE" });
+    expect(((await one.json()) as { blockedBy: string[] }).blockedBy).toEqual([b.id]);
+
+    const all = await server.app.request(`/api/nodes/${blocked.id}/block`, { method: "DELETE" });
+    expect(((await all.json()) as { blockedBy?: string[] }).blockedBy).toBeUndefined();
   });
 });
 

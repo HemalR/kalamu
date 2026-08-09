@@ -1,33 +1,57 @@
 import { describe, expect, it } from "vitest";
-import { nodeCommands } from "../src/lib/cli-commands";
+import { CLI_COMMANDS, nodeCommands, type NodeCommandInput } from "../src/lib/cli-commands";
+
+function input(overrides: Partial<NodeCommandInput> = {}): NodeCommandInput {
+  return { serverId: "n_1", done: false, hasChildren: false, isTask: true, started: false, ...overrides };
+}
 
 describe("nodeCommands", () => {
-  it("offers the handoff template on tasks only", () => {
-    const commands = nodeCommands({ serverId: "n_1", kind: "task", done: false, hasChildren: false });
-    expect(commands).toEqual([
+  it("offers show, done, start, add-child and delete on an open task", () => {
+    expect(nodeCommands(input())).toEqual([
       "kalamu show n_1 --children",
       "kalamu done n_1",
-      'kalamu handoff n_1 --target backlog --ref ""',
+      "kalamu start n_1",
       'kalamu add --parent n_1 --kind task --text ""',
       "kalamu delete n_1",
     ]);
   });
 
-  it("discussions get done/reopen, add-child, delete — never handoff (SPEC key decision 12)", () => {
-    const open = nodeCommands({ serverId: "n_2", kind: "discussion", done: false, hasChildren: true });
-    expect(open).toEqual([
-      "kalamu show n_2 --children",
-      "kalamu done n_2",
-      'kalamu add --parent n_2 --kind task --text ""',
-      "kalamu delete n_2 --recursive",
-    ]);
-    const done = nodeCommands({ serverId: "n_2", kind: "discussion", done: true, hasChildren: false });
-    expect(done).toContain("kalamu reopen n_2");
-    expect(done.join("\n")).not.toContain("handoff");
+  it("swaps done for reopen once the node is done", () => {
+    const commands = nodeCommands(input({ serverId: "n_2", done: true }));
+    expect(commands).toContain("kalamu reopen n_2");
+    expect(commands.some((command) => command.startsWith("kalamu done"))).toBe(false);
   });
 
-  it("bullets also omit the task-only handoff", () => {
-    const commands = nodeCommands({ serverId: "n_3", kind: "bullet", done: false, hasChildren: false });
-    expect(commands.join("\n")).not.toContain("handoff");
+  it("deletes recursively when the node has children", () => {
+    expect(nodeCommands(input({ serverId: "n_3", hasChildren: true }))).toContain("kalamu delete n_3 --recursive");
+  });
+
+  it("swaps start for end once the task is claimed", () => {
+    const commands = nodeCommands(input({ serverId: "n_4", started: true }));
+    expect(commands).toContain("kalamu end n_4");
+    expect(commands.some((command) => command.startsWith("kalamu start"))).toBe(false);
+  });
+
+  it("offers end — but never start — on a done task that still carries a claim", () => {
+    const commands = nodeCommands(input({ serverId: "n_5", done: true, started: true }));
+    expect(commands).toContain("kalamu end n_5");
+    expect(commands.some((command) => command.startsWith("kalamu start"))).toBe(false);
+  });
+
+  it("omits the claim pair entirely on a done task that was never started", () => {
+    const commands = nodeCommands(input({ serverId: "n_6", done: true }));
+    expect(commands.some((command) => /^kalamu (start|end)/.test(command))).toBe(false);
+  });
+
+  it("omits the claim pair on kinds that cannot be claimed", () => {
+    const commands = nodeCommands(input({ serverId: "n_7", isTask: false }));
+    expect(commands.some((command) => /^kalamu (start|end)/.test(command))).toBe(false);
+  });
+});
+
+describe("CLI_COMMANDS", () => {
+  it("lists the claim and blocker commands the CLI ships", () => {
+    const names = CLI_COMMANDS.map((command) => command.name);
+    expect(names).toEqual(expect.arrayContaining(["start", "end", "block", "unblock"]));
   });
 });

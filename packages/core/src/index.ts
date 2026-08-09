@@ -4,6 +4,7 @@ export * from "./ids.js";
 export * from "./jsonl.js";
 export * from "./tree.js";
 export * from "./operations.js";
+export * from "./progress.js";
 export * from "./validate.js";
 export * from "./tokens.js";
 export * from "./tags.js";

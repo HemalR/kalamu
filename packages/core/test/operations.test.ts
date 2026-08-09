@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   addNode,
   cleanDone,
-  clearHandoff,
   deleteNode,
   markDone,
   moveNode,
@@ -10,7 +9,6 @@ import {
   OperationError,
   reopen,
   searchNodes,
-  setHandoff,
   updateNode,
 } from "../src/operations.js";
 import { bullet, discussion, task } from "./helpers.js";
@@ -76,7 +74,7 @@ describe("updateNode", () => {
     expect(explicit.node.kind).toBe("bullet");
   });
 
-  it("preserves doneAt/handoff/priority when converting task to bullet", () => {
+  it("preserves doneAt/priority when converting task to bullet", () => {
     const start = [task("n_001", { doneAt: NOW, priority: 1 })];
     const { node } = updateNode(start, "n_001", { kind: "bullet" });
     expect(node.doneAt).toBe(NOW);
@@ -105,6 +103,16 @@ describe("updateNode", () => {
     result = updateNode(result.nodes, "n_001", { assignee: null });
     expect(result.node.assignee).toBeUndefined();
   });
+
+  it("records and clears authorship; an unrelated update leaves it alone", () => {
+    let result = updateNode([task("n_001")], "n_001", { createdBy: "agent" });
+    expect(result.node.createdBy).toBe("agent");
+    result = updateNode(result.nodes, "n_001", { text: "renamed" });
+    expect(result.node.createdBy).toBe("agent");
+    // "human" is the unstored default, so setting it clears the field.
+    result = updateNode(result.nodes, "n_001", { createdBy: "human" });
+    expect(result.node.createdBy).toBeUndefined();
+  });
 });
 
 describe("discussions", () => {
@@ -127,12 +135,6 @@ describe("discussions", () => {
     // clearing is always safe, e.g. on a task being converted in the same call
     const cleared = updateNode([discussion("n_001", { assignee: "human" })], "n_001", { assignee: null });
     expect(cleared.node.assignee).toBeUndefined();
-  });
-
-  it("cannot be handed off", () => {
-    expect(() => setHandoff([discussion("n_001")], "n_001", "github", "url", NOW)).toThrow(
-      /only tasks can be handed off/,
-    );
   });
 
   it("never surface in next, and a done discussion never closes its umbrella", () => {
@@ -196,7 +198,7 @@ describe("deleteNode", () => {
   });
 });
 
-describe("done / reopen / handoff", () => {
+describe("done / reopen", () => {
   it("done sets doneAt on tasks and bullets alike", () => {
     const { node } = markDone([task("n_001")], "n_001", NOW);
     expect(node.doneAt).toBe(NOW);
@@ -215,19 +217,6 @@ describe("done / reopen / handoff", () => {
     expect(nextTask(nodes)?.node.id).toBe("n_002");
   });
 
-  it("handoff stores at/target/ref, tasks only", () => {
-    const { node } = setHandoff([task("n_001")], "n_001", "github", "https://github.com/x/1", NOW);
-    expect(node.handoff).toEqual({ at: NOW, target: "github", ref: "https://github.com/x/1" });
-    expect(() => setHandoff([bullet("n_001")], "n_001", "github", "x", NOW)).toThrow(/bullet/);
-  });
-
-  it("clearHandoff removes the record; errors on bullets and unhanded-off tasks", () => {
-    const handed = task("n_001", { handoff: { at: NOW, target: "github", ref: "#1" } });
-    const { node } = clearHandoff([handed], "n_001");
-    expect(node.handoff).toBeNull();
-    expect(() => clearHandoff([bullet("n_001")], "n_001")).toThrow(/bullet/);
-    expect(() => clearHandoff([task("n_001")], "n_001")).toThrow(/no handoff/);
-  });
 });
 
 describe("cleanDone", () => {
@@ -238,7 +227,7 @@ describe("cleanDone", () => {
       task("n_003", { parentId: "n_002", text: "open child of done parent" }),
       bullet("n_004", { parentId: "n_002" }),
       task("n_005", { text: "open stays" }),
-      task("n_006", { text: "handed off stays", handoff: { at: NOW, target: "github", ref: "#1" } }),
+      task("n_006", { text: "second open task stays" }),
     ];
     const { nodes: remaining, removed, doneTasks } = cleanDone(nodes);
     expect(remaining.map((n) => n.id)).toEqual(["n_001", "n_005", "n_006"]);

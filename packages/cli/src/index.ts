@@ -3,10 +3,10 @@ import { ConflictError, findRoot, StoreError } from "@kalamu/core/store";
 import { Command } from "commander";
 import * as commands from "./commands.js";
 import { readConfig, updateCheckEnabled, writeConfig } from "./config.js";
-import { CliError, looksLikeRepo, type CommandResult } from "./context.js";
+import { CliError, isInteractive, looksLikeRepo, type CommandResult } from "./context.js";
 import { installHubAgent, restartHub, runHub, uninstallHubAgent } from "./hub.js";
 import { open } from "./open.js";
-import { askYesNo, installSkill, isInteractive, offerSkillInstall } from "./skill.js";
+import { askYesNo, installSkill, offerSkillInstall } from "./skill.js";
 import { stopKalamu } from "./stop.js";
 import { refreshUpdate } from "./update-check.js";
 import { CURRENT_VERSION } from "./version.js";
@@ -214,9 +214,11 @@ program
   .option("--tasks", "tasks only")
   .option("--open", "open tasks only")
   .option("--done", "done tasks only")
-  .option("--handoff", "handed-off tasks only")
+  .option("--started", "claimed (in-progress) tasks only")
+  .option("--blocked", "tasks with at least one blocker")
   .option("--discussions", "discussions only")
   .option("--assignee <who>", "tasks assigned to human or agent")
+  .option("--created-by <who>", "nodes authored by human or agent")
   .option("--tag <tag>", "nodes carrying a tag")
   .option("--depth <n>", "limit to the first n levels")
   .option("--format <format>", "output format (text|json)")
@@ -243,6 +245,8 @@ program
   .option("--p <priority>", "priority 1 (high) to 3 (low); omit for default 2 (medium)")
   .option("--tag <tag>", "tag (repeatable)", collect, [])
   .option("--assign <who>", "assign the task: human (excluded from next) or agent")
+  .option("--by <who>", "author: human or agent (default: detected from the terminal)")
+  .option("--blocked-by <id>", "node this task waits on (repeatable)", collect, [])
   .option("--after <id>", "insert after this sibling")
   .option("--before <id>", "insert before this sibling")
   .option("--format <format>", "output format (text|json)")
@@ -259,6 +263,7 @@ program
   .option("--add-tag <tag>", "add tag (repeatable)", collect, [])
   .option("--remove-tag <tag>", "remove tag (repeatable)", collect, [])
   .option("--assign <who>", "assign the task: human, agent, or none to clear")
+  .option("--by <who>", "correct recorded authorship: human or agent")
   .option("--format <format>", "output format (text|json)")
   .action((id: string, opts: commands.UpdateOptions & { format?: string }) => {
     run(() => commands.update(process.cwd(), id, opts), opts);
@@ -301,21 +306,38 @@ program
   });
 
 program
-  .command("handoff <id>")
-  .description("record that a task was promoted into another system")
-  .requiredOption("--target <target>", "where it went (backlog|github|linear|file|...)")
-  .requiredOption("--ref <ref>", "reference in the target system")
+  .command("start <id>")
+  .description("claim a task so another agent session does not take it")
+  .option("--force", "re-claim a task already started (its owner died)")
   .option("--format <format>", "output format (text|json)")
-  .action((id: string, opts: { target: string; ref: string; format?: string }) => {
-    run(() => commands.handoff(process.cwd(), id, opts), opts);
+  .action((id: string, opts: { force?: boolean; format?: string }) => {
+    run(() => commands.start(process.cwd(), id, opts), opts);
   });
 
 program
-  .command("unhandoff <id>")
-  .description("clear a task's handoff record (it becomes eligible for next again)")
+  .command("end <id>")
+  .description("release a claim, returning the task to the queue (not the same as done)")
   .option("--format <format>", "output format (text|json)")
   .action((id: string, opts: { format?: string }) => {
-    run(() => commands.unhandoff(process.cwd(), id), opts);
+    run(() => commands.end(process.cwd(), id), opts);
+  });
+
+program
+  .command("block <id>")
+  .description("record that a task waits on another node")
+  .requiredOption("--by <id>", "the blocking node (repeatable)", collect, [])
+  .option("--format <format>", "output format (text|json)")
+  .action((id: string, opts: { by: string[]; format?: string }) => {
+    run(() => commands.block(process.cwd(), id, opts), opts);
+  });
+
+program
+  .command("unblock <id>")
+  .description("remove one blocker, or every blocker when --by is omitted")
+  .option("--by <id>", "the blocker to remove (omit to clear all)")
+  .option("--format <format>", "output format (text|json)")
+  .action((id: string, opts: { by?: string; format?: string }) => {
+    run(() => commands.unblock(process.cwd(), id, opts), opts);
   });
 
 program
@@ -332,7 +354,6 @@ program
   .option("--limit <n>", "print the next n tasks in queue order")
   .option("--all", "print every eligible task in queue order")
   .option("--under <id>", "only consider tasks inside this node's subtree")
-  .option("--include-handed-off", "also consider tasks already handed off to another system")
   .option("--discussion", "queue discussions instead of tasks")
   .option("--format <format>", "output format (text|json)")
   .action((opts: commands.NextCommandOptions & { format?: string }) => {
@@ -343,7 +364,6 @@ program
   .command("all")
   .description('print every eligible task in queue order (alias for "next --all")')
   .option("--under <id>", "only consider tasks inside this node's subtree")
-  .option("--include-handed-off", "also consider tasks already handed off to another system")
   .option("--discussion", "queue discussions instead of tasks")
   .option("--format <format>", "output format (text|json)")
   .action((opts: Omit<commands.NextCommandOptions, "all" | "limit"> & { format?: string }) => {

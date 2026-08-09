@@ -1,9 +1,12 @@
 <script lang="ts">
+  import type { Priority } from "../lib/api";
+  import PriorityBars from "./PriorityBars.svelte";
+
   interface Props {
     /** Effective priority (missing stored priority = 2). */
-    current: number;
+    current: Priority;
     /** 2 means "back to default" (stored priority cleared). */
-    onpick: (priority: 1 | 2 | 3) => void;
+    onpick: (priority: Priority) => void;
   }
 
   let { current, onpick }: Props = $props();
@@ -23,7 +26,7 @@
       aria-checked={current === option.p}
       onclick={() => onpick(option.p)}
     >
-      <span class={["swatch", `p${option.p}`]} aria-hidden="true"></span>
+      <PriorityBars priority={option.p} />
       <span class="label">{option.label}</span>
       {#if current === option.p}<span class="tick" aria-hidden="true">✓</span>{/if}
     </button>
@@ -71,20 +74,5 @@
   .tick {
     font-size: 11px;
     color: var(--muted);
-  }
-
-  .swatch {
-    /* Base (p3 · low) is muted — the same colour the low badge uses. */
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--muted);
-  }
-  .swatch.p1 {
-    background: var(--p1);
-  }
-  /* p2 is the default: same colour as the bullet dot, i.e. no emphasis. */
-  .swatch.p2 {
-    background: var(--bullet);
   }
 </style>

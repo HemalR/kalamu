@@ -4,6 +4,7 @@
   import { writeClipboard } from "../lib/copy";
   import type { OutlineStore } from "../lib/outline.svelte";
   import { digitPick, filterItems, snapSelection, stepSelection } from "../lib/palette";
+  import { blockerCandidates, blockerEntries, candidateLabel, isStarted } from "../lib/task-state";
   import { theme } from "../lib/theme.svelte";
   import Overlay from "./Overlay.svelte";
 
@@ -17,13 +18,15 @@
 
   let { store, onclose, onshowshortcuts, onshowcli }: Props = $props();
 
-  type Level = "root" | "priority" | "assign" | "labels" | "cli";
+  type Level = "root" | "priority" | "assign" | "labels" | "cli" | "block" | "unblock";
 
   const CRUMBS: Record<Exclude<Level, "root">, string> = {
     priority: "Priority",
     assign: "Assign",
     labels: "Labels",
     cli: "Copy CLI",
+    block: "Block on",
+    unblock: "Unblock",
   };
 
   /**
@@ -33,6 +36,8 @@
   interface Item {
     id: string;
     label: string;
+    /** Text the query matches but the row doesn't show — a shortened label's tail. */
+    search?: string;
     checked?: boolean;
     stays?: boolean;
     disabled?: boolean;
@@ -102,26 +107,71 @@
         run: () => store.toggleTag(target.id, tag),
       }));
     }
+    if (level === "block") {
+      if (!target || target.kind !== "task") return [];
+      const task = target;
+      // The whole outline is the candidate pool — blockers cross the tree, and
+      // zoom/filters are view state (SPEC key decision 16). The palette's own
+      // query box does the searching; no separate picker. Open tasks lead the
+      // list and every row is shortened (see candidateLabel).
+      return blockerCandidates(store.nodes, task).map((candidate) => ({
+        id: `block-${candidate.id}`,
+        label: candidateLabel(candidate),
+        search: candidate.text, // the shortened label must not shrink what the query finds
+        run: () => {
+          store.addBlocker(task.id, candidate.id);
+          close();
+        },
+      }));
+    }
+    if (level === "unblock") {
+      if (!target) return [];
+      const blocked = target;
+      const entries = blockerEntries(store.tree, blocked);
+      const rows: Item[] = entries.map((entry) => ({
+        id: `unblock-${entry.id}`,
+        // A done blocker is still recorded, so it is still removable — the
+        // suffix says why it isn't holding anything up.
+        label: entry.open ? entry.label : `${entry.label} — done`,
+        run: () => {
+          store.removeBlocker(blocked.id, entry.id);
+          close();
+        },
+      }));
+      if (entries.length > 1) {
+        rows.push({
+          id: "unblock-all",
+          label: "Remove all blockers",
+          run: () => {
+            store.removeBlocker(blocked.id);
+            close();
+          },
+        });
+      }
+      return rows;
+    }
     if (level === "cli") {
       if (!target) return [];
       return nodeCommands({
         serverId: store.serverId(target.id),
-        kind: target.kind,
         done: target.doneAt !== null,
         hasChildren: (store.tree.children.get(target.id) ?? []).length > 0,
+        isTask: target.kind === "task",
+        started: target.startedAt !== undefined,
       }).map((command) => ({
         id: `cli-${command.split(" ")[1] ?? command}`, // the subcommand word — unique within this list
         label: command,
         run: () => void copyCommand(command),
       }));
     }
-    // Root level: a fixed eleven-item list with stable numbers (SPEC). Items
-    // that don't apply — node actions without a target, Assign on a bullet or
-    // a discussion (never assigned — SPEC key decision 12), or Collapse
-    // parent with nothing rendered above to fold — are disabled rather than
-    // hidden. Priority works on every kind, matching the inline badge:
-    // p1/p3 on a bullet converts it to a task (core behavior).
+    // Root level: a fixed list with stable numbers (SPEC). Items that don't
+    // apply — node actions without a target, Assign on a bullet or a
+    // discussion (never assigned — SPEC key decision 12), or Collapse parent
+    // with nothing rendered above to fold — are disabled rather than hidden.
+    // Priority works on every kind, matching the inline badge: p1/p3 on a
+    // bullet converts it to a task (core behavior).
     const task = target?.kind === "task" ? target : undefined;
+    const started = task !== undefined && isStarted(task);
     return [
       { id: "priority", label: "Priority…", disabled: !target, run: () => enter("priority") },
       { id: "labels", label: "Labels…", disabled: !target, run: () => enter("labels") },
@@ -137,6 +187,37 @@
           store.toggleDone(target.id);
           close();
         },
+      },
+      {
+        // Claim / release, one slot labelled by state (SPEC key decision 17).
+        // A done task keeps its startedAt as a record of how long the work
+        // took, so End is never offered there — only Start, disabled.
+        id: started ? "end" : "start",
+        label: started ? "End — release the claim" : "Start — claim this task",
+        disabled: !task || (!started && task.doneAt !== null),
+        run: () => {
+          if (!task) return;
+          if (started) store.endTask(task.id);
+          else store.startTask(task.id);
+          close();
+        },
+      },
+      {
+        // Blockers are tasks-only and cross the tree freely (key decision 16).
+        // A second node is all it takes for the submenu to have something to
+        // offer, so no candidate list is built just to grey the item out.
+        id: "block",
+        label: "Block on…",
+        disabled: !task || store.nodes.length < 2,
+        run: () => enter("block"),
+      },
+      {
+        // Lists what is recorded, done blockers included — they are removable
+        // even though they no longer hold anything up.
+        id: "unblock",
+        label: "Unblock…",
+        disabled: !target || (target.blockedBy ?? []).length === 0,
+        run: () => enter("unblock"),
       },
       {
         // Structural, so it applies to every kind; inert on root-level nodes
@@ -168,6 +249,15 @@
       },
       // Copy CLI command works on bullets too — only a target is required.
       { id: "copy-cli", label: "Copy CLI command…", disabled: !target, run: () => enter("cli") },
+      {
+        // View state, so it needs no target — same family as the theme toggle.
+        id: "compact",
+        label: store.compact ? "Leave compact mode" : "Enter compact mode",
+        run: () => {
+          store.toggleCompact();
+          close();
+        },
+      },
       {
         id: "theme",
         label: theme.mode === "dark" ? "Activate light mode" : "Activate dark mode",

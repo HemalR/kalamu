@@ -4,6 +4,7 @@
   import CheatSheet from "./components/CheatSheet.svelte";
   import CliSheet from "./components/CliSheet.svelte";
   import CommandPalette from "./components/CommandPalette.svelte";
+  import FilterMenu from "./components/FilterMenu.svelte";
   import HubHint from "./components/HubHint.svelte";
   import OutlineNode from "./components/OutlineNode.svelte";
   import Sidebar from "./components/Sidebar.svelte";
@@ -127,30 +128,26 @@
   <header>
     <span class="brandline"><Wordmark />{#if project !== null}<span class="project">| {project.name}</span>{/if}</span>
     <div class="actions">
-      <button
-        class="done-toggle"
-        aria-label={store.hideDone ? "Show completed items" : "Hide completed items"}
-        title={store.hideDone ? "Show completed items" : "Hide completed items"}
-        onclick={() => store.toggleHideDone()}
-      >
-        {#if store.hideDone}
-          <!-- eye-off -->
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
-            <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
-            <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
-            <line x1="2" x2="22" y1="2" y2="22" />
-          </svg>
-        {:else}
-          <!-- eye -->
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
-            <circle cx="12" cy="12" r="3" />
-          </svg>
-        {/if}
-      </button>
+      <FilterMenu {store} />
       <button class="clean-up" title="Delete completed tasks and their subtrees" onclick={() => store.clean()}>
         Clean up
+      </button>
+      <!-- Compact mode: rows show a short derived label instead of their full
+           text. Purely a view toggle, so aria-pressed carries the state and the
+           accessible name stays put; the icon and tooltip say what a click does. -->
+      <button
+        class={["compact-toggle", { on: store.compact }]}
+        aria-label="Compact mode"
+        aria-pressed={store.compact}
+        title={store.compact ? "Show the full text of every item" : "Compact mode — show short labels"}
+        onclick={() => store.toggleCompact()}
+      >
+        <!-- fold-vertical / unfold-vertical: same dashed midline, the two
+             chevrons flip to point at it (fold) or away from it (unfold). -->
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 22v-6m0-8V2M4 12H2m8 0H8m8 0h-2m8 0h-2" />
+          <path d={store.compact ? "m15 19-3 3-3-3m6-14-3-3-3 3" : "m15 19-3-3-3 3m6-14-3 3-3-3"} />
+        </svg>
       </button>
       <button
         class="theme-toggle"
@@ -320,6 +317,13 @@
   }
   .actions > button:hover {
     color: var(--fg);
+  }
+
+  /* Toggled on: the same soft fill the palette uses for an active row, so the
+     button reads as pressed and not merely hovered. */
+  button.compact-toggle.on {
+    color: var(--fg);
+    background: color-mix(in srgb, var(--fg) 9%, transparent);
   }
 
   button.clean-up {

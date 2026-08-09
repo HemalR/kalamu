@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { nodeCommands } from "../src/lib/cli-commands";
 import { digitPick, filterItems, snapSelection, stepSelection } from "../src/lib/palette";
 
 const items = [{ label: "Priority" }, { label: "Labels" }, { label: "Assign" }, { label: "#v2" }];
@@ -37,6 +36,12 @@ describe("filterItems", () => {
 
   it("returns nothing when no label matches", () => {
     expect(filterItems(items, "zzz")).toEqual([]);
+  });
+
+  it("also matches the hidden search text, so a shortened label still finds its node", () => {
+    const rows = [{ label: "Ship the API", search: "Ship the API: the token endpoint must land first" }];
+    expect(filterItems(rows, "token")).toEqual(rows);
+    expect(filterItems(rows, "nothing here")).toEqual([]);
   });
 });
 
@@ -95,43 +100,5 @@ describe("digitPick", () => {
   it("treats digits beyond the filtered list as query text", () => {
     expect(digitPick(items, "", 5)).toEqual({ kind: "type" });
     expect(digitPick([], "", 1)).toEqual({ kind: "type" });
-  });
-});
-
-describe("nodeCommands", () => {
-  it("offers done (not reopen) on an open leaf task", () => {
-    expect(nodeCommands({ serverId: "n_1", kind: "task", done: false, hasChildren: false })).toEqual([
-      'kalamu show n_1 --children',
-      'kalamu done n_1',
-      'kalamu handoff n_1 --target backlog --ref ""',
-      'kalamu add --parent n_1 --kind task --text ""',
-      'kalamu delete n_1',
-    ]);
-  });
-
-  it("offers reopen on a done task", () => {
-    const commands = nodeCommands({ serverId: "n_2", kind: "task", done: true, hasChildren: false });
-    expect(commands).toContain("kalamu reopen n_2");
-    expect(commands.some((command) => command.startsWith("kalamu done"))).toBe(false);
-  });
-
-  it("offers done (visual-only) but not handoff on a bullet", () => {
-    expect(nodeCommands({ serverId: "n_3", kind: "bullet", done: false, hasChildren: false })).toEqual([
-      'kalamu show n_3 --children',
-      'kalamu done n_3',
-      'kalamu add --parent n_3 --kind task --text ""',
-      'kalamu delete n_3',
-    ]);
-  });
-
-  it("offers reopen on a done bullet", () => {
-    const commands = nodeCommands({ serverId: "n_5", kind: "bullet", done: true, hasChildren: false });
-    expect(commands).toContain("kalamu reopen n_5");
-    expect(commands.some((command) => command.startsWith("kalamu handoff"))).toBe(false);
-  });
-
-  it("deletes recursively when the node has children", () => {
-    const commands = nodeCommands({ serverId: "n_4", kind: "bullet", done: false, hasChildren: true });
-    expect(commands).toContain("kalamu delete n_4 --recursive");
   });
 });

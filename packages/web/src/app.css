@@ -15,10 +15,19 @@
   --ring: light-dark(rgba(70, 80, 90, 0.18), rgba(190, 200, 210, 0.2));
   --check-border: light-dark(#aab2bb, #5c646e);
   --guide: light-dark(rgba(20, 30, 40, 0.09), rgba(220, 230, 240, 0.09));
-  --p1: light-dark(#e5484d, #ff6369);
   /* Brand accent (bronze ink) — the wordmark's k and the favicon. Lightened
-     in dark mode for contrast. Kept clear of p1's red. */
+     in dark mode for contrast. */
   --brand: light-dark(#9a6a2e, #d0a256);
+  /* Task state beyond done: a claimed task in progress (startedAt) and one
+     waiting on an open blocker (blockedBy). Kept off the brand bronze so the
+     two signals never read as chrome. */
+  --started: light-dark(#1a7f52, #4fc08d);
+  --blocked: light-dark(#b04b3c, #e0897c);
+  /* Segmented progress dashes. Desaturated on purpose: the strip repeats down
+     the whole outline, so it has to sit quieter than a tag chip while still
+     reading at 7×4px on both themes. Unfilled dashes reuse --ring. */
+  --progress-done: light-dark(#5f9673, #5d9a78);
+  --progress-active: light-dark(#c08a3e, #c99a4f);
   --toast-bg: light-dark(#24292f, #e3e6ea);
   --toast-fg: light-dark(#f6f8fa, #17191d);
 }

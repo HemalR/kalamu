@@ -1,17 +1,22 @@
 import {
+  addBlocker,
   addNode,
   buildTree,
   deleteNode,
+  effectivePriority,
+  endTask,
   markDone,
   moveNode,
   nextTask,
   nodeSchema,
   OperationError,
   preorder,
+  removeBlocker,
   reopen,
   searchNodes,
   serializeJsonl,
-  setHandoff,
+  startTask,
+  uiStateSchema,
   updateNode,
   validateOutline,
   TAG_PATTERN,
@@ -79,9 +84,9 @@ const moveBody = z.object({
   beforeId: z.string().optional(),
 });
 
-const handoffBody = z.object({ target: z.string().min(1), ref: z.string().min(1) });
+const startBody = z.object({ force: z.boolean().optional() });
+const blockBody = z.object({ by: z.string().min(1) });
 const tagBody = z.object({ color: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable() });
-const uiStateBody = z.object({ collapsed: z.array(z.string()), hideDone: z.boolean().optional() });
 
 const CONTENT_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -178,6 +183,11 @@ export function createServer(
     if (err instanceof OperationError && err.message.startsWith("no node with id")) {
       return c.json({ error: err.message }, 404);
     }
+    // SPEC "HTTP API": a blocker cycle is a conflict with existing edges, not
+    // a malformed request.
+    if (err instanceof OperationError && err.message.endsWith("would create a cycle")) {
+      return c.json({ error: err.message }, 409);
+    }
     if (err instanceof OperationError || err instanceof StoreError) {
       return c.json({ error: err.message }, 400);
     }
@@ -215,6 +225,8 @@ export function createServer(
         priority: body.priority,
         tags: body.tags,
         assignee: body.assignee,
+        // Everything through the web UI is the developer typing (key decision 15).
+        createdBy: "human",
         afterId: body.afterId,
         beforeId: body.beforeId,
       });
@@ -266,10 +278,36 @@ export function createServer(
     return c.json(node);
   });
 
-  app.post("/api/nodes/:id/handoff", async (c) => {
-    const body = handoffBody.parse(await c.req.json());
+  app.post("/api/nodes/:id/start", async (c) => {
+    const body = startBody.parse(await c.req.json().catch(() => ({})));
     const node = withOutline(paths.outline, (nodes) => {
-      const result = setHandoff(nodes, c.req.param("id"), body.target, body.ref);
+      const result = startTask(nodes, c.req.param("id"), { force: body.force });
+      return { nodes: result.nodes, result: result.node };
+    });
+    return c.json(node);
+  });
+
+  app.post("/api/nodes/:id/end", (c) => {
+    const node = withOutline(paths.outline, (nodes) => {
+      const result = endTask(nodes, c.req.param("id"));
+      return { nodes: result.nodes, result: result.node };
+    });
+    return c.json(node);
+  });
+
+  app.post("/api/nodes/:id/block", async (c) => {
+    const body = blockBody.parse(await c.req.json());
+    const node = withOutline(paths.outline, (nodes) => {
+      const result = addBlocker(nodes, c.req.param("id"), body.by);
+      return { nodes: result.nodes, result: result.node };
+    });
+    return c.json(node);
+  });
+
+  // No :byId clears every blocker on the node.
+  app.delete("/api/nodes/:id/block/:byId?", (c) => {
+    const node = withOutline(paths.outline, (nodes) => {
+      const result = removeBlocker(nodes, c.req.param("id"), c.req.param("byId"));
       return { nodes: result.nodes, result: result.node };
     });
     return c.json(node);
@@ -286,7 +324,7 @@ export function createServer(
     return c.json({
       id: result.node.id,
       text: result.node.text,
-      priority: result.node.priority ?? 3,
+      priority: effectivePriority(result.node),
       path: result.path,
       reason: result.reason,
     });
@@ -370,7 +408,9 @@ export function createServer(
   app.get("/api/ui-state", (c) => c.json(readUiState(paths.uiState)));
 
   app.put("/api/ui-state", async (c) => {
-    const body = uiStateBody.parse(await c.req.json());
+    // Core's schema, not a local copy: the two drifted once (a new view-state
+    // key silently stripped on write), and there is nothing server-specific here.
+    const body = uiStateSchema.parse(await c.req.json());
     writeUiState(paths.uiState, body);
     return c.json(body);
   });

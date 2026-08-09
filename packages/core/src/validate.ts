@@ -35,6 +35,17 @@ export function validateOutline(content: string): ValidationResult {
     errors.push(`${cycleId} is part of a parent cycle`);
   }
 
+  for (const node of parsed.nodes) {
+    for (const blockerId of node.blockedBy ?? []) {
+      if (blockerId === node.id) errors.push(`${node.id} is blocked by itself`);
+      else if (!byId.has(blockerId)) errors.push(`${node.id} is blocked by missing node ${blockerId}`);
+    }
+  }
+
+  for (const cycleId of findBlockerCycles(parsed.nodes)) {
+    errors.push(`${cycleId} is part of a blocker cycle`);
+  }
+
   // Not-pre-order is a warning, not an error: the next write normalizes it.
   if (errors.length === 0 && parsed.nodes.length > 0) {
     const canonical = preorder(buildTree(parsed.nodes));
@@ -48,6 +59,33 @@ export function validateOutline(content: string): ValidationResult {
     errors,
     warnings,
   };
+}
+
+/**
+ * Blocker edges form a DAG across the tree, so a cycle needs a real traversal
+ * rather than the single-parent walk above: a node can wait on many blockers.
+ */
+function findBlockerCycles(nodes: readonly KalamuNode[]): string[] {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const out: string[] = [];
+  for (const node of nodes) {
+    if (!node.blockedBy?.length) continue;
+    const seen = new Set<string>();
+    // A self-reference is already reported as "blocked by itself" above;
+    // skipping it here keeps that from doubling as a one-node "cycle".
+    const stack = node.blockedBy.filter((id) => id !== node.id);
+    while (stack.length > 0) {
+      const current = stack.pop();
+      if (current === undefined || seen.has(current)) continue;
+      seen.add(current);
+      if (current === node.id) {
+        out.push(node.id);
+        break;
+      }
+      stack.push(...(byId.get(current)?.blockedBy ?? []));
+    }
+  }
+  return out;
 }
 
 function findCycles(nodes: readonly KalamuNode[]): string[] {

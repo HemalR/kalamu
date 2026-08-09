@@ -15,7 +15,7 @@ const BLOCK = [
   "",
   "## Kalamu",
   "",
-  "This repo tracks deferred work in a Kalamu outline (`.kalamu/outline.jsonl`). Use the `kalamu` CLI (or `npx kalamu`) — never edit the file by hand. `kalamu next` returns the most urgent open task; record work you discover but don't do with `kalamu add` instead of TODO comments.",
+  "This repo tracks deferred work in a Kalamu outline (`.kalamu/outline.jsonl`). Use the `kalamu` CLI (or `npx kalamu`) — never edit the file by hand. `kalamu next` returns the most urgent open task; claim it with `kalamu start <id>` before working so another session can't take it (`kalamu end <id>` returns an abandoned claim to the queue). Record work you discover but don't do with `kalamu add` instead of TODO comments.",
   "",
   "Whenever your work needs the human to do something (a decision, a credential, a manual step outside the repo), don't just say so in chat — also record it so it survives the conversation:",
   "",

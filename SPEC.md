@@ -4,7 +4,7 @@
 
 Build **Kalamu**, a brutally simple, repo-local, keyboard-first outliner for solo developers and coding agents.
 
-Kalamu is inspired by Workflowy-style infinite bullet nesting, but designed specifically for coding projects. It gives a developer a lightweight place to think, brainstorm, decompose ideas, and mark some items as executable tasks. Agents can then inspect the structured scratchpad, pick the next task deterministically, hand off tasks into fuller systems, and mark work complete.
+Kalamu is inspired by Workflowy-style infinite bullet nesting, but designed specifically for coding projects. It gives a developer a lightweight place to think, brainstorm, decompose ideas, and mark some items as executable tasks. Agents can then inspect the structured scratchpad, pick the next task deterministically, and mark work complete.
 
 The core product promise:
 
@@ -24,7 +24,7 @@ The canonical data source is a JSONL file stored inside the project repository.
 Kalamu's two differentiators — the reasons it beats a `TODO.md` — are:
 
 1. A Workflowy-quality outliner UI for brainstorming.
-2. A deterministic CLI contract for agents (stable IDs, `next`, `handoff`).
+2. A deterministic CLI contract for agents (stable IDs, `next`, `done`).
 
 Everything else is in service of those two. If a feature strengthens neither, it does not belong.
 
@@ -37,7 +37,7 @@ These were deliberated and are settled. Do not relitigate them during implementa
 1. **Line position is canonical sibling order.** There is no `order` field. The writer always emits the file in pre-order traversal; the parser is lenient. See [Outline ordering](#outline-ordering).
 2. **`p1` is high, `p3` is low.** (Amended 2026-07-20: three levels replace the original five.) Matches P0/P1-is-highest developer convention. Missing priority means `p2` (medium, the default). `next` sorts priority ascending. Legacy files with `4`/`5` read as `3` and are rewritten on the next write.
 3. **`done` carries semantics on tasks only.** (Amended 2026-07-10: bullets CAN be marked done — strikethrough in the UI — and `clean` removes a done bullet once nothing beneath it survives. A bullet's `doneAt` never affects `next` eligibility or umbrella closing; bullets remain non-work-items.)
-4. **A done or handed-off ancestor TASK closes its subtree.** Tasks under it are ineligible for `next`. Done bullets never close anything (see 3).
+4. **A done ancestor TASK closes its subtree.** Tasks under it are ineligible for `next`. Done bullets never close anything (see 3). (Amended 2026-08-08: handed-off ancestors closed a subtree too, until `handoff` was removed — key decision 18.)
 5. **Live reload is not optional.** The server watches the file and pushes changes to the UI; all writers use mtime-checked atomic writes. See [Concurrency](#concurrency).
 6. **The UI ships with undo and delete.** A keyboard-first tool that moves subtrees without undo loses user data and trust.
 7. **Tags live inline in the text.** A tag IS its `#token` in the node's text ("Build a new #feature to do xyz") — there is no `tags` field; tags are derived from the text. Chips are a rendering of the token in place: unfocused nodes show chips, the focused node shows raw text, so tags are edited and deleted like any other text. Colours are derived deterministically from the tag name (overridable in `meta.json`). No tag-management commands — a tag exists because text mentions it.
@@ -45,9 +45,13 @@ These were deliberated and are settled. Do not relitigate them during implementa
 9. **Per-node plain-text contenteditable, no editor library.** Each node's text is its own `contenteditable="plaintext-only"` element using Svelte's native bindings (`bind:textContent`). Structural keys (Enter, Tab, Backspace-on-empty) are intercepted — guarded by `event.isComposing` for IME — and become outline operations; token parsing writes back only on commit (Enter/blur), never mid-keystroke, since external updates to bound content reset the caret. No TipTap/ProseMirror — those are document editors, and Kalamu's structure lives in the data model, not the editor. Fallback if the spike finds trouble: a roaming single editor where only the focused node is live. The UI spike exists to validate this.
 10. **Collapse state is view state, never document content.** It lives in a gitignored `.kalamu/ui-state.json`, not in `outline.jsonl` — otherwise every fold click dirties the canonical file and pollutes Git history. Agents and the CLI always operate on the full tree regardless of what is collapsed.
 11. **Images are files referenced by inline markdown tokens.** Pasting an image stores it in `.kalamu/assets/` (content-hashed filename, COMMITTED — assets are outline content and must survive a clone) and inserts `![](.kalamu/assets/img-<hash>.<ext>)` into the node text. Same rendering model as tags: unfocused nodes show a thumbnail in place, the focused node shows the raw token. No new node field; agents see an ordinary greppable path.
-12. **Discussions are a third node kind.** (Added 2026-07-12.) `kind: "discussion"` marks a work item whose deliverable is a conversation between the developer and an agent — "talk this through with me" rather than "go build this". Discussions are never mixed into the agent task queue — `next` never returns them (agents must never treat them as coding work); `next --discussion` queries the discussion queue explicitly, with the same eligibility and sort. They can never be assigned (they involve both parties by definition) and can never be handed off. Priority is allowed purely as human-facing ordering — setting one never converts the node to a task. A done discussion never closes its umbrella — its children are the recorded outcome, often follow-up tasks that must stay eligible — and `clean` treats it like a done bullet (removed only once nothing beneath it survives). The flow is human-initiated: the UI renders a discussion with a speech-bubble glyph and a "Copy prompt" affordance that copies the topic plus a do-not-code instruction for pasting into an agent session; the agent discusses, records the outcome as child bullets, and marks the discussion done.
+12. **Discussions are a third node kind.** (Added 2026-07-12.) `kind: "discussion"` marks a work item whose deliverable is a conversation between the developer and an agent — "talk this through with me" rather than "go build this". Discussions are never mixed into the agent task queue — `next` never returns them (agents must never treat them as coding work); `next --discussion` queries the discussion queue explicitly, with the same eligibility and sort. They can never be assigned (they involve both parties by definition). Priority is allowed purely as human-facing ordering — setting one never converts the node to a task. A done discussion never closes its umbrella — its children are the recorded outcome, often follow-up tasks that must stay eligible — and `clean` treats it like a done bullet (removed only once nothing beneath it survives). The flow is human-initiated: the UI renders a discussion with a speech-bubble glyph and a "Copy prompt" affordance that copies the topic plus a do-not-code instruction for pasting into an agent session; the agent discusses, records the outcome as child bullets, and marks the discussion done.
 13. **One hub, many projects.** (Added 2026-07-12.) `kalamu hub` runs a single machine-global server (default port 4400, still `127.0.0.1`-only) that mounts every registered project behind one UI with a project sidebar — no per-project server spin-up, no per-project ports. Projects are identified in hub URLs by a human-readable slug derived from `package.json` `name` (scope stripped) or the directory name, deduplicated with numeric suffixes and **stable once assigned**. The registry lives at `~/.kalamu/projects.json` — machine-global plumbing, never canonical outline data. The hub is human UI convenience only; agents and the CLI contract never depend on it. See [Hub](#hub-multi-project-dashboard).
 14. **Update checks: default-on, opt-out, human-only.** (Added 2026-07-13.) Every install path (`npx` caches, global installs and the launchd hub never self-update) can silently run a stale binary, so Kalamu tells the human when a newer version is on npm. This is the one deliberate outbound network call in an otherwise `127.0.0.1`-only tool — a single throttled GET to `registry.npmjs.org`, never analytics, never a phone-home of outline data. It is **on by default with a first-run notice** and opts out via `KALAMU_NO_UPDATE_CHECK`, `CI`, or `~/.kalamu/config.json` (`kalamu config update-check off`). The check is best-effort and non-blocking: the latest version is cached in `~/.kalamu/update-check.json` for ~24h, and offline/slow/opted-out all degrade to silence, never an error or a delay. It surfaces two ways — a CLI banner on **stderr** shown only to a human at a TTY (so agents and `--format json` never see it), and a dismissible chip in the web UI/hub (`/api/project` reports `version`/`latestVersion`/`updateAvailable`). Purely advisory: Kalamu never self-updates. See [Update checks](#update-checks).
+15. **Provenance is recorded, and never asked for.** (Added 2026-08-08.) `createdBy` records who authored a node — `"human"` or `"agent"`, omitted meaning human. `assignee` cannot express this: a task the developer wrote and pointed at an agent and a task the agent invented for itself both carry `assignee: "agent"`, but only the second one clutters the developer's thinking space. Recording provenance is what lets Kalamu be an agent's durable task store without polluting the human's outline, and what makes "hide agent-created nodes" a view the human can switch on. It is set automatically and never depends on agent cooperation — an agent that must remember a flag will forget it, and a provenance field that is wrong half the time is worse than none. Resolution order: an explicit `--by` flag, then the web UI (always `human`), then the TTY heuristic already established for update banners (decision 14) — a non-interactive CLI invocation is an agent or a script, an interactive TTY is the developer typing.
+16. **Blockers point one way: `blockedBy`.** (Added 2026-08-08.) A task records what blocks it (`blockedBy: string[]` of node IDs). There is deliberately no reverse `blocks` array. Two directions must be kept in sync, and they drift: dex stores both (`blocker.blocks[]` ↔ `blocked.blockedBy[]`) and its own cycle check reads both "for robustness against data inconsistencies" — a bug class Kalamu declines to buy. One direction cannot disagree with itself. `blockedBy` is also the direction the hot path needs: `next` asks "is this task blocked?", answerable from the node alone, while "what does finishing this unblock?" is a cold UI query derived by scanning. It matches the existing `parentId` shape — the dependent points at its dependency, and there is no `children[]` array either. Blockers may cross the tree freely; a blocker cycle is a validation error exactly as a parent cycle is.
+17. **In-progress is a timestamp, not a status.** (Added 2026-08-08.) `startedAt` marks a task an agent has claimed, for the same reason SPEC declines a `done` boolean (see [`doneAt`](#doneat)): timestamps carry when as well as whether, and never accumulate into a status enum. Without it, two agent sessions both call `kalamu next`, both receive the same task, and both do the work. `next` skips claimed tasks; `kalamu start <id> --force` re-claims one whose owner died. State in Kalamu is exactly three timestamps — `createdAt`, `startedAt`, `doneAt` — and never a workflow.
+18. **`handoff` is removed; promoting a task means deleting it.** (Added 2026-08-08.) A task that outgrows Kalamu is created in the external tracker and then deleted here. Recording *where it went* was a mandatory nullable field on every line of every outline, and in ten months of dogfooding not one node ever carried a non-null value — the forwarding address turned out to be a thing nobody looked up. The `handoff` field, the `Handoff` type, `kalamu handoff`/`unhandoff`, `next --include-handed-off`, `list --handoff`, and `POST /api/nodes/:id/handoff` are all gone. The consequence is deliberate: Kalamu keeps no record of promoted work, so an agent that creates a GitHub issue from a task **must** delete the task, or the next agent will do it again. Readers still accept a legacy `handoff` and fold a non-null one into the node's text as the same `→ target:ref` suffix the CLI used to render, so upgrading never silently discards a reference; a null one carried no information and is dropped.
 
 ---
 
@@ -119,16 +123,28 @@ and receive the next task deterministically.
 
 Do **not** build a full project management system.
 
-Kalamu is not Linear, Jira, GitHub Issues, Backlog.md, Dex, or Todoist.
+Kalamu is not Linear, Jira, GitHub Issues, or Todoist.
+
+**Amended 2026-08-08:** Dex and Backlog.md were previously on that list. They are
+not any more. Kalamu deliberately covers the durable agent-task-store role those
+tools occupy — an agent holding work it must do later, with dependencies between
+items — because splitting that across Kalamu, an agent's own memory, and a
+tracker is what made agents unsure where anything belonged. See key decisions
+15–17. The trackers above stay non-goals. A task that outgrows Kalamu is created in
+the tracker and then deleted here (key decision 18) — Kalamu never becomes one.
+
+This changes what Kalamu covers, not what it is. The tone section still governs:
+tiny, local, fast, plain-text adjacent, git-native. If a feature can only be
+explained by pointing at Jira, it does not belong here.
 
 Avoid:
 
 * Multi-user assignments (the two-value `assignee` — human vs agent — is audience, not users)
 * Due dates
 * Comments
-* Rich task workflows
-* Complex status fields
-* Kanban boards
+* Rich task workflows beyond `startedAt` and `blockedBy` (no custom states, no transitions, no approvals)
+* Complex status fields — state is timestamps (`startedAt`, `doneAt`), never a status enum
+* Kanban boards (a roadmap view over `blockedBy` is planned; a board of drag-between-columns states is not)
 * Multi-user permissions
 * Cloud sync
 * Authentication
@@ -232,12 +248,6 @@ Use this model for each node:
 ```ts
 type NodeKind = "bullet" | "task" | "discussion";
 
-type Handoff = {
-  at: string;
-  target: string;
-  ref: string;
-};
-
 type KalamuNode = {
   id: string;
   parentId: string | null;
@@ -245,15 +255,28 @@ type KalamuNode = {
   text: string;
   createdAt: string;
   doneAt: string | null;
-  handoff: Handoff | null;
-  priority?: 1 | 2 | 3 | 4 | 5;
+  startedAt?: string;
+  priority?: 1 | 2 | 3;
   assignee?: "human" | "agent";
+  createdBy?: "agent";
+  blockedBy?: string[];
 };
 ```
+
+The last three are optional and omitted at their defaults, so existing outlines
+stay byte-identical until a node actually uses one. `createdBy` is only ever
+written as `"agent"` — human authorship is the default and is never persisted,
+exactly as `priority: 2` is never persisted.
 
 There is deliberately no `order` field — sibling order is the relative order of lines in the file. See [Outline ordering](#outline-ordering).
 
 There is also deliberately no `collapsed` field — collapse state is view state and lives in the gitignored `.kalamu/ui-state.json` (key decision 10), never in the outline.
+
+There is deliberately no `blocks` field — blocker edges point one way only (key decision 16).
+
+There is deliberately no `status` field — state is `startedAt` and `doneAt` (key decision 17).
+
+There is deliberately no `handoff` field — a promoted task is deleted, not forwarded (key decision 18).
 
 ### Field notes
 
@@ -319,32 +342,6 @@ means done.
 
 Do not add a separate `done` boolean.
 
-#### `handoff`
-
-Nullable object.
-
-Used when a Kalamu task has been promoted into another system.
-
-Examples:
-
-```json
-{
-  "at": "2026-07-09T07:00:00.000Z",
-  "target": "backlog",
-  "ref": "backlog/tasks/add-org-sso.md"
-}
-```
-
-```json
-{
-  "at": "2026-07-09T07:00:00.000Z",
-  "target": "github",
-  "ref": "https://github.com/acme/app/issues/42"
-}
-```
-
-Do not use `handoffAt` alone because the system needs to know where the task went.
-
 #### `priority`
 
 Optional.
@@ -399,18 +396,100 @@ This is audience, not users. Kalamu has no user accounts; the only two parties a
 
 Legacy note: files written before this decision may carry `"self": true`; readers treat it as `assignee: "human"` and drop the field on the next write.
 
+#### `createdBy`
+
+Optional. Meaningful on every kind, not just tasks.
+
+Only ever written as `"agent"`. Omitted means the human authored the node —
+the default, never persisted.
+
+`assignee` says who *should do* a node; `createdBy` says who *wrote* it. They
+are independent, and the pair the developer cares about is the one `assignee`
+alone cannot distinguish:
+
+| Node | `createdBy` | `assignee` | Meaning |
+| --- | --- | --- | --- |
+| Developer writes a task for an agent | *omitted* | `"agent"` | delegated work |
+| Agent records work it must do later | `"agent"` | `"agent"` | the agent's own queue |
+| Agent asks the developer for something | `"agent"` | `"human"` | agent → human request |
+| Developer brainstorms a bullet | *omitted* | *omitted* | thinking |
+
+Only the second row should be hideable while the developer is thinking, which
+is why `assignee` cannot carry this on its own.
+
+Resolution, in order (key decision 15):
+
+1. An explicit `--by human|agent` flag on `add`/`update`
+2. The web UI and the hub, which always write `human`
+3. `KALAMU_ACTOR=human|agent` in the environment
+4. The TTY heuristic — non-interactive CLI writes `"agent"`, an interactive TTY writes human
+
+The heuristic is the same one decision 14 uses to keep update banners away from
+agents, and it is a heuristic: a human piping `kalamu add` inside a script is
+recorded as an agent. That is an acceptable error, and `--by` corrects it. What
+matters is that the common cases — an agent shelling out, a human in the web UI
+— are right without anyone having to remember anything.
+
+#### `startedAt`
+
+Optional ISO timestamp. Only meaningful for `kind: "task"`.
+
+Set by `kalamu start <id>`, cleared by `kalamu end <id>` — `start`/`end` is the
+natural pair, and `kalamu stop` is unavailable because it already means "stop
+the running server". Present with a null `doneAt` means in progress; `kalamu
+done` sets `doneAt` and leaves `startedAt` in place as a record of how long the
+work took.
+
+A claimed task is skipped by `kalamu next`, so a second agent session does not
+pick up work already underway. `kalamu reopen` clears `startedAt` — a reopened
+task must return to the queue, and one still carrying a claim would be invisible
+to `next` forever. If the claiming session dies, the task is not
+lost — it is listed by `kalamu list --started`, and `kalamu start <id> --force`
+re-claims it.
+
+There is no status enum, and no `inProgress` boolean, for the same reason there
+is no `done` boolean (see [`doneAt`](#doneat)).
+
+#### `blockedBy`
+
+Optional array of node IDs. Only meaningful for `kind: "task"`.
+
+The task cannot proceed until every listed node is done. Omit the
+field when empty — never write `"blockedBy": []`.
+
+```json
+"blockedBy": ["n_003", "n_007"]
+```
+
+Blockers are independent of the tree: a blocker may be any node anywhere in the
+outline, including one in an unrelated subtree. That is the point — dependency
+order and outline order are different things, and forcing dependencies into
+parent/child would corrupt the outline as a thinking tool.
+
+Direction is one-way by decision (key decision 16). A node never records what it
+blocks; that view is derived by scanning for nodes whose `blockedBy` contains
+this ID.
+
+Rules:
+
+* A blocker reference to a missing node is a validation error, reported by `kalamu validate`
+* Deleting a node removes it from every `blockedBy` array that mentions it
+* Blocker cycles are a validation error, exactly as parent cycles are
+* A blocked task is never returned by `kalamu next` (see [Deterministic next-task logic](#deterministic-next-task-logic))
+* Done blockers do not block — only open ones do
+
 ---
 
 ## Example JSONL
 
 ```jsonl
-{"id":"n_001","parentId":null,"kind":"bullet","text":"Auth improvements","createdAt":"2026-07-09T07:00:00.000Z","doneAt":null,"handoff":null}
-{"id":"n_002","parentId":"n_001","kind":"bullet","text":"SSO","createdAt":"2026-07-09T07:01:00.000Z","doneAt":null,"handoff":null}
-{"id":"n_003","parentId":"n_002","kind":"task","text":"Investigate WorkOS org mapping #research","createdAt":"2026-07-09T07:02:00.000Z","doneAt":null,"handoff":null,"priority":3}
-{"id":"n_004","parentId":"n_002","kind":"task","text":"Add SAML config screen","createdAt":"2026-07-09T07:03:00.000Z","doneAt":null,"handoff":null}
-{"id":"n_005","parentId":"n_001","kind":"bullet","text":"Login UX","createdAt":"2026-07-09T07:04:00.000Z","doneAt":null,"handoff":null}
-{"id":"n_006","parentId":"n_005","kind":"task","text":"Fix password reset redirect","createdAt":"2026-07-09T07:05:00.000Z","doneAt":null,"handoff":null,"priority":1}
-{"id":"n_007","parentId":null,"kind":"task","text":"Write launch blog post #publishing","createdAt":"2026-07-09T07:06:00.000Z","doneAt":null,"handoff":null,"assignee":"human"}
+{"id":"n_001","parentId":null,"kind":"bullet","text":"Auth improvements","createdAt":"2026-07-09T07:00:00.000Z","doneAt":null}
+{"id":"n_002","parentId":"n_001","kind":"bullet","text":"SSO","createdAt":"2026-07-09T07:01:00.000Z","doneAt":null}
+{"id":"n_003","parentId":"n_002","kind":"task","text":"Investigate WorkOS org mapping #research","createdAt":"2026-07-09T07:02:00.000Z","doneAt":null,"priority":3}
+{"id":"n_004","parentId":"n_002","kind":"task","text":"Add SAML config screen","createdAt":"2026-07-09T07:03:00.000Z","doneAt":null}
+{"id":"n_005","parentId":"n_001","kind":"bullet","text":"Login UX","createdAt":"2026-07-09T07:04:00.000Z","doneAt":null}
+{"id":"n_006","parentId":"n_005","kind":"task","text":"Fix password reset redirect","createdAt":"2026-07-09T07:05:00.000Z","doneAt":null,"priority":1}
+{"id":"n_007","parentId":null,"kind":"task","text":"Write launch blog post #publishing","createdAt":"2026-07-09T07:06:00.000Z","doneAt":null,"assignee":"human"}
 ```
 
 Note the file is in pre-order traversal: each node's descendants immediately follow it. The writer always emits this shape.
@@ -445,9 +524,10 @@ Eligibility — a node is eligible when all of the following hold:
 node.kind === "task"
 node.text.trim() !== ""
 node.doneAt === null
-node.handoff === null
+node.startedAt === undefined
 node.assignee !== "human"
-// AND no ancestor task of the node is done or handed off
+// AND no ancestor task of the node is done
+// AND every node in node.blockedBy is done
 ```
 
 Blank tasks (whitespace-only text, typically stray empty nodes from the web
@@ -457,6 +537,19 @@ UI) are never returned — an agent cannot act on a task with no text.
 The ancestor rule: marking a parent task done (or handing it off) closes the whole umbrella. Agents should never pick up work under a closed parent. Bullet ancestors never affect eligibility.
 
 Human-assigned tasks (`assignee: "human"`) are never returned — they belong to the developer, not the agent queue. Unassigned and `"agent"` tasks are equally eligible.
+
+Claimed tasks (`startedAt` set, `doneAt` still null) are never returned — another
+session is already on them (key decision 17). `kalamu list --started` shows them
+and `kalamu start <id> --force` re-claims one whose owner died.
+
+Blocked tasks are never returned. A task is blocked while any node in its
+`blockedBy` is still open; blockers that are done no longer block.
+A blocker that is itself blocked still blocks — the check is one level deep on
+open-ness, and transitivity falls out of the blocker never being done.
+
+`createdBy` never affects eligibility. A task the agent wrote for itself is
+exactly as eligible as one the developer wrote for it — provenance is for the
+human's views, not the queue.
 
 Sorting:
 
@@ -493,7 +586,6 @@ There is no `--explain` flag — the default text output already includes the re
 Later (not MVP):
 
 ```bash
-kalamu next --include-handed-off
 kalamu next --under <id>
 ```
 
@@ -520,8 +612,6 @@ kalamu move <id>
 kalamu delete <id>
 kalamu done <id>
 kalamu reopen <id>
-kalamu handoff <id>
-kalamu unhandoff <id>
 kalamu search <query>
 kalamu next
 kalamu clean
@@ -672,9 +762,11 @@ Useful options:
 kalamu list --tasks
 kalamu list --open
 kalamu list --done
-kalamu list --handoff
+kalamu list --started
+kalamu list --blocked
 kalamu list --tag <tag>
 kalamu list --assignee <human|agent>
+kalamu list --created-by <human|agent>
 kalamu list --discussions
 kalamu list --depth 2
 kalamu list --format json
@@ -770,12 +862,16 @@ Options:
 --p <1-3>
 --tag <tag>
 --assign <human|agent>
+--by <human|agent>
+--blocked-by <id>
 --after <id>
 --before <id>
 --format json
 ```
 
 `--tag` is repeatable and appends the `#tag` token to the text (tags live inline in text). `--assign human` marks a task as the developer's own (excluded from `kalamu next`); `--assign agent` explicitly claims it for agents.
+
+`--by` overrides the resolved `createdBy` (key decision 15) — needed only when the automatic resolution would be wrong, e.g. a human driving `kalamu add` from inside a script. `--blocked-by` is repeatable and records blockers at creation time, equivalent to a follow-up `kalamu block`.
 
 If `--parent` is omitted, add as top-level.
 
@@ -823,15 +919,21 @@ Options:
 --add-tag <tag>
 --remove-tag <tag>
 --assign <human|agent|none>
+--by <human|agent>
 ```
 
 `--p default` removes the stored priority (reverting to implicit `p2`).
+
+`--by` corrects recorded authorship (key decision 15) — `human` clears the
+field back to the unstored default, `agent` stores it. Unlike `add`, `update`
+never resolves an actor on its own: provenance records who wrote the node, so
+an ordinary edit must not rewrite it.
 
 `--p 1-3` on a bullet also converts it to a task (see the `priority` field), unless `--kind` is given in the same call.
 
 `--add-tag` and `--remove-tag` are repeatable text surgery: add appends the `#tag` token, remove strips the token(s) from the text. `--assign` sets the assignee; `--assign none` clears it back to unassigned.
 
-Converting a `task` back to `bullet` preserves `doneAt`, `handoff`, and `priority`. They are inert on bullets and are restored if the node is converted back to a task.
+Converting a `task` back to `bullet` preserves `doneAt` and `priority`. They are inert on bullets and are restored if the node is converted back to a task.
 
 Validation:
 
@@ -885,6 +987,7 @@ Rules:
 * A leaf node is deleted immediately.
 * A node with children is refused unless `--recursive` is passed.
 * `--recursive` deletes the entire subtree.
+* Every deleted ID is removed from any `blockedBy` array that references it, so a delete can never leave a dangling blocker. A node whose `blockedBy` empties as a result drops the field entirely.
 
 Example output:
 
@@ -942,43 +1045,6 @@ doneAt = null
 
 ---
 
-### `kalamu handoff <id>`
-
-Records that a Kalamu task has been promoted elsewhere.
-
-Examples:
-
-```bash
-kalamu handoff n_003 --target backlog --ref backlog/tasks/explore-sso.md
-kalamu handoff n_003 --target github --ref https://github.com/acme/app/issues/42
-kalamu handoff n_003 --target linear --ref ENG-123
-kalamu handoff n_003 --target file --ref plans/auth-sso.md
-```
-
-Stores:
-
-```json
-"handoff": {
-  "at": "2026-07-09T07:00:00.000Z",
-  "target": "backlog",
-  "ref": "backlog/tasks/explore-sso.md"
-}
-```
-
----
-
-### `kalamu unhandoff <id>`
-
-Clears a task's handoff record (sets `handoff: null`), making it eligible for
-`kalamu next` again — e.g. when the external system fell through and the work
-comes back home. Errors on bullets and on tasks with no handoff to clear.
-
-```bash
-kalamu unhandoff n_003
-```
-
----
-
 ### `kalamu search <query>`
 
 Searches node text.
@@ -1007,15 +1073,12 @@ Algorithm:
 
 ```ts
 const closedAncestor = (n: KalamuNode) =>
-  ancestors(n).some(a =>
-    a.kind === "task" && (a.doneAt !== null || a.handoff !== null)
-  );
+  ancestors(n).some(a => a.kind === "task" && a.doneAt !== null);
 
 const eligible = nodes.filter(n =>
   n.kind === "task" &&
   n.text.trim() !== "" &&
   n.doneAt === null &&
-  n.handoff === null &&
   n.assignee !== "human" &&
   !closedAncestor(n)
 );
@@ -1029,11 +1092,10 @@ Flags:
 
 ```bash
 kalamu next --under <id>           # only consider tasks inside this node's subtree
-kalamu next --include-handed-off   # readmit handed-off tasks/umbrellas (done exclusions still apply)
 kalamu next --limit <n> | --all    # batch mode: the queue in next-order
 kalamu next --discussion           # queue discussions instead of tasks: same sort, same
                                    # output shapes; open discussions with no closed task
-                                   # ancestor (handoff/assignee are inert on discussions)
+                                   # ancestor (an assignee is inert on discussions)
 ```
 
 Example:
@@ -1095,7 +1157,6 @@ Rules:
 
 * Removes every task with `doneAt !== null`, together with its entire subtree — consistent with key decision 4: a done parent task closes its umbrella, so anything beneath it is moot.
 * Removes done bullets, done discussions, and blank nodes (whitespace-only text, any kind) — but only when they have no surviving children. A done bullet or discussion does not close its umbrella (a discussion's children are its recorded outcome) and a blank node is structural, so each stays while real content beneath it survives. Chains of removable nodes collapse in one pass (children are decided before parents).
-* Handed-off tasks that are not done are NOT removed (handed off is not completed).
 * `--dry-run` lists what would be deleted without writing.
 
 Example output:
@@ -1125,9 +1186,12 @@ Check:
 * No cycles.
 * `kind` is `bullet`, `task`, or `discussion`.
 * `doneAt` is either `null` or a valid ISO timestamp.
-* `handoff` is either `null` or has `at`, `target`, and `ref`.
 * `priority`, if present, is an integer 1–3 (legacy `4`/`5` values are clamped to `3` on read and rewritten on the next write).
 * `assignee`, if present, is `"human"` or `"agent"` and the node is not a discussion (setting one is rejected at the operation level; a stale value inherited from a past life as a task is inert).
+* `createdBy`, if present, is `"agent"` — `"human"` is the default and is never written.
+* `startedAt`, if present, is a valid ISO timestamp.
+* `blockedBy`, if present, is a non-empty array of unique IDs that all point to existing nodes, never containing the node's own ID.
+* No blocker cycles.
 
 Unknown node fields are NOT an error: readers must preserve fields they don't recognize through parse → operate → write, so an older build can never erase what a newer one wrote. Writers emit unknown fields after the known keys, sorted by name.
 
@@ -1354,7 +1418,7 @@ acts on the last-focused node and offers, at the top level:
                  Cmd/Ctrl+Shift+ArrowDown), closes with focus on that CHILD
 7  Copy CLI command -> submenu: ready-to-run CLI commands for this node with its
                  real (server) id filled in — show --children always; done or
-                 reopen (by state) and a handoff template on tasks; add-child-task;
+                 reopen (by state); add-child-task;
                  delete (--recursive when the node has children). Picking one
                  copies it to the clipboard, shows a toast, closes with focus
                  restore.
@@ -1382,8 +1446,8 @@ without converting) and Toggle done
 works on bullets as a visual-only strikethrough (Copy CLI command stays
 enabled, with task-only commands omitted from its submenu; done/reopen appear
 for bullets too). On a discussion, only Assign is disabled (discussions are
-never assigned); Priority, Toggle done, and Copy CLI command all apply —
-handoff is omitted from the copy submenu. Collapse parent and Expand children
+never assigned); Priority, Toggle done, and Copy CLI command all apply.
+Collapse parent and Expand children
 apply to every kind (they are structural, not metadata) but carry their own
 disabled cases: Collapse parent on root-level nodes and on the zoom root
 (nothing rendered above them to fold), Expand children on leaves (nothing
@@ -1527,7 +1591,6 @@ kalamu/
           delete.ts
           done.ts
           reopen.ts
-          handoff.ts
           search.ts
           next.ts
           validate.ts
@@ -1582,7 +1645,10 @@ DELETE /api/nodes/:id
 POST   /api/nodes/:id/move
 POST   /api/nodes/:id/done
 POST   /api/nodes/:id/reopen
-POST   /api/nodes/:id/handoff
+POST   /api/nodes/:id/start      (body: {"force": true} to re-claim)
+POST   /api/nodes/:id/end
+POST   /api/nodes/:id/block      (body: {"by": "n_..."}; 409 on a cycle)
+DELETE /api/nodes/:id/block/:byId (omit :byId to clear all blockers)
 GET    /api/search?q=...
 GET    /api/next
 GET    /api/validate
@@ -1759,7 +1825,7 @@ Expected:
 * `.kalamu/outline.jsonl` is created.
 * Nodes are stored as JSONL in pre-order traversal.
 * Priority is stored only when non-default.
-* `kalamu next` returns the lowest-priority-number (most urgent) open, unhanded-off task with no closed ancestor task.
+* `kalamu next` returns the lowest-priority-number (most urgent) open task with no closed ancestor task.
 * `kalamu done` sets `doneAt`.
 * `kalamu validate` passes.
 
@@ -1796,7 +1862,6 @@ An agent should be able to:
 ```bash
 kalamu next --format json
 kalamu show <id> --children --format json
-kalamu handoff <id> --target file --ref plans/some-task.md
 kalamu done <id>
 kalamu validate
 ```
@@ -1823,9 +1888,8 @@ The outliner UI is the hardest part of this project and its biggest risk. Prove 
 12. CLI `update`
 13. CLI `move`
 14. CLI `delete`
-15. CLI `handoff`
-16. CLI `search`
-17. CLI `validate`
+15. CLI `search`
+16. CLI `validate`
 18. Local server (API + file watching + SSE)
 19. Real Svelte UI, carrying over learnings from the spike
 20. Inline token parsing in UI (`p1`–`p3`, `#tag`, `@human`/`@agent`)
@@ -1845,11 +1909,18 @@ Add tests for:
 * Cycle detection
 * Pre-order emission on write
 * Task filtering
-* Priority defaulting to 3
+* Priority defaulting to 2
 * Priority range validation
+* `createdBy` resolution: `--by` beats env, env beats the TTY heuristic; web UI always writes human
+* `createdBy` omitted for human authorship, never written as `"human"`
+* `startedAt` set by `start`, cleared by `end`, preserved by `done`
+* `start` refuses an already-started task without `--force`, succeeds with it
+* `blockedBy` cleanup when a referenced node is deleted
+* Blocker cycle detection (direct, and transitive through a chain)
+* Blocker referencing a missing node fails validation
+* `blockedBy` omitted rather than written as `[]` when the last blocker is removed
 * `next` selection
 * `doneAt` setting
-* `handoff` setting
 * Moving nodes (subtree moves as a block)
 * Preventing invalid moves
 * Delete: leaf, refusal with children, `--recursive`
@@ -1868,11 +1939,14 @@ p1 task beats p3 task
 p1 task beats default (p2) task
 two p1 tasks preserve outline order
 done tasks are ignored
-handed-off tasks are ignored
+started tasks are ignored; ending returns them to the queue
 human-assigned tasks are ignored; agent-assigned and unassigned are equal
+agent-created tasks are eligible exactly like human-created ones
 tasks under a done parent task are ignored
-tasks under a handed-off parent task are ignored
-tasks under done/handed-off bullet ancestors are NOT affected (bullets have no done state)
+tasks under done bullet ancestors are NOT affected (bullets have no done state)
+tasks with an open blocker are ignored
+tasks whose blockers are all done are eligible
+a blocker in an unrelated subtree still blocks
 bullet nodes are ignored
 no eligible task: non-zero exit, {"id": null} in JSON mode
 ```

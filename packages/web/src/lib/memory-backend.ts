@@ -5,14 +5,18 @@
  * no persistence, resets on reload. Plain TS, no Svelte.
  */
 import {
+  addBlocker,
   addNode,
   buildTree,
   deleteNode,
+  endTask,
   markDone,
   moveNode,
   preorder,
+  removeBlocker,
   reopen,
   serializeJsonl,
+  startTask,
   updateNode,
   validateOutline,
   TAG_PATTERN,
@@ -90,6 +94,33 @@ export function createMemoryBackend(seed: KalamuNode[]): Backend {
 
     reopen: async (id) => {
       const result = reopen(nodes, id);
+      nodes = result.nodes;
+      return result.node;
+    },
+
+    // Claims and blockers run the same core operations the server runs; a
+    // refusal (already claimed, cycle) throws exactly as it does there, and
+    // the store's queue turns the message into a toast.
+    startTask: async (id, force) => {
+      const result = startTask(nodes, id, { force });
+      nodes = result.nodes;
+      return result.node;
+    },
+
+    endTask: async (id) => {
+      const result = endTask(nodes, id);
+      nodes = result.nodes;
+      return result.node;
+    },
+
+    addBlocker: async (id, blockerId) => {
+      const result = addBlocker(nodes, id, blockerId);
+      nodes = result.nodes;
+      return result.node;
+    },
+
+    removeBlocker: async (id, blockerId) => {
+      const result = removeBlocker(nodes, id, blockerId);
       nodes = result.nodes;
       return result.node;
     },

@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { OutlineStore } from "../lib/outline.svelte";
+  import ProgressBar from "./ProgressBar.svelte";
 
   interface Props {
     store: OutlineStore;
@@ -16,6 +17,7 @@
 </script>
 
 {#if store.zoomNode !== null}
+  {@const scope = store.progress.get(store.zoomNode.id) ?? { total: 0, done: 0, active: 0 }}
   <!-- Sticky inside the scrolling content column: rows scroll under it. -->
   <nav class="crumbs" aria-label="Zoom breadcrumbs">
     <button class="crumb" onclick={() => store.setZoom(null)}>{rootLabel}</button>
@@ -25,6 +27,12 @@
     {/each}
     <span class="sep" aria-hidden="true">›</span>
     <span class="crumb current" aria-current="page">{crumbLabel(store.zoomNode.text)}</span>
+    <!-- The scope's own total: zoomed in, the rows below are all you can see,
+         so the trail is the only place left to say how much of it is done. The
+         bar rows beneath cover its children. -->
+    <span class="scope">
+      <ProgressBar done={scope.done} active={scope.active} total={scope.total} caption />
+    </span>
   </nav>
 {/if}
 
@@ -72,5 +80,12 @@
   .sep {
     color: var(--muted);
     opacity: 0.6;
+  }
+
+  /* Inline in the trail rather than under it — this is the scope readout. */
+  .scope {
+    display: flex;
+    align-items: center;
+    margin-left: 6px;
   }
 </style>

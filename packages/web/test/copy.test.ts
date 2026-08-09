@@ -9,7 +9,6 @@ function node(overrides: Partial<KalamuNode> & { id: string }): KalamuNode {
     text: "",
     createdAt: "2026-07-09T00:00:00.000Z",
     doneAt: null,
-    handoff: null,
     ...overrides,
   };
 }

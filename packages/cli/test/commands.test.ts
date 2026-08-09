@@ -75,9 +75,8 @@ describe("discussions", () => {
     expect(listing.text).toContain("? p1 WorkOS or Auth0?");
     expect((listing.json as unknown[]).length).toBe(1);
 
-    // discussions cannot be assigned or handed off
+    // discussions cannot be assigned
     expect(() => commands.update(cwd, id, { assign: "human" })).toThrow(/only tasks can be assigned/);
-    expect(() => commands.handoff(cwd, id, { target: "github", ref: "#1" })).toThrow(/only tasks/);
 
     // done, then clean removes it (no surviving children) and reports it
     commands.done(cwd, id);
@@ -283,6 +282,23 @@ describe("filters and outputs", () => {
     expect(() => commands.update(cwd, id, { assign: "both" })).toThrow(/none to clear/);
   });
 
+  it("update --by corrects authorship; an update without it never touches the field", () => {
+    const id = addTask("misattributed", { by: "human" });
+    expect((commands.show(cwd, id, {}).json as { createdBy?: string }).createdBy).toBeUndefined();
+
+    commands.update(cwd, id, { by: "agent" });
+    expect((commands.show(cwd, id, {}).json as { createdBy?: string }).createdBy).toBe("agent");
+    commands.update(cwd, id, { text: "renamed" });
+    expect((commands.show(cwd, id, {}).json as { createdBy?: string }).createdBy).toBe("agent");
+    commands.update(cwd, id, { by: "human" });
+    expect((commands.show(cwd, id, {}).json as { createdBy?: string }).createdBy).toBeUndefined();
+  });
+
+  it("list --created-by rejects a bad value even when nothing matches it", () => {
+    expect(commands.list(cwd, {}).json).toEqual([]); // empty outline: the filter never runs
+    expect(() => commands.list(cwd, { createdBy: "robot" })).toThrow(CliError);
+  });
+
   it("show --children returns the subtree", () => {
     const parent = addTask("parent");
     const child = addTask("child", { parent });
@@ -296,14 +312,6 @@ describe("filters and outputs", () => {
     addTask("Fix OAuth redirect");
     expect((commands.search(cwd, "oauth").json as unknown[]).length).toBe(1);
     expect(commands.search(cwd, "nope").text).toBe("No matches.");
-  });
-
-  it("handoff renders arrow suffix and excludes from next", () => {
-    const id = addTask("promote me", { p: "1" });
-    const fallback = addTask("fallback");
-    commands.handoff(cwd, id, { target: "github", ref: "https://github.com/x/1" });
-    expect(commands.list(cwd, {}).text).toContain("→ github:https://github.com/x/1");
-    expect(commands.next(cwd).json).toMatchObject({ id: fallback });
   });
 
   it("move and delete respect tree rules", () => {
@@ -410,18 +418,6 @@ describe("next context and scoping", () => {
     expect(() => commands.next(cwd, { under: "n_404" })).toThrow(/n_404/);
   });
 
-  it("--include-handed-off readmits handed-off tasks; unhandoff makes it permanent", () => {
-    const id = addTask("Promoted", { p: "1" });
-    commands.handoff(cwd, id, { target: "github", ref: "#1" });
-
-    expect(commands.next(cwd).exitCode).toBe(2);
-    expect((commands.next(cwd, { includeHandedOff: true }).json as { id: string }).id).toBe(id);
-
-    const cleared = commands.unhandoff(cwd, id);
-    expect(cleared.json).toEqual({ id, handoff: null });
-    expect((commands.next(cwd).json as { id: string }).id).toBe(id);
-    expect(() => commands.unhandoff(cwd, id)).toThrow(/no handoff/);
-  });
 });
 
 describe("init --tour", () => {

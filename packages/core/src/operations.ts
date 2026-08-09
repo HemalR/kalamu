@@ -41,6 +41,8 @@ export interface AddInput {
   priority?: 1 | 2 | 3 | undefined;
   tags?: string[] | undefined;
   assignee?: Assignee | undefined;
+  /** Author (SPEC key decision 15); "human" is the default and is never stored. */
+  createdBy?: Assignee | undefined;
   afterId?: string | undefined;
   beforeId?: string | undefined;
   now?: string | undefined;
@@ -59,7 +61,6 @@ export function addNode(nodes: readonly KalamuNode[], input: AddInput): { nodes:
     text: input.tags?.length ? appendTags(input.text, validTags(input.tags)) : input.text,
     createdAt: input.now ?? new Date().toISOString(),
     doneAt: null,
-    handoff: null,
   };
   // Missing priority means default (p2, medium); never store the default.
   if (input.priority !== undefined && input.priority !== 2) node.priority = input.priority;
@@ -69,6 +70,8 @@ export function addNode(nodes: readonly KalamuNode[], input: AddInput): { nodes:
     }
     node.assignee = input.assignee;
   }
+  // Human authorship is the default and is never persisted (key decision 15).
+  if (input.createdBy === "agent") node.createdBy = "agent";
   // A priority marks actionable work: it makes the node a task unless the
   // caller explicitly chose a kind.
   if (node.priority !== undefined && input.kind === undefined) node.kind = "task";
@@ -97,6 +100,12 @@ export interface UpdateInput {
   removeTags?: string[] | undefined;
   /** "human" | "agent" assigns; null clears back to unassigned. */
   assignee?: Assignee | null | undefined;
+  /**
+   * Corrects recorded authorship (key decision 15) — the escape hatch for a
+   * wrong automatic resolution. "human" clears the field (the unstored
+   * default), "agent" stores it.
+   */
+  createdBy?: Assignee | undefined;
 }
 
 export function updateNode(nodes: readonly KalamuNode[], id: string, input: UpdateInput): { nodes: KalamuNode[]; node: KalamuNode } {
@@ -105,8 +114,10 @@ export function updateNode(nodes: readonly KalamuNode[], id: string, input: Upda
   const updated: KalamuNode = { ...node };
 
   if (input.text !== undefined) updated.text = input.text;
-  // Converting away from task preserves doneAt/handoff/priority/assignee:
-  // inert on other kinds, restored if converted back (SPEC "kalamu update").
+  // Converting away from task preserves doneAt/priority/assignee — and
+  // startedAt/blockedBy — inert on other kinds, restored if converted back
+  // (SPEC "kalamu update"). Inertness matters: eligibleTasks only reads
+  // these fields on the kinds they gate.
   if (input.kind !== undefined) updated.kind = input.kind;
   if (input.priority !== undefined) {
     if (input.priority === "default" || input.priority === 2) delete updated.priority;
@@ -126,6 +137,10 @@ export function updateNode(nodes: readonly KalamuNode[], id: string, input: Upda
     else if (updated.kind === "discussion") {
       throw new OperationError("discussions involve both parties; only tasks can be assigned");
     } else updated.assignee = input.assignee;
+  }
+  if (input.createdBy !== undefined) {
+    if (input.createdBy === "human") delete updated.createdBy;
+    else updated.createdBy = "agent";
   }
 
   return replace(tree, updated);
@@ -180,8 +195,22 @@ export function deleteNode(nodes: readonly KalamuNode[], id: string, options: { 
   if (doomed.size > 1 && !options.recursive) {
     throw new OperationError(`node ${id} has ${doomed.size - 1} descendant(s); pass --recursive to delete the subtree`);
   }
-  const remaining = preorder(tree).filter((n) => !doomed.has(n.id));
+  // A delete must never leave a dangling blocker: strip every deleted id from
+  // the nodes that waited on it, dropping the field when nothing is left.
+  const remaining = stripBlockers(preorder(tree).filter((n) => !doomed.has(n.id)), doomed);
   return { nodes: remaining, deletedCount: doomed.size };
+}
+
+/**
+ * Strips references to removed nodes from every survivor's `blockedBy`,
+ * dropping the field when nothing is left. Untouched nodes keep their object
+ * identity so their serialized lines stay byte-identical.
+ */
+function stripBlockers(nodes: readonly KalamuNode[], removed: ReadonlySet<string>): KalamuNode[] {
+  return nodes.map((n) => {
+    if (!n.blockedBy?.some((b) => removed.has(b))) return n;
+    return withBlockers(n, n.blockedBy.filter((b) => !removed.has(b)));
+  });
 }
 
 // Done on a BULLET is strikethrough plus cleanup: it never affects
@@ -196,22 +225,102 @@ export function markDone(nodes: readonly KalamuNode[], id: string, now?: string)
 export function reopen(nodes: readonly KalamuNode[], id: string): { nodes: KalamuNode[]; node: KalamuNode } {
   const tree = buildTree(nodes);
   const node = requireNode(tree, id);
-  return replace(tree, { ...node, doneAt: null });
+  // Reopening returns the task to the queue, so the old claim must go with it:
+  // a reopened task still carrying startedAt would be invisible to `next`.
+  const { startedAt: _dropped, ...rest } = node;
+  return replace(tree, { ...rest, doneAt: null });
 }
 
-export function setHandoff(nodes: readonly KalamuNode[], id: string, target: string, ref: string, now?: string): { nodes: KalamuNode[]; node: KalamuNode } {
+/**
+ * Claim a task so a second agent session does not take the same work
+ * (SPEC key decision 17). `force` re-claims one whose owner died.
+ */
+export function startTask(
+  nodes: readonly KalamuNode[],
+  id: string,
+  options: { force?: boolean | undefined } = {},
+  now?: string,
+): { nodes: KalamuNode[]; node: KalamuNode } {
   const tree = buildTree(nodes);
   const node = requireNode(tree, id);
-  if (node.kind !== "task") throw new OperationError(`${id} is a ${node.kind}; only tasks can be handed off`);
-  return replace(tree, { ...node, handoff: { at: now ?? new Date().toISOString(), target, ref } });
+  if (node.kind !== "task") throw new OperationError(`${id} is a ${node.kind}; only tasks can be started`);
+  if (node.doneAt !== null) throw new OperationError(`${id} is already done; reopen it before starting`);
+  if (node.startedAt !== undefined && options.force !== true) {
+    throw new OperationError(`${id} was already started at ${node.startedAt}; pass --force to re-claim it`);
+  }
+  return replace(tree, { ...node, startedAt: now ?? new Date().toISOString() });
 }
 
-export function clearHandoff(nodes: readonly KalamuNode[], id: string): { nodes: KalamuNode[]; node: KalamuNode } {
+/** Release a claim, returning the task to the queue. */
+export function endTask(nodes: readonly KalamuNode[], id: string): { nodes: KalamuNode[]; node: KalamuNode } {
   const tree = buildTree(nodes);
   const node = requireNode(tree, id);
-  if (node.kind !== "task") throw new OperationError(`${id} is a ${node.kind}; only tasks can be handed off`);
-  if (node.handoff === null) throw new OperationError(`${id} has no handoff to clear`);
-  return replace(tree, { ...node, handoff: null });
+  if (node.kind !== "task") throw new OperationError(`${id} is a ${node.kind}; only tasks can be ended`);
+  if (node.startedAt === undefined) throw new OperationError(`${id} was never started`);
+  const { startedAt: _cleared, ...rest } = node;
+  return replace(tree, rest);
+}
+
+/**
+ * Does `fromId` wait — directly or transitively — on `targetId`? Walks
+ * `blockedBy` edges only; the parent tree is unrelated (blockers may cross it
+ * freely). Used to reject blocker cycles before they are written.
+ */
+export function dependsOn(nodes: readonly KalamuNode[], fromId: string, targetId: string): boolean {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const seen = new Set<string>();
+  const stack = [...(byId.get(fromId)?.blockedBy ?? [])];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (current === undefined || seen.has(current)) continue;
+    seen.add(current);
+    if (current === targetId) return true;
+    stack.push(...(byId.get(current)?.blockedBy ?? []));
+  }
+  return false;
+}
+
+/** Record that `id` waits on `blockerId`. Adding a known blocker is a no-op. */
+export function addBlocker(
+  nodes: readonly KalamuNode[],
+  id: string,
+  blockerId: string,
+): { nodes: KalamuNode[]; node: KalamuNode } {
+  const tree = buildTree(nodes);
+  const node = requireNode(tree, id);
+  requireNode(tree, blockerId);
+  if (node.kind !== "task") throw new OperationError(`${id} is a ${node.kind}; only tasks can be blocked`);
+  if (id === blockerId) throw new OperationError(`${id} cannot block itself`);
+  const existing = node.blockedBy ?? [];
+  if (existing.includes(blockerId)) return { nodes: preorder(tree), node };
+  if (dependsOn(nodes, blockerId, id)) {
+    throw new OperationError(`${blockerId} already waits on ${id}; blocking would create a cycle`);
+  }
+  return replace(tree, { ...node, blockedBy: [...existing, blockerId] });
+}
+
+/** Remove one blocker, or every blocker when `blockerId` is omitted. */
+export function removeBlocker(
+  nodes: readonly KalamuNode[],
+  id: string,
+  blockerId?: string,
+): { nodes: KalamuNode[]; node: KalamuNode } {
+  const tree = buildTree(nodes);
+  const node = requireNode(tree, id);
+  const existing = node.blockedBy ?? [];
+  if (existing.length === 0) throw new OperationError(`${id} has no blockers to clear`);
+  if (blockerId !== undefined && !existing.includes(blockerId)) {
+    throw new OperationError(`${id} is not blocked by ${blockerId}`);
+  }
+  const kept = blockerId === undefined ? [] : existing.filter((b) => b !== blockerId);
+  return replace(tree, withBlockers(node, kept));
+}
+
+/** Sets blockedBy, or drops the field entirely when nothing is left. */
+function withBlockers(node: KalamuNode, blockers: readonly string[]): KalamuNode {
+  if (blockers.length > 0) return { ...node, blockedBy: [...blockers] };
+  const { blockedBy: _empty, ...rest } = node;
+  return rest;
 }
 
 export interface NextResult {
@@ -223,21 +332,19 @@ export interface NextResult {
 export interface NextOptions {
   /** Only consider nodes inside this node's subtree (the node itself included). */
   under?: string;
-  /** Keep tasks whose own or ancestor handoff is set (done exclusions still apply). */
-  includeHandedOff?: boolean;
   /** Which queue to draw from; default "task" (the agent work queue). */
   kind?: "task" | "discussion";
 }
 
 /**
  * The full queue for one kind (default: the agent task queue). Eligibility:
- * open node of that kind with non-blank text and no done/handed-off ancestor
- * TASK (a closed parent task closes its umbrella; bullets and discussions
- * never affect eligibility). Tasks must additionally be unhanded-off and not
- * assigned to the human; on discussions handoff/assignee are inert leftovers
- * from a past life as a task and never gate. Sort: priority ascending (p1
- * first, missing = p3), then outline order. Sort is stable, so outline order
- * is the tie-breaker for free.
+ * open node of that kind with non-blank text and no done ancestor TASK (a
+ * closed parent task closes its umbrella; bullets and discussions never affect
+ * eligibility). Tasks must additionally be unclaimed (no `startedAt`), not
+ * blocked by an open node, and not assigned to the human; on discussions an
+ * assignee is an inert leftover from a past life as a task and never gates.
+ * Sort: priority ascending (p1 first, missing = p2), then outline order. Sort
+ * is stable, so outline order is the tie-breaker for free.
  */
 export function eligibleTasks(
   nodes: readonly KalamuNode[],
@@ -246,22 +353,31 @@ export function eligibleTasks(
   const tree = buildTree(nodes);
   const kind = options.kind ?? "task";
   const scope = options.under !== undefined ? subtreeIds(tree, requireNode(tree, options.under).id) : null;
-  const handedOffCounts = options.includeHandedOff !== true;
   return preorder(tree)
     .filter(
       (n) =>
         n.kind === kind &&
         n.text.trim() !== "" &&
         n.doneAt === null &&
-        (kind === "discussion" ||
-          ((!handedOffCounts || n.handoff === null) && n.assignee !== "human")) &&
+        (kind === "discussion" || (n.startedAt === undefined && n.assignee !== "human" && !isBlocked(tree, n))) &&
         (scope === null || scope.has(n.id)) &&
-        !ancestors(tree, n).some(
-          (a) => a.kind === "task" && (a.doneAt !== null || (handedOffCounts && a.handoff !== null)),
-        ),
+        !ancestors(tree, n).some((a) => a.kind === "task" && a.doneAt !== null),
     )
     .sort((a, b) => effectivePriority(a) - effectivePriority(b))
     .map((node) => ({ node, path: pathOf(tree, node) }));
+}
+
+/**
+ * A task is blocked while any node it waits on is still open. A blocker that
+ * no longer exists cannot block — deletes strip references, so this only
+ * guards hand-edited files, where a dangling id must not strand the task
+ * forever (`validate` reports it as an error).
+ */
+export function isBlocked(tree: Tree, node: KalamuNode): boolean {
+  return (node.blockedBy ?? []).some((id) => {
+    const blocker = tree.byId.get(id);
+    return blocker !== undefined && blocker.doneAt === null;
+  });
 }
 
 export function nextTask(nodes: readonly KalamuNode[], options: NextOptions = {}): NextResult | null {
@@ -286,11 +402,10 @@ export interface CleanResult {
 /**
  * Remove every done task together with its subtree (a done parent closes its
  * umbrella — key decision 4), plus done bullets, done discussions, and blank
- * (whitespace-only text) nodes. Handed-off-but-open tasks stay. Done
- * bullets/discussions and blank nodes never take surviving children with
- * them: neither closes its subtree (a done discussion's children are its
- * recorded outcome) and a blank node is structural, so each stays while
- * anything beneath it survives.
+ * (whitespace-only text) nodes. Done bullets/discussions and blank nodes
+ * never take surviving children with them: neither closes its subtree (a done
+ * discussion's children are its recorded outcome) and a blank node is
+ * structural, so each stays while anything beneath it survives.
  */
 export function cleanDone(nodes: readonly KalamuNode[]): CleanResult {
   const tree = buildTree(nodes);
@@ -321,7 +436,9 @@ export function cleanDone(nodes: readonly KalamuNode[]): CleanResult {
     else doneBullets += 1;
   }
   return {
-    nodes: ordered.filter((n) => !doomed.has(n.id)),
+    // Clean deletes nodes like `delete` does, so the same invariant applies:
+    // survivors must not be left blocked by an id that no longer exists.
+    nodes: stripBlockers(ordered.filter((n) => !doomed.has(n.id)), doomed),
     removed: ordered.filter((n) => doomed.has(n.id)),
     doneTasks,
     doneBullets,

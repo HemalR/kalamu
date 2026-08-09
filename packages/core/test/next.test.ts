@@ -25,14 +25,6 @@ describe("nextTask", () => {
     expect(nextTask(nodes)?.node.id).toBe("n_002");
   });
 
-  it("handed-off tasks are ignored", () => {
-    const nodes = [
-      task("n_001", { priority: 1, handoff: { at: "2026-07-09T08:00:00.000Z", target: "github", ref: "#1" } }),
-      task("n_002"),
-    ];
-    expect(nextTask(nodes)?.node.id).toBe("n_002");
-  });
-
   it("human-assigned tasks are ignored", () => {
     const nodes = [task("n_001", { priority: 1, assignee: "human" }), task("n_002", { priority: 3 })];
     expect(nextTask(nodes)?.node.id).toBe("n_002");
@@ -63,15 +55,6 @@ describe("nextTask", () => {
     expect(nextTask(nodes)?.node.id).toBe("n_003");
   });
 
-  it("tasks under a handed-off parent task are ignored", () => {
-    const nodes = [
-      task("n_001", { handoff: { at: "2026-07-09T08:00:00.000Z", target: "linear", ref: "ENG-1" } }),
-      task("n_002", { parentId: "n_001", priority: 1 }),
-      task("n_003"),
-    ];
-    expect(nextTask(nodes)?.node.id).toBe("n_003");
-  });
-
   it("bullet ancestors never affect eligibility", () => {
     const nodes = [bullet("n_001"), task("n_002", { parentId: "n_001", priority: 1 })];
     expect(nextTask(nodes)?.node.id).toBe("n_002");
@@ -93,8 +76,6 @@ describe("nextTask", () => {
 });
 
 describe("nextTask options", () => {
-  const HANDOFF = { at: "2026-07-09T08:00:00.000Z", target: "github", ref: "#1" };
-
   it("--under scopes to the subtree, including the root node itself", () => {
     const nodes = [
       task("n_001", { priority: 1 }),
@@ -114,40 +95,6 @@ describe("nextTask options", () => {
     expect(nextTask(nodes, { under: "n_002" })).toBeNull();
   });
 
-  it("includeHandedOff readmits handed-off tasks and handed-off umbrellas", () => {
-    const nodes = [
-      task("n_001", { priority: 1, handoff: HANDOFF }),
-      task("n_002", { parentId: "n_001", priority: 2 }),
-      task("n_003", { priority: 3 }),
-    ];
-    expect(nextTask(nodes)?.node.id).toBe("n_003");
-    expect(nextTask(nodes, { includeHandedOff: true })?.node.id).toBe("n_001");
-    expect(eligibleTasks(nodes, { includeHandedOff: true }).map((e) => e.node.id)).toEqual([
-      "n_001",
-      "n_002",
-      "n_003",
-    ]);
-  });
-
-  it("includeHandedOff still excludes done tasks and done umbrellas", () => {
-    const nodes = [
-      task("n_001", { priority: 1, doneAt: "2026-07-09T08:00:00.000Z", handoff: HANDOFF }),
-      task("n_002", { parentId: "n_001", priority: 1 }),
-      task("n_003", { priority: 3 }),
-    ];
-    expect(nextTask(nodes, { includeHandedOff: true })?.node.id).toBe("n_003");
-  });
-
-  it("options compose: under + includeHandedOff", () => {
-    const nodes = [
-      task("n_001", { priority: 1, handoff: HANDOFF }),
-      bullet("n_002"),
-      task("n_003", { parentId: "n_002", priority: 1, handoff: HANDOFF }),
-      task("n_004", { parentId: "n_002", priority: 3 }),
-    ];
-    expect(nextTask(nodes, { under: "n_002", includeHandedOff: true })?.node.id).toBe("n_003");
-  });
-
   it("kind: discussion queues discussions with the same sort, skipping tasks entirely", () => {
     const nodes = [
       task("n_001", { priority: 1 }),
@@ -162,12 +109,12 @@ describe("nextTask options", () => {
     expect(result?.reason).toBe("highest-priority open discussion");
   });
 
-  it("kind: discussion respects closed task umbrellas but ignores inert handoff/assignee", () => {
+  it("kind: discussion respects closed task umbrellas but ignores an inert assignee", () => {
     const nodes = [
       task("n_001", { doneAt: "2026-07-09T08:00:00.000Z" }),
       discussion("n_002", { parentId: "n_001", priority: 1 }),
-      // leftovers from a past life as a task are inert on discussions
-      discussion("n_003", { priority: 2, handoff: HANDOFF, assignee: "human" }),
+      // an assignee left over from a past life as a task is inert on discussions
+      discussion("n_003", { priority: 2, assignee: "human" }),
     ];
     expect(eligibleTasks(nodes, { kind: "discussion" }).map((e) => e.node.id)).toEqual(["n_003"]);
   });

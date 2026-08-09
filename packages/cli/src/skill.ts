@@ -2,7 +2,7 @@
  * The Kalamu agent skill (skills/kalamu/SKILL.md in the repo) is published
  * through skills.sh, whose CLI owns the hard part: it asks which agents to
  * install for and knows every agent's skills directory. `kalamu init` only
- * offers the handoff — it must never prompt when driven by an agent or a
+ * offers to delegate to it — it must never prompt when driven by an agent or a
  * script, so everything here is gated on an interactive TTY.
  */
 import { spawnSync } from "node:child_process";
@@ -10,10 +10,6 @@ import { createInterface } from "node:readline/promises";
 
 /** GitHub slug the skill installs from; must match the published repo. */
 export const SKILL_REPO = "hemalr/kalamu";
-
-export function isInteractive(): boolean {
-  return process.stdin.isTTY === true && process.stdout.isTTY === true;
-}
 
 /** `kalamu init --skill` / interactive consent → hand off to `npx skills add`. */
 export function installSkill(): void {

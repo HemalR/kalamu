@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { effectivePriority, tagColor, type KalamuNode } from "@kalamu/core";
+  import { DEFAULT_PRIORITY, deriveTags, tagColor, type KalamuNode } from "@kalamu/core";
   import { tick } from "svelte";
   import {
     caretHit,
@@ -20,10 +20,14 @@
   import type { FocusTarget, OutlineStore } from "../lib/outline.svelte";
   import { assetUrl, segmentText } from "../lib/segments";
   import { matches, SHORTCUTS as S } from "../lib/shortcuts";
+  import { summarize } from "../lib/summary";
+  import { blockedTitle, isStarted, openBlockers } from "../lib/task-state";
   import AssignMenu, { ASSIGNEE_LABELS, assigneeIcon, isAssignee, matchAssignees } from "./AssignMenu.svelte";
   import ComboMenu from "./ComboMenu.svelte";
   import Self from "./OutlineNode.svelte";
+  import PriorityBars from "./PriorityBars.svelte";
   import PriorityMenu from "./PriorityMenu.svelte";
+  import ProgressBar from "./ProgressBar.svelte";
   import TagChip from "./TagChip.svelte";
 
   interface Props {
@@ -65,13 +69,75 @@
   const children = $derived(store.visibleChildren(node.id));
   const hasChildren = $derived(children.length > 0);
   const isCollapsed = $derived(store.collapsed.has(node.id));
-  const priority = $derived(effectivePriority(node));
+  // core's effectivePriority widens to number; the field is already 1|2|3, so
+  // defaulting it here keeps the Priority type the badge and menu ask for.
+  const priority = $derived(node.priority ?? DEFAULT_PRIORITY);
   // Done bullets are visual only (strikethrough) — they stay non-work-items.
   const isDone = $derived(node.doneAt !== null);
-  const segments = $derived(segmentText(node.text));
+  // An agent's claim (SPEC key decision 17): the checkbox holds a play glyph
+  // where the CLI prints `▶`, so an in-progress task never reads as merely open.
+  const started = $derived(isStarted(node));
+  // Only OPEN blockers hold a task up — a fully-done blocker list looks normal
+  // (SPEC key decision 16).
+  const blockers = $derived(openBlockers(store.tree, node));
+  /** When the claim was made — the checkbox's tooltip while in progress. */
+  const startedTitle = $derived(
+    started && node.startedAt !== undefined
+      ? `In progress since ${new Date(node.startedAt).toLocaleString()}`
+      : undefined,
+  );
+
+  // ---- compact mode ----------------------------------------------------------
+  // Display-only. The editable below always binds the raw node.text — nobody
+  // ever edits a summary — and the store, copy, filters and the CLI never see
+  // any of this.
+
+  /** The shortened label, or null when the row shows its text in full (see lib/summary.ts). */
+  const label = $derived(store.compact ? summarize(node.text) : null);
+  const segments = $derived(segmentText(label ?? node.text));
+  /**
+   * Tags the summary cut off. They sit at the end of long text more often than
+   * not, and are the most scannable thing on a row, so they are re-attached
+   * after the clamped text rather than lost with the tail.
+   */
+  const droppedTags = $derived.by(() => {
+    if (label === null) return [];
+    const shown = new Set(deriveTags(label));
+    return deriveTags(node.text).filter((tag) => !shown.has(tag));
+  });
   const textLabel = $derived(
     node.kind === "task" ? "Task text" : node.kind === "discussion" ? "Discussion text" : "Bullet text",
   );
+
+  const ringed = $derived(hasChildren && isCollapsed);
+
+  // ---- subtree progress ------------------------------------------------------
+  // Counts come from the store's single derived pass and describe the REAL
+  // tree, so a filter or hide-done never rewrites them (see @kalamu/core's
+  // progress.ts). The bar lives on its own row under this one.
+
+  const progress = $derived(store.progress.get(node.id) ?? { total: 0, done: 0, active: 0 });
+  /**
+   * One actionable descendant is enough — there is no minimum. Read off the
+   * REAL children, not the visible ones: whether the row owns a bar must not
+   * depend on a filter, or toggling one would reflow the whole outline.
+   */
+  const showBar = $derived(
+    (store.tree.children.get(node.id) ?? []).some((child) => (store.progress.get(child.id)?.total ?? 0) > 0),
+  );
+  /** Exact numbers only where attention is — see the store's captionIds. */
+  const showCaption = $derived(store.captionIds.has(node.id));
+
+  /**
+   * Tell the store where the caret is, for the caption rule. The cleanup also
+   * covers unmount; clearCaret only clears a claim this node still owns — when
+   * focus moves, the new owner may register before this one tears down.
+   */
+  $effect(() => {
+    if (!editing) return;
+    store.setCaret(node.id);
+    return () => store.clearCaret(node.id);
+  });
 
   /** Mount the editable (if needed), then place the caret. */
   async function focusAt(target: FocusTarget): Promise<void> {
@@ -599,7 +665,15 @@
 />
 
 <div class="node" {@attach registerHandle}>
-  <div class={["row", { done: isDone, discussion: node.kind === "discussion" }]} bind:this={rowEl}>
+  <!-- Pointer position feeds the progress bar's caption rule (store.captionIds);
+       the row has no other pointer behaviour of its own. -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class={["row", { done: isDone, discussion: node.kind === "discussion" }]}
+    bind:this={rowEl}
+    onpointerenter={() => store.setHover(node.id)}
+    onpointerleave={() => store.clearHover(node.id)}
+  >
     {#if hasChildren}
       <button
         class={["chevron", { closed: isCollapsed }]}
@@ -617,10 +691,11 @@
     {#if node.kind !== "bullet"}
       {#if node.kind === "task"}
         <button
-          class={["glyph", "check", { ringed: hasChildren && isCollapsed }]}
+          class={["glyph", "check", { ringed, started }]}
           role="checkbox"
           aria-checked={isDone}
-          aria-label={isDone ? "Reopen task" : "Mark task done"}
+          aria-label={isDone ? "Reopen task" : started ? "Mark in-progress task done" : "Mark task done"}
+          title={startedTitle}
           tabindex="-1"
           onclick={() => store.toggleDone(node.id)}
         >
@@ -628,12 +703,16 @@
             <svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">
               <path d="M3 8.5 6.5 12 13 4.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
             </svg>
+          {:else if started}
+            <svg viewBox="0 0 16 16" width="8" height="8" aria-hidden="true">
+              <path d="M4.5 3 12 8l-7.5 5z" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+            </svg>
           {/if}
         </button>
       {:else}
         <!-- Speech bubble in place of the checkbox (SPEC key decision 12); clicking toggles done all the same. -->
         <button
-          class={["glyph", "bubble", { ringed: hasChildren && isCollapsed }]}
+          class={["glyph", "bubble", { ringed }]}
           role="checkbox"
           aria-checked={isDone}
           aria-label={isDone ? "Reopen discussion" : "Mark discussion done"}
@@ -666,7 +745,7 @@
            discussion bubble keep their toggle-done click — keyboard and
            breadcrumbs cover zooming those kinds. -->
       <button
-        class={["glyph", "dot", { ringed: hasChildren && isCollapsed }]}
+        class={["glyph", "dot", { ringed }]}
         aria-label="Zoom in"
         title="Zoom in"
         tabindex="-1"
@@ -680,14 +759,15 @@
          behavior, handled by core). -->
     <span class="prio-wrap" bind:this={prioWrap}>
       <button
-        class={["prio", `p${priority}`, { ghost: priority === 2 || node.kind === "bullet" }]}
+        class={["prio", { ghost: priority === 2 || node.kind === "bullet" }]}
         aria-haspopup="menu"
         aria-expanded={prioOpen}
+        aria-label="Priority p{priority} — set priority"
         title={node.kind === "bullet" ? "Set priority (makes this a task)" : "Set priority"}
         tabindex="-1"
         onclick={() => (prioOpen = !prioOpen)}
       >
-        p{priority}
+        <PriorityBars {priority} />
       </button>
       {#if prioOpen}
         <PriorityMenu
@@ -747,11 +827,12 @@
         {/if}
       {:else}
         <div
-          class="text display"
+          class={["text", "display", { clamped: store.compact }]}
           role="textbox"
           tabindex="0"
           aria-multiline="false"
           aria-label={textLabel}
+          title={label === null ? undefined : node.text}
           onpointerdown={onDisplayPointerDown}
           onfocus={onDisplayFocus}
           {@attach registerDisplay}
@@ -788,8 +869,37 @@
             {:else}
               <span data-start={seg.start}>{seg.text}</span>
             {/if}
-          {/each}
+          {/each}{#if label !== null}<span class="more">…</span>{/if}
         </div>
+        <!-- Outside the clamped box on purpose: these are the tags the summary
+             cut off, and a clamp that could hide them again would defeat them. -->
+        {#if droppedTags.length > 0}
+          <span class="cut-tags">
+            {#each droppedTags as tag (tag)}
+              <TagChip
+                {tag}
+                color={tagColor(tag, store.meta.tags)}
+                onSetColor={(color) => store.setTagColor(tag, color)}
+                onFilter={() => store.setFilter(tag)}
+              />
+            {/each}
+          </span>
+        {/if}
+      {/if}
+
+      <!-- What the task waits on (SPEC key decision 16). Read-only signal: the
+           palette's Unblock owns the editing, so this stays a plain label —
+           role="img" + aria-label so the tooltip is announced, not just hovered. -->
+      {#if blockers.length > 0}
+        {@const title = blockedTitle(blockers)}
+        <span class="blocked" role="img" aria-label={title} {title}>
+          <!-- Lucide lock, restroked to match the row's other icons. -->
+          <svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true">
+            <rect x="3" y="11" width="18" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="2.25" />
+            <path d="M7 11V7a5 5 0 0 1 10 0v4" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" />
+          </svg>
+          <span>{blockers.length > 1 ? `Blocked ×${blockers.length}` : "Blocked"}</span>
+        </span>
       {/if}
 
       {#if node.assignee}
@@ -818,9 +928,6 @@
           {/if}
         </span>
       {/if}
-      {#if node.handoff}
-        <span class="handoff" title={node.handoff.ref}>→ {node.handoff.target}</span>
-      {/if}
       <!-- Absolute in the row's right gutter and mounted even while editing, so
            entering/leaving edit mode never shifts the row; CSS reveals it on
            row hover/focus. Clicking mid-edit blurs the editable, which commits
@@ -845,6 +952,18 @@
     </div>
   </div>
 
+  <!-- Its own row, under the parent and above the children. Rendered for every
+       qualifying node whatever the state of the outline: a bar that appeared on
+       hover would shove the hovered row out from under the pointer and
+       oscillate. Only the caption comes and goes, and the row's fixed height
+       keeps even that free of reflow. Presentational — no tab stop, no
+       handlers, so click-to-edit and caret navigation never see it. -->
+  {#if showBar}
+    <div class="bar-row">
+      <ProgressBar done={progress.done} active={progress.active} total={progress.total} caption={showCaption} />
+    </div>
+  {/if}
+
   {#if hasChildren && !isCollapsed}
     <div class="children">
       {#each children as child (child.id)}
@@ -855,6 +974,16 @@
 </div>
 
 <style>
+  /* The gutter every row carries, kept in the pieces it is actually made of so
+     one edit moves everything that depends on it. .content — the row's text —
+     starts at --text-col, and the progress bar row lines up with that. */
+  .node {
+    --glyph-col: 18px;
+    --prio-col: 27px;
+    --prio-gap: 3px;
+    --text-col: calc(var(--glyph-col) + var(--prio-col) + var(--prio-gap));
+  }
+
   .row {
     position: relative;
     display: flex;
@@ -893,7 +1022,7 @@
 
   .glyph {
     flex: none;
-    width: 18px;
+    width: var(--glyph-col);
     height: 26px;
     display: flex;
     align-items: center;
@@ -921,7 +1050,7 @@
   }
 
   .check {
-    position: relative;
+    position: relative; /* the checkmark/play svg overlays the ::after box */
     padding: 0;
     border: none;
     background: none;
@@ -942,6 +1071,14 @@
   .check svg {
     position: absolute;
     z-index: 1;
+  }
+  /* Claimed and still open: the box keeps its outline (the work isn't done)
+     and holds the play glyph, the CLI's `▶`. */
+  .check.started {
+    color: var(--started);
+  }
+  .check.started::after {
+    border-color: var(--started);
   }
   .row.done .check {
     color: var(--bg);
@@ -989,12 +1126,42 @@
     white-space: pre-wrap;
   }
 
+  /* Compact mode. The summary shortens 96 rows in 118 (see lib/summary.ts) but
+     some of what survives is still 265 characters, and a row that is already
+     its own summary can be long too — so the two-line clamp is what actually
+     bounds the height, and it applies to every row while compact is on. Only
+     the display rendering: the editable is never clamped. */
+  .text.clamped {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+  }
+
+  /* "Something was cut" — chrome, not text. Its span is butted straight against
+     {/each} in the markup: .text is pre-wrap, so a newline there would render
+     as a real space before the ellipsis. It carries no data-start either, so a
+     click on it maps to the end of the FULL text. */
+  .more {
+    color: var(--muted);
+  }
+
+  .cut-tags {
+    flex: none;
+    align-self: center;
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
   .row.done .text {
     color: var(--done);
     text-decoration: line-through;
   }
   /* Chips read as content, not as struck-through text. */
-  .row.done .chip-slot {
+  .row.done .chip-slot,
+  .row.done .cut-tags {
     opacity: 0.6;
   }
 
@@ -1031,40 +1198,30 @@
   .prio-wrap {
     position: relative;
     flex: none;
-    width: 27px;
+    width: var(--prio-col);
     height: 26px;
     display: flex;
     align-items: center;
-    margin-right: 3px;
+    margin-right: var(--prio-gap);
   }
 
+  /* The bars carry the signal, so the button is bare chrome — it fills the
+     gutter purely to give the 11px glyph a comfortable hit area. */
   .prio {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    padding: 0;
     border: none;
-    cursor: pointer;
-    font: inherit;
-    font-size: 11px;
-    font-weight: 600;
-    line-height: 1;
-    padding: 2.5px 5px;
     border-radius: 4px;
     background: none;
-  }
-  .prio.p1 {
-    color: var(--p1);
-    background: color-mix(in srgb, var(--p1) 14%, transparent);
-  }
-  .prio.p3 {
-    color: var(--muted);
-    background: color-mix(in srgb, var(--muted) 12%, transparent);
-    font-weight: 500;
+    cursor: pointer;
   }
   /* Default (p2) — and any bullet — shows no badge, only a ghost affordance
-     on hover/focus. background: none beats .p1/.p3's tint on bullets that
-     carry an inert stored priority. */
+     on hover/focus. */
   .prio.ghost {
-    color: var(--muted);
-    background: none;
-    font-weight: 500;
     opacity: 0;
     transition: opacity 0.1s;
   }
@@ -1072,6 +1229,29 @@
   .row:focus-within .prio.ghost,
   .prio.ghost[aria-expanded="true"] {
     opacity: 0.5;
+  }
+
+  /* Same footprint as a tag chip, so the row's right-hand furniture lines up;
+     the count only appears when more than one blocker is open. */
+  .blocked {
+    flex: none;
+    align-self: center;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    font-weight: 500;
+    line-height: 1;
+    color: var(--blocked);
+    background: color-mix(in srgb, var(--blocked) 14%, transparent);
+    user-select: none;
+    cursor: help;
+  }
+  /* A done task's badge is history, not a warning. */
+  .row.done .blocked {
+    opacity: 0.6;
   }
 
   .assign-wrap {
@@ -1124,13 +1304,6 @@
     border-radius: 999px;
     color: var(--tag-color);
     background: color-mix(in srgb, var(--tag-color) 15%, transparent);
-  }
-
-  .handoff {
-    flex: none;
-    align-self: center;
-    font-size: 12px;
-    color: var(--muted);
   }
 
   /* In the row's right gutter (main's 32px right padding, which every nesting
@@ -1187,6 +1360,18 @@
     top: 0;
     bottom: 0;
     width: 32px;
+  }
+
+  /* Starts exactly where THIS row's text starts — the bar reads as a footer to
+     its own row, not as the first of its children. Height is fixed rather than
+     intrinsic: the caption is taller than the dashes, and it must be able to
+     appear without moving anything. */
+  .bar-row {
+    display: flex;
+    align-items: center;
+    height: 14px;
+    padding-left: var(--text-col);
+    user-select: none;
   }
 
   /* Every row now carries the same gutter — glyph (18px) + prio column

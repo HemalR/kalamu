@@ -6,6 +6,14 @@ import { registerProject } from "./registry.js";
 export class CliError extends Error {}
 
 /**
+ * "Is a human at the keyboard?" — gates update banners (SPEC key decision 14),
+ * init prompts, and the createdBy provenance heuristic (key decision 15).
+ */
+export function isInteractive(): boolean {
+  return process.stdin.isTTY === true && process.stdout.isTTY === true;
+}
+
+/**
  * Heuristic for "this directory is a code repository": a common repo marker
  * directly in the directory — `.git` covers any language (a file in worktrees,
  * hence existsSync not a dir check); `.gitignore`/`package.json` cover fresh

@@ -11,7 +11,6 @@ export function makeNode(overrides: Partial<KalamuNode> & { id?: string }): Kala
     text: `node ${counter}`,
     createdAt: "2026-07-09T07:00:00.000Z",
     doneAt: null,
-    handoff: null,
     ...overrides,
   };
 }

@@ -16,14 +16,83 @@ under `Added` / `Changed` / `Fixed` / `Removed`.
 
 ## [Unreleased]
 
+### Removed
+
+- **`handoff` is gone** — the field, the `Handoff` type, `kalamu handoff` and
+  `kalamu unhandoff`, `kalamu next --include-handed-off`, `kalamu list
+  --handoff`, and `POST /api/nodes/:id/handoff`. In ten months of dogfooding
+  not one node ever carried a non-null handoff: the forwarding address was a
+  thing nobody looked up, paid for with a mandatory nullable field on every
+  line of every outline. A task that outgrows Kalamu is now created in the
+  other tracker and **deleted** here — Kalamu keeps no forwarding record, so
+  an agent that promotes a task must delete it or the next agent will do the
+  work again. Existing outlines still read: a non-null handoff merges into the
+  node's text as the same `→ target:ref` suffix the CLI used to print, so
+  nothing is silently discarded on upgrade; a null one is dropped.
+
 ### Added
 
+- **Claim a task before working on it.** `kalamu start <id>` records
+  `startedAt`, and `kalamu next` stops offering claimed tasks — two agent
+  sessions no longer receive the same task and both do it. `kalamu end <id>`
+  releases a claim without completing the task (back in the queue); `kalamu
+  done` keeps `startedAt` as a record of how long the work took. Lingering
+  claims from a session that died show up in `kalamu list --started` and are
+  taken over with `kalamu start <id> --force`. In the UI a claimed task shows
+  a play glyph in its checkbox, and the palette offers Start/End.
+- **Blockers.** `kalamu block <id> --by <blockerId>` (repeatable, also
+  `kalamu add --blocked-by`) records that a task waits on another node;
+  `kalamu next` skips it until every blocker is done. `kalamu unblock <id>`
+  clears one blocker or all of them, and `kalamu list --blocked` shows what's
+  waiting. Blockers cross the tree freely — dependency order and outline order
+  are different things — and both blocker cycles and references to missing
+  nodes are `kalamu validate` errors. Deleting a node removes it from every
+  `blockedBy` that mentions it. The palette has "Block on…" and "Unblock".
+- **Provenance: Kalamu records who wrote each node.** Agent-created nodes get
+  `"createdBy": "agent"` automatically — the web UI is always the human, a
+  non-interactive CLI invocation is an agent — so no agent has to remember a
+  flag. `--by human|agent` on `add`/`update` corrects the detection, and
+  `kalamu list --created-by` filters by it. Authorship never affects the
+  queue. This is what makes it safe for an agent to keep its own forward work
+  in your outline: you can hide agent-created items while you're thinking.
+- **Filter menu** in the UI header: show or hide items by who created them and
+  who they're assigned to, with the show/hide-completed toggle (Cmd/Ctrl+Shift+H)
+  now living in the same menu. Filters persist per project, and the ancestors
+  of a matching item always stay visible so the outline never tears apart.
+- **Compact mode**, a header toggle that shortens every row to a derived
+  one-line label so a long outline stays scannable. Nothing is stored — the
+  full text is there the moment you edit the row, and copy, the CLI and the
+  file never see the label.
+- **Progress bars**: any item with work beneath it carries a segmented bar
+  showing what's done, what's in progress, and what's left, with exact counts
+  where your attention is. Counts describe the real tree, so hiding completed
+  items or filtering never makes progress move.
 - `kalamu stop`: stops a `kalamu open` server (or a foreground `kalamu hub`)
   left running in a terminal tab you've lost track of. `open` and a
   foreground `hub` now write a PID lock (`.kalamu/server.lock`,
   `~/.kalamu/hub.lock`) on startup and clean it up on graceful shutdown; a
   launchd-installed hub is left to `kalamu hub uninstall`/`restart` instead,
   since `stop` would just get relaunched by `KeepAlive`.
+- HTTP API: `POST /api/nodes/:id/start` (body `{"force": true}` to re-claim),
+  `POST /api/nodes/:id/end`, `POST /api/nodes/:id/block` (409 on a cycle), and
+  `DELETE /api/nodes/:id/block/:byId` (omit `:byId` to clear all).
+
+### Changed
+
+- The priority badge is now three small bars rather than the literal text
+  `p1`/`p2`/`p3` — the same information at a glance without a word of jargon
+  on every row.
+- The hub sidebar's open-task count no longer excludes handed-off tasks
+  (there are none); claimed and blocked tasks still count as open work.
+
+### Fixed
+
+- `GET /api/next` reported a missing priority as `3`; it now reports the real
+  default, `2`. Only the API response was wrong — queue order was always
+  correct.
+- The server validated `ui-state.json` with its own copy of the schema, which
+  had drifted from core's and silently stripped a view-state key on write. It
+  now uses core's schema directly.
 
 ## [0.9.0] - 2026-07-20
 
