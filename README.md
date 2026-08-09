@@ -24,6 +24,12 @@ Or install globally:
 npm install -g kalamu
 ```
 
+**Using a Node version manager?** A global npm install lives inside whichever Node runtime was active when you ran it (`…/node/24.19.0/lib/node_modules/kalamu`), so installing a newer Node — or a manager that rolls forward on its own — can leave the `kalamu` on your `PATH` pointing at an older copy. The symptom is `kalamu --version` disagreeing with what you just installed. With [Vite+](https://viteplus.dev), install it outside any single runtime instead:
+
+```bash
+vp install -g kalamu
+```
+
 Kalamu checks npm about once a day and tells you — on the command line and in the UI — when a newer version is out (it never updates itself). That daily check is the only network call it makes; turn it off with `export KALAMU_NO_UPDATE_CHECK=1` or `kalamu config update-check off`.
 
 ## Quickstart
