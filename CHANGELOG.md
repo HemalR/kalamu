@@ -16,6 +16,8 @@ under `Added` / `Changed` / `Fixed` / `Removed`.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-08-09
+
 ### Removed
 
 - **`handoff` is gone** — the field, the `Handoff` type, `kalamu handoff` and
