@@ -726,7 +726,7 @@
        the capture-phase chords are the row's only other pointer behaviour. -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class={["row", { done: isDone, discussion: node.kind === "discussion" }]}
+    class={["row", { done: isDone, discussion: node.kind === "discussion", caret: editing }]}
     bind:this={rowEl}
     onpointerdowncapture={onRowPointerDownCapture}
     onclickcapture={onRowClickCapture}
@@ -1049,6 +1049,13 @@
     align-items: flex-start;
     padding: 1px 0;
     border-radius: 4px;
+  }
+  /* The only place the row itself is tinted: it marks where the caret is.
+     Tracks the editable's own focus rather than :focus-within because clicking
+     the priority/assignee buttons focuses them in some browsers without ever
+     moving the caret into the text. */
+  .row.caret {
+    background: var(--caret-row);
   }
 
   .chevron {

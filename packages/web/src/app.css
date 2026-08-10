@@ -13,6 +13,9 @@
   --done: light-dark(#a8afb8, #5f6771);
   --bullet: light-dark(#b7bec7, #5c646e);
   --ring: light-dark(rgba(70, 80, 90, 0.18), rgba(190, 200, 210, 0.2));
+  /* Tint for the one row holding the text caret, so "where am I" stays visible.
+     Deliberately lighter than --ring: it must not read as a selection. */
+  --caret-row: light-dark(rgba(70, 80, 90, 0.07), rgba(190, 200, 210, 0.075));
   --check-border: light-dark(#aab2bb, #5c646e);
   --guide: light-dark(rgba(20, 30, 40, 0.09), rgba(220, 230, 240, 0.09));
   /* Brand accent (bronze ink) — the wordmark's k and the favicon. Lightened
