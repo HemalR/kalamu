@@ -5,6 +5,7 @@ import * as commands from "./commands.js";
 import { readConfig, updateCheckEnabled, writeConfig } from "./config.js";
 import { CliError, isInteractive, looksLikeRepo, type CommandResult } from "./context.js";
 import { installHubAgent, restartHub, runHub, uninstallHubAgent } from "./hub.js";
+import { forgetHubProject, listHubProjects } from "./hub-commands.js";
 import { open } from "./open.js";
 import { askYesNo, installSkill, offerSkillInstall } from "./skill.js";
 import { stopKalamu } from "./stop.js";
@@ -155,16 +156,22 @@ program
   });
 
 program
-  .command("hub [action]")
-  .description("run the multi-project hub (all registered projects, one UI); actions: install, uninstall")
+  .command("hub [action] [slug]")
+  .description("run or manage the multi-project hub; actions: list, forget, install, uninstall")
   .option("--port <port>", "port to listen on (default 4400)")
   .option("--no-browser", "do not open a browser")
-  .action(async (action: string | undefined, opts: { port?: string; browser?: boolean }) => {
+  .option("--format <format>", "output format for list/forget (text|json)")
+  .action(async (action: string | undefined, slug: string | undefined, opts: { port?: string; browser?: boolean; format?: string }) => {
     try {
-      if (action === "install") installHubAgent();
+      if (action === "list") {
+        if (slug !== undefined) throw new Error("hub list does not accept a project slug");
+        run(listHubProjects, opts);
+      } else if (action === "forget") run(() => forgetHubProject(slug), opts);
+      else if (slug !== undefined) throw new Error(`hub ${action ?? ""} does not accept a project slug`);
+      else if (action === "install") installHubAgent();
       else if (action === "uninstall") uninstallHubAgent();
       else if (action === undefined) await runHub(opts);
-      else throw new Error(`unknown hub action "${action}" (expected install or uninstall)`);
+      else throw new Error(`unknown hub action "${action}" (expected list, forget, install or uninstall)`);
     } catch (err) {
       console.error(`kalamu: ${(err as Error).message}`);
       process.exitCode = 1;

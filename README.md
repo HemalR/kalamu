@@ -62,6 +62,15 @@ kalamu hub
 
 One local server for every Kalamu project on your machine: `http://127.0.0.1:4400` shows them all in a sidebar, and any repo you've run a `kalamu` command in appears there automatically. It runs in the foreground and installs nothing — Ctrl+C and it's gone (or `kalamu stop` if you've lost track of which tab it's in — this also stops a standalone `kalamu open` server for the current project). While a hub is running, `kalamu open` routes your browser to it instead of starting another server — and if you've `hub install`ed but it's not currently running, `open` wakes it first.
 
+To remove an old entry without touching that project's files:
+
+```bash
+kalamu hub list
+kalamu hub forget <slug>
+```
+
+The next Kalamu command run inside a forgotten project registers it again.
+
 Like it? Make it permanent (macOS):
 
 ```bash

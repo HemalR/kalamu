@@ -1763,6 +1763,8 @@ A project can be renamed from the hub sidebar (inline edit). The rename sets an 
 kalamu hub                # foreground server on 127.0.0.1:4400
 kalamu hub --port 4500
 kalamu hub --no-browser
+kalamu hub list           # list registered project slugs and paths
+kalamu hub forget <slug>  # remove one project from the sidebar; repo data is untouched
 kalamu hub install        # launchd user agent (macOS): start at login
 kalamu hub uninstall
 kalamu restart            # restart the installed hub (picks up updated code)
@@ -1786,7 +1788,7 @@ Behaviour:
 * Per-project server instances are the existing `createServer()` — created lazily on first request for a slug, torn down after an idle period so the hub doesn't hold file watchers for dormant projects.
 * The sidebar lists projects in **registry array order** — a manual order, dragged into place row by row in the UI (`PATCH {"index": n}` moves a project to 0-based position n, clamped). New projects register at the end; re-registration touches `lastSeenAt` only and never moves an entry. Recency deliberately does not order the sidebar — a stable order is what keeps the `Mod+Shift+1…9` project shortcuts stable — and only picks which project `GET /` lands on.
 * Every project has a **theme colour** so multiple Kalamus are tellable apart at a glance: the sidebar is tinted with the active project's colour and each row carries a swatch. Like tag colours (key decision 7), the colour is the slug hashed into the shared palette — automatic, stable, stored nowhere — until a swatch pick stores an override in the registry (`PATCH {"color": "#rrggbb"}`; blank clears back to derived).
-* Removing a project from the sidebar is a **forget**, consistent with the registry being plumbing: the entry is dropped, the project's `.kalamu/` data is untouched, and the next kalamu command run inside the project re-registers it. Because it is non-destructive, the UI's per-entry remove affordance asks for no confirmation.
+* Removing a project from the sidebar is a **forget**, consistent with the registry being plumbing: the entry is dropped, the project's `.kalamu/` data is untouched, and the next kalamu command run inside the project re-registers it. The UI's per-entry remove affordance and `kalamu hub forget <slug>` both expose this operation without confirmation because it is non-destructive; `kalamu hub list` prints the stable slugs and paths needed to identify entries from the terminal.
 * SSE live reload, mtime-checked atomic writes, and undo work unchanged per project; hub, standalone `kalamu open` servers, and CLI agents can all write concurrently because every writer already does mtime-checked atomic writes.
 * `kalamu hub install` writes a launchd user agent (macOS first; systemd user unit later) so the hub is always up and `http://localhost:4400` becomes a permanent bookmark — the terminal disappears from the human workflow entirely.
 * A launchd-managed hub (installed plist, launchd is the parent process) polls the bundle it was started from (~30s) and exits once a replaced one has settled on disk (mtime changed and ≥10s old, so a mid-write install never counts), letting `KeepAlive` restart it on the new code. Otherwise a CLI update refreshes the web assets (served from disk) while the server process keeps running months-old code. This is a restart, not a self-update — the human still installs updates (key decision 14) — and `kalamu restart` remains the way to force it immediately. A foreground hub never self-exits; it belongs to whoever's terminal it runs in.
