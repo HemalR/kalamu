@@ -119,13 +119,11 @@
 
   const progress = $derived(store.progress.get(node.id) ?? { total: 0, done: 0, active: 0 });
   /**
-   * One actionable descendant is enough — there is no minimum. Read off the
-   * REAL children, not the visible ones: whether the row owns a bar must not
-   * depend on a filter, or toggling one would reflow the whole outline.
+   * One actionable descendant is enough — including a direct leaf child. The
+   * store count already covers the node's full REAL subtree, excluding the
+   * node itself, so filters and hide-done never change whether the bar renders.
    */
-  const showBar = $derived(
-    (store.tree.children.get(node.id) ?? []).some((child) => (store.progress.get(child.id)?.total ?? 0) > 0),
-  );
+  const showBar = $derived(progress.total > 0);
   /** Exact numbers only where attention is — see the store's captionIds. */
   const showCaption = $derived(store.captionIds.has(node.id));
 

@@ -5,13 +5,13 @@
  * kinds that represent work to be done. Bullets are thinking, not work, and
  * never count (a done bullet is strikethrough only — SPEC key decision 3).
  *
- * A node counts ITSELF when it is actionable, so a task with three subtasks is
- * four units: the children being finished does not finish the parent's own
- * work. A done ancestor task closes its whole subtree (SPEC key decision 4),
- * so everything beneath it counts as done regardless of its own `doneAt` —
- * the same rule `eligibleTasks` applies, or the ring would disagree with
- * `next`. A done discussion closes nothing (key decision 12): it counts as one
- * finished unit and its children keep counting individually.
+ * A node's progress excludes the node itself and counts all actionable
+ * descendants, however deeply nested. A task with three subtasks is therefore
+ * three units. A done ancestor task closes its whole subtree (SPEC key decision
+ * 4), so everything beneath it counts as done regardless of its own `doneAt`
+ * — the same rule `eligibleTasks` applies, or the ring would disagree with
+ * `next`. A done discussion closes nothing (key decision 12): its descendants
+ * keep counting individually.
  *
  * Counts describe the real tree. Filters and hide-done change what is
  * rendered, never the totals — otherwise turning hide-done on would empty
@@ -21,7 +21,7 @@ import type { KalamuNode } from "./model.js";
 import type { Tree } from "./tree.js";
 
 export interface Progress {
-  /** Actionable units in the subtree, the node itself included. */
+  /** Actionable descendants of the node, excluding the node itself. */
   total: number;
   done: number;
   /** Claimed but unfinished — a task with `startedAt` and no `doneAt`. */
@@ -37,48 +37,51 @@ function isActionable(node: KalamuNode): boolean {
  * Progress for every node in the tree, keyed by id. One bottom-up pass — call
  * it once per outline change rather than once per row.
  */
-export function progressByNode(tree: Tree): Map<string, Progress> {
+function calculateProgress(tree: Tree): { byNode: Map<string, Progress>; outline: Progress } {
   const out = new Map<string, Progress>();
   /** `closed` = a done ancestor task already finished everything below it. */
   const visit = (node: KalamuNode, closed: boolean): Progress => {
     const shut = closed || (node.kind === "task" && node.doneAt !== null);
-    let total = 0;
-    let done = 0;
-    let active = 0;
+    let ownTotal = 0;
+    let ownDone = 0;
+    let ownActive = 0;
     if (isActionable(node)) {
-      total = 1;
+      ownTotal = 1;
       // A claim on a closed task is spent: closure wins, and a task can carry
       // both timestamps. Discussions are never claimed (no `kalamu start`).
-      if (shut || node.doneAt !== null) done = 1;
-      else if (node.kind === "task" && node.startedAt !== undefined) active = 1;
+      if (shut || node.doneAt !== null) ownDone = 1;
+      else if (node.kind === "task" && node.startedAt !== undefined) ownActive = 1;
     }
+    let descendants: Progress = { total: 0, done: 0, active: 0 };
     for (const child of tree.children.get(node.id) ?? []) {
       const sub = visit(child, shut);
-      total += sub.total;
-      done += sub.done;
-      active += sub.active;
+      descendants.total += sub.total;
+      descendants.done += sub.done;
+      descendants.active += sub.active;
     }
-    const result: Progress = { total, done, active };
-    out.set(node.id, result);
-    return result;
+    out.set(node.id, descendants);
+    return {
+      total: ownTotal + descendants.total,
+      done: ownDone + descendants.done,
+      active: ownActive + descendants.active,
+    };
   };
-  for (const root of tree.children.get(null) ?? []) visit(root, false);
-  return out;
+  const outline: Progress = { total: 0, done: 0, active: 0 };
+  for (const root of tree.children.get(null) ?? []) {
+    const sub = visit(root, false);
+    outline.total += sub.total;
+    outline.done += sub.done;
+    outline.active += sub.active;
+  }
+  return { byNode: out, outline };
+}
+
+export function progressByNode(tree: Tree): Map<string, Progress> {
+  return calculateProgress(tree).byNode;
 }
 
 /** Progress for one subtree; `rootId: null` totals the whole outline. */
 export function progressOf(tree: Tree, rootId: string | null): Progress {
-  const all = progressByNode(tree);
-  if (rootId !== null) return all.get(rootId) ?? { total: 0, done: 0, active: 0 };
-  let total = 0;
-  let done = 0;
-  let active = 0;
-  for (const root of tree.children.get(null) ?? []) {
-    const p = all.get(root.id);
-    if (!p) continue;
-    total += p.total;
-    done += p.done;
-    active += p.active;
-  }
-  return { total, done, active };
+  const result = calculateProgress(tree);
+  return rootId === null ? result.outline : (result.byNode.get(rootId) ?? { total: 0, done: 0, active: 0 });
 }

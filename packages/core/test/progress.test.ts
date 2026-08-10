@@ -19,8 +19,18 @@ describe("progressOf", () => {
     expect(progress(nodes, "n_root")).toEqual({ total: 2, done: 1, active: 0 });
   });
 
-  it("an actionable node counts itself", () => {
+  it("an actionable parent does not count itself", () => {
     const nodes = [task("n_root"), task("n_a", { parentId: "n_root", doneAt: DONE })];
+    expect(progress(nodes, "n_root")).toEqual({ total: 1, done: 1, active: 0 });
+  });
+
+  it("counts actionable descendants at every depth", () => {
+    const nodes = [
+      bullet("n_root"),
+      bullet("n_child", { parentId: "n_root" }),
+      task("n_grandchild", { parentId: "n_child" }),
+      discussion("n_great_grandchild", { parentId: "n_grandchild", doneAt: DONE }),
+    ];
     expect(progress(nodes, "n_root")).toEqual({ total: 2, done: 1, active: 0 });
   });
 
@@ -30,9 +40,9 @@ describe("progressOf", () => {
       task("n_a", { parentId: "n_root" }),
       task("n_b", { parentId: "n_a" }),
     ];
-    expect(progress(nodes, "n_root")).toEqual({ total: 3, done: 3, active: 0 });
+    expect(progress(nodes, "n_root")).toEqual({ total: 2, done: 2, active: 0 });
     // Nodes inside the closed subtree read as complete in their own right.
-    expect(progress(nodes, "n_a")).toEqual({ total: 2, done: 2, active: 0 });
+    expect(progress(nodes, "n_a")).toEqual({ total: 1, done: 1, active: 0 });
   });
 
   it("a done discussion closes nothing — its children keep counting", () => {
@@ -41,7 +51,7 @@ describe("progressOf", () => {
       task("n_a", { parentId: "n_root" }),
       bullet("n_b", { parentId: "n_root" }),
     ];
-    expect(progress(nodes, "n_root")).toEqual({ total: 2, done: 1, active: 0 });
+    expect(progress(nodes, "n_root")).toEqual({ total: 1, done: 0, active: 0 });
   });
 
   it("a done bullet closes nothing and never counts itself", () => {
@@ -59,8 +69,8 @@ describe("progressOf", () => {
     expect(progress(nodes, "n_root")).toEqual({ total: 1, done: 0, active: 0 });
   });
 
-  it("a leaf task is one open unit", () => {
-    expect(progress([task("n_a")], "n_a")).toEqual({ total: 1, done: 0, active: 0 });
+  it("a leaf task has no descendant units", () => {
+    expect(progress([task("n_a")], "n_a")).toEqual({ total: 0, done: 0, active: 0 });
   });
 
   it("null totals the whole outline", () => {
@@ -83,14 +93,14 @@ describe("progressOf", () => {
     expect(progress(nodes, "n_root")).toEqual({ total: 3, done: 1, active: 1 });
   });
 
-  it("a claim on a finished task is spent — done wins over active", () => {
-    const nodes = [task("n_a", { startedAt: STARTED, doneAt: DONE })];
-    expect(progress(nodes, "n_a")).toEqual({ total: 1, done: 1, active: 0 });
+  it("a claim on a finished descendant is spent — done wins over active", () => {
+    const nodes = [bullet("n_root"), task("n_a", { parentId: "n_root", startedAt: STARTED, doneAt: DONE })];
+    expect(progress(nodes, "n_root")).toEqual({ total: 1, done: 1, active: 0 });
   });
 
   it("a closed subtree has no active work left", () => {
     const nodes = [task("n_root", { doneAt: DONE }), task("n_a", { parentId: "n_root", startedAt: STARTED })];
-    expect(progress(nodes, "n_root")).toEqual({ total: 2, done: 2, active: 0 });
+    expect(progress(nodes, "n_root")).toEqual({ total: 1, done: 1, active: 0 });
   });
 
   it("an unknown id is empty, not a throw", () => {
@@ -107,7 +117,7 @@ describe("progressByNode", () => {
     ];
     const map = progressByNode(buildTree(nodes));
     expect([...map.keys()].sort()).toEqual(["n_a", "n_b", "n_root"]);
-    expect(map.get("n_a")).toEqual({ total: 2, done: 1, active: 0 });
-    expect(map.get("n_b")).toEqual({ total: 1, done: 1, active: 0 });
+    expect(map.get("n_a")).toEqual({ total: 1, done: 1, active: 0 });
+    expect(map.get("n_b")).toEqual({ total: 0, done: 0, active: 0 });
   });
 });
