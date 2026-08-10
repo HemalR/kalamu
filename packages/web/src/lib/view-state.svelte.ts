@@ -58,7 +58,12 @@ export class OutlineViewState extends OutlineDocument {
    * in ui-state.json (SPEC key decision 15). An absent axis shows everything.
    */
   filters = $state.raw<OutlineFilters>({});
-  /** Nodes created while a filter is active stay visible until it changes. */
+  /**
+   * Reprieved ids: visible until the filters next change, whatever the filters
+   * say — hideDone included. Two sources, both cases where the reader's own
+   * action put a node in front of them: creating one under an active filter
+   * (revealNewNode) and jumping to one (revealNode).
+   */
   private filterExtras = new SvelteSet<string>();
 
   private uiStateTimer: ReturnType<typeof setTimeout> | undefined;
@@ -127,10 +132,17 @@ export class OutlineViewState extends OutlineDocument {
     return (this.tagMatches?.has(id) ?? true) && (this.attributeMatches?.has(id) ?? true);
   }
 
-  /** The children of `id` that the active filters leave visible (render order). */
+  /**
+   * The children of `id` that the active filters leave visible (render order).
+   * hideDone honours filterExtras too: a hidden done node hides its whole
+   * subtree, so a done ancestor would otherwise re-hide the very node a reveal
+   * cleared the path to.
+   */
   visibleChildren(id: string | null): KalamuNode[] {
     let children = this.tree.children.get(id) ?? [];
-    if (this.hideDone) children = children.filter((child) => child.doneAt === null);
+    if (this.hideDone) {
+      children = children.filter((child) => child.doneAt === null || this.filterExtras.has(child.id));
+    }
     if (this.tagMatches === null && this.attributeMatches === null) return children;
     return children.filter((child) => this.isVisible(child.id));
   }
@@ -241,6 +253,37 @@ export class OutlineViewState extends OutlineDocument {
     return out;
   });
 
+  // ---- reveal -----------------------------------------------------------------
+
+  /**
+   * Put a node in front of the reader wherever it is hiding, then focus it —
+   * the app's one jump primitive (today: the blocked badge). Blockers cross the
+   * tree freely (SPEC key decision 16), so the target is routinely outside the
+   * zoom, folded away, or filtered out; each obstacle is cleared in turn.
+   *
+   * Nothing here is undone afterwards. setZoom pushes a history entry, so the
+   * reader's way back is browser Back.
+   */
+  revealNode(id: string): void {
+    const target = this.tree.byId.get(id);
+    if (target === undefined) return;
+    const trail = ancestors(this.tree, target);
+    // Outside the current zoom: drop the zoom rather than re-zoom on some
+    // common ancestor. Predictable beats clever — a computed new root would
+    // land the reader in a view they never chose.
+    if (this.zoomId !== null && id !== this.zoomId && !trail.some((ancestor) => ancestor.id === this.zoomId)) {
+      this.setZoom(null);
+    }
+    // The target's own fold is irrelevant to arriving at it.
+    for (const ancestor of trail) this.unfold(ancestor.id);
+    // Reprieve, not reset: the reader's filter is theirs and survives the jump.
+    if (this.tagMatches !== null || this.attributeMatches !== null || this.hideDone) {
+      this.filterExtras.add(id);
+      for (const ancestor of trail) this.filterExtras.add(ancestor.id);
+    }
+    void this.focus(id, "end");
+  }
+
   // ---- collapse state (view state, never document content) -------------------
 
   toggleCollapse(id: string): void {
@@ -310,6 +353,9 @@ export class OutlineViewState extends OutlineDocument {
 
   toggleHideDone(): void {
     this.hideDone = !this.hideDone;
+    // hideDone is one of the filters filterExtras reprieves from, so flipping
+    // it ends those reprieves, exactly as setFilters does.
+    this.filterExtras.clear();
     this.persistUiStateSoon();
   }
 

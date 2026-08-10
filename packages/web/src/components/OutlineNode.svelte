@@ -23,6 +23,7 @@
   import { summarize } from "../lib/summary";
   import { blockedTitle, isStarted, openBlockers } from "../lib/task-state";
   import AssignMenu, { ASSIGNEE_LABELS, assigneeIcon, isAssignee, matchAssignees } from "./AssignMenu.svelte";
+  import BlockerMenu from "./BlockerMenu.svelte";
   import ComboMenu from "./ComboMenu.svelte";
   import Self from "./OutlineNode.svelte";
   import PriorityBars from "./PriorityBars.svelte";
@@ -64,6 +65,13 @@
 
   let assignOpen = $state(false);
   let assignWrap: HTMLElement | undefined = $state();
+
+  let blockOpen = $state(false);
+  let blockWrap: HTMLElement | undefined = $state();
+
+  /** Any anchored popover on this row — what the window-level dismissals key off. */
+  const menuOpen = $derived(prioOpen || assignOpen || blockOpen);
+
   let rowEl: HTMLElement | undefined;
 
   const children = $derived(store.visibleChildren(node.id));
@@ -705,19 +713,38 @@
     }
   }
 
+  function closeMenus(): void {
+    prioOpen = false;
+    assignOpen = false;
+    blockOpen = false;
+  }
+
   function closeMenusIfOutside(event: PointerEvent): void {
     if (!(event.target instanceof Node)) return;
     if (prioOpen && prioWrap && !prioWrap.contains(event.target)) prioOpen = false;
     if (assignOpen && assignWrap && !assignWrap.contains(event.target)) assignOpen = false;
+    if (blockOpen && blockWrap && !blockWrap.contains(event.target)) blockOpen = false;
+  }
+
+  /**
+   * One blocker is a destination, not a choice — jump straight there. Several
+   * need the menu, which is why the badge only claims aria-haspopup then.
+   */
+  function onBlockedClick(): void {
+    const only = blockers.length === 1 ? blockers[0] : undefined;
+    if (only !== undefined) store.revealNode(only.id);
+    else blockOpen = !blockOpen;
   }
 </script>
 
 <svelte:window
-  onpointerdown={prioOpen || assignOpen ? closeMenusIfOutside : undefined}
+  onpointerdown={menuOpen ? closeMenusIfOutside : undefined}
   onpointerup={pointerSession ? onDisplayPointerEnd : undefined}
   onpointercancel={pointerSession ? onDisplayPointerEnd : undefined}
-  onkeydown={prioOpen || assignOpen
-    ? (event) => event.key === "Escape" && ((prioOpen = false), (assignOpen = false))
+  onkeydown={menuOpen
+    ? (event) => {
+        if (event.key === "Escape") closeMenus();
+      }
     : undefined}
 />
 
@@ -946,19 +973,43 @@
         {/if}
       {/if}
 
-      <!-- What the task or discussion waits on (SPEC key decision 16). Read-only
-           signal: the palette's Unblock owns the editing, so this stays a plain
-           label — role="img" + aria-label so the tooltip is announced, not just
-           hovered. -->
+      <!-- What the task or discussion waits on (SPEC key decision 16), and the
+           way there: blockers cross the tree freely, so the badge is also the
+           only affordance that takes the reader to one. Editing the list still
+           belongs to the palette's Block on…/Unblock. The tooltip is the
+           accessible name too, so it is announced rather than merely hovered. -->
       {#if blockers.length > 0}
         {@const title = blockedTitle(blockers)}
-        <span class="blocked" role="img" aria-label={title} {title}>
-          <!-- Lucide lock, restroked to match the row's other icons. -->
-          <svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true">
-            <rect x="3" y="11" width="18" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="2.25" />
-            <path d="M7 11V7a5 5 0 0 1 10 0v4" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" />
-          </svg>
-          <span>{blockers.length > 1 ? `Blocked ×${blockers.length}` : "Blocked"}</span>
+        {@const many = blockers.length > 1}
+        {@const blockedLabel = `${title}\n${many ? "Click to pick a blocker" : "Click to go to the blocker"}`}
+        <span class="block-wrap" bind:this={blockWrap}>
+          <button
+            class="blocked"
+            aria-haspopup={many ? "menu" : undefined}
+            aria-expanded={many ? blockOpen : undefined}
+            aria-label={blockedLabel}
+            {title}
+            tabindex="-1"
+            onclick={onBlockedClick}
+          >
+            <!-- Lucide lock, restroked to match the row's other icons. -->
+            <svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true">
+              <rect x="3" y="11" width="18" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="2.25" />
+              <path d="M7 11V7a5 5 0 0 1 10 0v4" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" />
+            </svg>
+            <span>{many ? `Blocked ×${blockers.length}` : "Blocked"}</span>
+          </button>
+          <!-- `many` as well as blockOpen: a blocker completed elsewhere can drop
+               the count to one under an open menu, and one blocker is no choice. -->
+          {#if blockOpen && many}
+            <BlockerMenu
+              {blockers}
+              onpick={(picked) => {
+                blockOpen = false;
+                store.revealNode(picked.id);
+              }}
+            />
+          {/if}
         </span>
       {/if}
 
@@ -1297,23 +1348,41 @@
     opacity: 0.5;
   }
 
-  /* Same footprint as a tag chip, so the row's right-hand furniture lines up;
-     the count only appears when more than one blocker is open. */
-  .blocked {
+  /* Anchors the multi-blocker menu, and carries the flow placement the badge
+     itself used to (the button below is laid out inside it). */
+  .block-wrap {
+    position: relative;
     flex: none;
     align-self: center;
+    display: flex;
+  }
+
+  /* Same footprint as a tag chip, so the row's right-hand furniture lines up;
+     the count only appears when more than one blocker is open. It is a button
+     (it jumps to the blocker), so the UA's border/background/font are reset
+     back to what the badge rendered as a span — at rest it must read as a
+     status badge, not a control. */
+  .blocked {
     display: inline-flex;
     align-items: center;
     gap: 4px;
     padding: 2px 7px;
+    border: none;
     border-radius: 999px;
+    font: inherit;
     font-size: 11.5px;
     font-weight: 500;
     line-height: 1;
     color: var(--blocked);
     background: color-mix(in srgb, var(--blocked) 14%, transparent);
     user-select: none;
-    cursor: help;
+    cursor: pointer;
+  }
+  /* Same deepen-on-approach as .assignee, in the badge's own colour. */
+  .blocked:hover,
+  .blocked:focus-visible,
+  .blocked[aria-expanded="true"] {
+    background: color-mix(in srgb, var(--blocked) 26%, transparent);
   }
   /* A done task's badge is history, not a warning. */
   .row.done .blocked {
