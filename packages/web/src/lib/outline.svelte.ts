@@ -274,14 +274,20 @@ export class OutlineStore extends OutlineViewState {
     );
   }
 
-  cycleKind(id: string): void {
+  /** Palette "Kind…": the kind named outright, so picking the current one is inert. */
+  setKind(id: string, kind: KalamuNode["kind"]): void {
     const node = this.tree.byId.get(id);
-    if (!node) return;
-    const kind = node.kind === "bullet" ? "task" : node.kind === "task" ? "discussion" : "bullet";
+    if (!node || node.kind === kind) return;
     this.mutate(
       (nodes) => updateNode(nodes, id, { kind }).nodes,
       () => api.patchNode(this.serverId(id), { kind }),
     );
+  }
+
+  cycleKind(id: string): void {
+    const node = this.tree.byId.get(id);
+    if (!node) return;
+    this.setKind(id, node.kind === "bullet" ? "task" : node.kind === "task" ? "discussion" : "bullet");
   }
 
   /** Works on bullets too — done on a bullet is visual only (strikethrough). */

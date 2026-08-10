@@ -1502,12 +1502,31 @@
      intrinsic, and one constant for every node: the bar comes and goes with the
      subtree, and neither it nor the caption may move anything when it does. */
   .meta-row {
+    --meta-gap: 10px;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--meta-gap);
     height: 14px;
     padding-left: var(--text-col);
     user-select: none;
+  }
+
+  /* Dividers generated rather than placed: whatever this row grows later is
+     separated without touching the markup, and nothing strands a dot at either
+     end when the bar is away — only an item with something before it draws one.
+     Drawn as a box, not a middot glyph: a glyph's size is hostage to the font's
+     metrics and to the 11px it inherits, which renders it too small to read.
+     :global because a later item may be a component root, which carries no
+     scope class of ours. */
+  .meta-row > :global(:not(:first-child))::before {
+    content: "";
+    display: inline-block;
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    vertical-align: middle;
+    margin-right: var(--meta-gap);
+    background: color-mix(in srgb, var(--muted) 50%, transparent);
   }
 
   /* Same weight as the bar's caption — this is ambient provenance, and the
@@ -1518,9 +1537,10 @@
     color: var(--muted);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
-    cursor: help;
   }
-  /* A finished node's age is history, like its other badges. */
+  /* A finished node's age is history, like its other badges. The divider in
+     front of it fades too, without being named here: it is generated inside
+     this element, so it is part of what this opacity composites. */
   .meta-row.done .created {
     opacity: 0.6;
   }

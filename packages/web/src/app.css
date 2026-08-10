@@ -26,10 +26,12 @@
      two signals never read as chrome. */
   --started: light-dark(#1a7f52, #4fc08d);
   --blocked: light-dark(#b04b3c, #e0897c);
-  /* Segmented progress dashes. Desaturated on purpose: the strip repeats down
-     the whole outline, so it has to sit quieter than a tag chip while still
-     reading at 7×4px on both themes. Unfilled dashes reuse --ring. */
-  --progress-done: light-dark(#5f9673, #5d9a78);
+  /* Segmented progress dashes. Done reads at full saturation — at 7×4px a muted
+     green disappeared into the row it was meant to report on. Lifted in dark
+     mode, where the same hue sits duller against the ground. Active stays
+     quieter: it is the transient state, and two loud colours in one strip read
+     as an alarm. Unfilled dashes reuse --ring. */
+  --progress-done: light-dark(#00bd7d, #12ce8c);
   --progress-active: light-dark(#c08a3e, #c99a4f);
   --toast-bg: light-dark(#24292f, #e3e6ea);
   --toast-fg: light-dark(#f6f8fa, #17191d);

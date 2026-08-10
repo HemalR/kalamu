@@ -66,4 +66,22 @@ describe("OutlineStore event lifecycle", () => {
     store.pauseEvents();
     expect(stop).toHaveBeenCalledOnce();
   });
+
+  it("bumps outlineChanges on each outline-changed event", async () => {
+    const backend = createMemoryBackend([]);
+    let handlers: BackendEvents | undefined;
+    backend.subscribe = (events) => {
+      handlers = events;
+      return () => {};
+    };
+    setBackend(backend);
+
+    const store = new OutlineStore();
+    await store.init();
+    expect(store.outlineChanges).toBe(0);
+
+    handlers?.onOutlineChanged();
+    handlers?.onOutlineChanged();
+    expect(store.outlineChanges).toBe(2);
+  });
 });

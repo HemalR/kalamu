@@ -30,6 +30,7 @@
   ],
   "scripts": {
     "build": "tsup && node scripts/copy-web.mjs",
+    "dev": "tsup --watch src --watch ../core/src --onSuccess \"node scripts/copy-web.mjs\"",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json"
   },

@@ -239,6 +239,7 @@
         document.title = `Kalamu | ${name}`;
       }}
       oncolor={(color) => (markColor = color)}
+      refresh={store.outlineChanges}
     />
     <div class="hub-main">{@render app()}</div>
   </div>

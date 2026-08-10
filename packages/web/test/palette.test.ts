@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assignKeys } from "../src/lib/palette";
+import { assignKeys, keyBadge, sortByKey } from "../src/lib/palette";
 
 describe("assignKeys", () => {
   it("assigns digits 1-9 first, then letters in home-row order", () => {
@@ -36,5 +36,47 @@ describe("assignKeys", () => {
 
   it("handles an empty list", () => {
     expect(assignKeys(0)).toEqual([]);
+  });
+});
+
+describe("sortByKey", () => {
+  const keys = (items: { key: string | null }[]): (string | null)[] => sortByKey(items).map((item) => item.key);
+
+  it("puts digits first, then letters alphabetically", () => {
+    expect(keys([{ key: "z" }, { key: "2" }, { key: "a" }, { key: "1" }])).toEqual(["1", "2", "a", "z"]);
+  });
+
+  it("sorts letters case-insensitively, as a reader would", () => {
+    expect(keys([{ key: "b" }, { key: "A" }])).toEqual(["A", "b"]);
+  });
+
+  it("keeps arrows and punctuation after the letters, in declared order", () => {
+    expect(keys([{ key: "," }, { key: "ArrowUp" }, { key: "." }, { key: "z" }, { key: "1" }])).toEqual([
+      "1",
+      "z",
+      ",",
+      "ArrowUp",
+      ".",
+    ]);
+  });
+
+  it("sinks keyless rows to the end", () => {
+    expect(keys([{ key: null }, { key: "." }, { key: "a" }])).toEqual(["a", ".", null]);
+  });
+
+  it("does not mutate its input", () => {
+    const items = [{ key: "b" }, { key: "a" }];
+    sortByKey(items);
+    expect(items.map((item) => item.key)).toEqual(["b", "a"]);
+  });
+});
+
+describe("keyBadge", () => {
+  it("prints arrow keys as arrows", () => {
+    expect([keyBadge("ArrowUp"), keyBadge("ArrowLeft"), keyBadge("ArrowRight")]).toEqual(["↑", "←", "→"]);
+  });
+
+  it("leaves every other key as typed", () => {
+    expect([keyBadge("a"), keyBadge("1"), keyBadge(".")]).toEqual(["a", "1", "."]);
   });
 });

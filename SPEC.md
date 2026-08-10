@@ -1443,38 +1443,39 @@ The palette acts on the last-focused node and offers, at the root level:
                           showing the project's name and colour swatch; only
                           as many digit rows as there are projects render, and
                           none in standalone mode
-d    Toggle done          marks the task done / reopens it, closes
-p    Priority ->          submenu: 1-3 set the priority (2 = back to default),
-                          current level marked
-a    Assign ->            submenu: h Human / a Agent / u Unassigned, current
+a    Assign ->            submenu: a Agent / h Human / u Unassigned, current
                           value marked; selecting sets the task's assignee
                           (Unassigned clears it), closes
+b    Block on ->          submenu: candidate nodes to record in `blockedBy`;
+                          selecting adds the blocker, closes
+c    Copy ->              submenu: c CLI command -> (one level deeper:
+                          ready-to-run CLI commands for this node with its real
+                          (server) id filled in — show --children always; done
+                          or reopen (by state); add-child-task; delete
+                          (--recursive when the node has children)) · p Prompt —
+                          the node's ancestor path and subtree, for an agent
+                          chat (same as Mod+C) · t Text — the node's own text
+                          alone (same as Mod+Shift+C). Each copies to the
+                          clipboard, toasts, and closes with focus restore.
+d    Toggle done          marks the task done / reopens it, closes
+i    CLI reference        opens the CLI commands sheet
+k    Keyboard cheat sheet opens the keyboard cheat sheet
 l    Labels ->            submenu: every #tag in the outline, checkmark if the
                           node has it; selecting toggles the #token in the
                           node's text (tags stay inline — key decision 7);
                           stays open for multi-toggle
+p    Priority ->          submenu: 1-3 set the priority (2 = back to default),
+                          current level marked
+r    Redo                 replays the last undone change (same as Mod+Shift+Z);
+                          disabled with nothing to redo
 s    Start / End          claims the task (`startedAt`) or releases the claim —
                           the label shows whichever applies; closes
-b    Block on ->          submenu: candidate nodes to record in `blockedBy`;
-                          selecting adds the blocker, closes
+t    Kind ->              submenu: b Bullet / d Discussion / t Task, current
+                          kind marked; selecting sets that kind outright — the
+                          same three Mod+Shift+Enter cycles through — closes
 u    Unblock ->           submenu: the node's current blockers, plus "Remove
                           all blockers" (on key `a`) when there is more than
                           one; selecting removes that entry, closes
-y    Copy CLI command ->  submenu: ready-to-run CLI commands for this node with
-                          its real (server) id filled in — show --children
-                          always; done or reopen (by state); add-child-task;
-                          delete (--recursive when the node has children).
-                          Picking one copies it to the clipboard, shows a
-                          toast, closes with focus restore.
-z    Collapse/expand children   toggles the fold of the node's own children in
-                          place (same as Cmd/Ctrl+.), closes
-c    Collapse parent      folds the current node's parent and moves the caret
-                          to it (same as Cmd/Ctrl+Shift+ArrowUp); closes with
-                          focus on the PARENT, not the node it acted on
-e    Expand children      unfolds the node's children and moves the caret into
-                          the first visible child (same as
-                          Cmd/Ctrl+Shift+ArrowDown); closes with focus on that
-                          CHILD
 v    View ->              submenu of toggles whose labels reflect the current
                           state: h Hide/show done · m Enter/leave compact
                           mode · t Activate dark/light mode; each closes
@@ -1483,30 +1484,48 @@ x    Clean up             deletes every done task with its subtree, plus done
                           applied through the UI's undo stack so it is undoable
                           in-session; toasts the result ("Deleted 4 nodes
                           (3 done tasks)" / "Nothing to clean."), closes
-k    Keyboard cheat sheet opens the keyboard cheat sheet
-i    CLI reference        opens the CLI commands sheet
+z    Undo                 walks the document back one change (same as Mod+Z);
+                          disabled with nothing to undo
+.    Zoom in              zooms the view to this node (same as Mod+Shift+.);
+                          disabled when it is already the zoom root; closes
+                          with focus in the new root
+,    Zoom out             leaves one zoom level (same as Mod+Shift+,); needs no
+                          target, only a zoom to leave; closes with focus on
+                          the node just left
+←    Collapse children    folds the node's own children in place; closes with
+                          the caret where it was (Cmd/Ctrl+. still toggles)
+→    Expand children      unfolds the node's children and moves the caret into
+                          the first visible child (same as
+                          Cmd/Ctrl+Shift+ArrowDown); closes with focus on that
+                          CHILD
+↑    Collapse parent      folds the current node's parent and moves the caret
+                          to it (same as Cmd/Ctrl+Shift+ArrowUp); closes with
+                          focus on the PARENT, not the node it acted on
 ```
 
-The lettered action list is fixed: every lettered item always renders, in this
-order, on a stable key — only the project digit rows vary, with the hub
+The action list is fixed: every non-digit item always renders, on a stable key
+and in key order — digits, then the letters alphabetically, then the
+punctuation and arrow rows. Only the project digit rows vary, with the hub
 registry. Items that don't apply are greyed out and disabled rather than
-hidden — with no node focused, every node-targeting action (`d p a l s b u y z
-c e`) is disabled (the view, clean and sheet items need no target and are
-always enabled — Clean up with nothing to clean just toasts "Nothing to
-clean."). On a bullet, Assign, Start/End, and Block on are disabled (bullets
-are structure, not work — key decision 16) — Priority applies (picking 1 or 3
-converts the bullet into a task, exactly like `--p` on the CLI; 2 clears back
-to default without converting) and Toggle done works on bullets as a
-visual-only strikethrough (Copy CLI command stays enabled, with task-only
-commands omitted from its submenu; done/reopen appear for bullets too). On a
+hidden — with no node focused, every node-targeting action (`c d p a l t s b u
+. ← → ↑`) is disabled (the view, clean, undo/redo, zoom out and sheet items
+need no target and are always enabled — Clean up with nothing to clean just
+toasts "Nothing to clean."). On a bullet, Assign, Start/End, and Block on are
+disabled (bullets are structure, not work — key decision 16) — Priority applies
+(picking 1 or 3 converts the bullet into a task, exactly like `--p` on the CLI;
+2 clears back to default without converting) and Toggle done works on bullets
+as a visual-only strikethrough (Copy stays enabled, with task-only commands
+omitted from the CLI submenu; done/reopen appear for bullets too). On a
 discussion, Assign and Start/End are disabled (discussions are never assigned
-and never claimed — key decision 12); Priority, Toggle done, Block on, and
-Copy CLI command all apply. The fold actions (`z c e`) apply to every kind
-(they are structural, not metadata) but carry their own disabled cases:
-Collapse/expand children and Expand children on leaves (nothing beneath to
-fold), Collapse parent on root-level nodes and on the zoom root (nothing
-rendered above to fold). Unblock is disabled while the node has no blockers,
-Start on a done task. Disabled items don't respond to keys or clicks. The CLI
+and never claimed — key decision 12); Priority, Toggle done, Block on, Kind and
+Copy all apply. The fold actions (`← → ↑`) apply to every kind (they are
+structural, not metadata) but carry their own disabled cases: Collapse children
+on leaves and on an already-folded node, Expand children on leaves (nothing
+beneath to fold), Collapse parent on root-level nodes and on the zoom root
+(nothing rendered above to fold). Unblock is disabled while the node has no
+blockers, Start on a done task, Undo and Redo on an empty stack, Zoom in on the
+node already zoomed to and Zoom out when the view isn't zoomed. Disabled items
+don't respond to keys or clicks. The CLI
 commands sheet mirrors `kalamu --help` — command names with one-line
 descriptions — as a reference for the developer; agents use `--help` itself.
 
@@ -1521,8 +1540,10 @@ Key rules:
   the key supply remain reachable by click and scroll — in practice only an
   enormous tag or candidate set gets there.
 * Rows are also clickable, exactly as before.
-* Esc steps back up a level and closes at the top; Backspace does the same.
-  Closing returns focus to the node the palette was acting on.
+* Esc steps back exactly one level — Copy CLI command → Copy → root — and
+  closes at the top; Backspace does the same. Closing returns focus to the node
+  the palette was acting on, except where the action itself moved the caret
+  (Expand children, Collapse parent, both zooms).
 * When focus falls to the body while the window stays focused (Tab out, or an
   extension that blurs inputs on Esc — e.g. Vimium — eating the keypress before
   the page sees it), the palette treats the blur as Esc: step back and refocus
@@ -1531,8 +1552,9 @@ Key rules:
   closes it without refocusing; switching apps does not close it.
 * Label toggles keep the palette open; every other action closes it.
 * The direct shortcuts that duplicate palette actions (Mod+Enter, Mod+.,
-  Mod+Shift+↑/↓, Mod+Shift+H) remain for now, but the leader sequences are the
-  canonical path — new actions get a leader key first and a direct shortcut
+  Mod+Shift+Enter, Mod+Shift+↑/↓, Mod+Shift+H, Mod+Shift+./,, Mod+C,
+  Mod+Shift+C, Mod+Z, Mod+Shift+Z) remain for now, but the leader sequences are
+  the canonical path — new actions get a leader key first and a direct shortcut
   only if proven necessary. Mod+Shift+1-9 project switching is already
   retired (2026-08-10): `⌘K n` replaced it, ending the clash with macOS's
   Mod+Shift+3/4/5 screenshot shortcuts.

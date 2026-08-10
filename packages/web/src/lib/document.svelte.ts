@@ -38,6 +38,14 @@ export class OutlineDocument {
    */
   connected = $state(true);
 
+  /**
+   * Bumped on every SSE outline-changed event — a change signal, not data.
+   * Fires only after the server's write has landed on disk (fs.watch → SSE),
+   * so hub-mode consumers (the sidebar's open-task badges) can refetch
+   * derived views without racing the outline file.
+   */
+  outlineChanges = $state(0);
+
   tree = $derived(buildTree(this.nodes));
   roots = $derived(this.tree.children.get(null) ?? []);
   /**
@@ -48,8 +56,11 @@ export class OutlineDocument {
    */
   progress = $derived(progressByNode(this.tree));
 
-  private undoStack: KalamuNode[][] = [];
-  private redoStack: KalamuNode[][] = [];
+  // Raw on purpose: these hold a snapshot of the whole outline per step, and
+  // deep-proxying every one of them would cost real time for nothing — they are
+  // only ever swapped out wholesale. Reactive so the palette can grey its rows.
+  private undoStack = $state.raw<KalamuNode[][]>([]);
+  private redoStack = $state.raw<KalamuNode[][]>([]);
   private toServer = new Map<string, string>();
   private toLocal = new Map<string, string>();
   private queue: Promise<unknown> = Promise.resolve();
@@ -69,7 +80,10 @@ export class OutlineDocument {
     this.stopEvents = api.subscribe({
       onConnected: () => this.setConnected(true),
       onDisconnected: () => this.setConnected(false),
-      onOutlineChanged: () => void this.refetchNodes(),
+      onOutlineChanged: () => {
+        this.outlineChanges++;
+        void this.refetchNodes();
+      },
       onMetaChanged: () => void this.refetchMeta(),
     });
   }
@@ -178,8 +192,7 @@ export class OutlineDocument {
       }
       throw err;
     }
-    this.undoStack.push(this.nodes);
-    if (this.undoStack.length > UNDO_LIMIT) this.undoStack.shift();
+    this.undoStack = [...this.undoStack, this.nodes].slice(-UNDO_LIMIT);
     this.redoStack = [];
     this.opVersion++;
     this.nodes = next;
@@ -226,19 +239,33 @@ export class OutlineDocument {
 
   // ---- undo / redo -----------------------------------------------------------
 
+  /** The palette greys its Undo/Redo rows on these. */
+  get canUndo(): boolean {
+    return this.undoStack.length > 0;
+  }
+
+  get canRedo(): boolean {
+    return this.redoStack.length > 0;
+  }
+
   undo(): void {
-    this.restore(this.undoStack, this.redoStack);
+    this.restore("undo");
   }
 
   redo(): void {
-    this.restore(this.redoStack, this.undoStack);
+    this.restore("redo");
   }
 
-  private restore(from: KalamuNode[][], to: KalamuNode[][]): void {
-    if (!this.connected) return;
-    const target = from.pop();
-    if (!target) return;
-    to.push(this.nodes);
+  /** Take the newest snapshot off one stack, handing the current one to the other. */
+  private restore(direction: "undo" | "redo"): void {
+    const undoing = direction === "undo";
+    const source = undoing ? this.undoStack : this.redoStack;
+    const target = source.at(-1);
+    if (!this.connected || target === undefined) return;
+    const rewound = source.slice(0, -1);
+    const handed = [...(undoing ? this.redoStack : this.undoStack), this.nodes];
+    this.undoStack = undoing ? rewound : handed;
+    this.redoStack = undoing ? handed : rewound;
     this.opVersion++;
     this.nodes = target;
     this.enqueue(() => api.replaceNodes(this.serverize(target)));

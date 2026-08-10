@@ -44,7 +44,7 @@ kalamu add --kind task --text "Fix login redirect" --p 1
 In the UI, everything is a keystroke away:
 
 - **Enter / Tab / Shift+Tab** — new item, indent, outdent
-- **⌘K** — command palette: a leader-key menu with every action on a printed key — done, priority, assign, labels, start/block, copy CLI commands
+- **⌘K** — command palette: a leader-key menu with every action on a printed key — done, priority, assign, labels, kind, start/block, copy, fold, zoom, undo
 - **⌘Enter** — done/reopen · **⌘⇧Enter** — cycle bullet/task/discussion · **⌘.** — collapse · **⌘⇧C** — copy only the item's text
 - **?** — the full cheat sheet
 - Inline tokens as you type: `p1`…`p3` set priority, `#tag` becomes a coloured chip, `@human` keeps a task for yourself, `@agent` marks it as agent work

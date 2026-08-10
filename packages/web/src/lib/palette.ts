@@ -8,6 +8,40 @@
 /** `1`-`9`, then letters in home-row order (SPEC "Command palette"). */
 const KEY_SEQUENCE = [..."123456789", ..."asdfghjkl", ..."qwertyuiop", ..."zxcvbnm"];
 
+/** Keys held as their `event.key` name print as the glyph they are. */
+const KEY_BADGES: Readonly<Record<string, string>> = {
+  ArrowUp: "↑",
+  ArrowLeft: "←",
+  ArrowRight: "→",
+};
+
+/** What a trigger key looks like in its badge. */
+export function keyBadge(key: string): string {
+  return KEY_BADGES[key] ?? key;
+}
+
+/** Digits, then letters, then everything else (arrows, punctuation), then keyless rows. */
+function rank(key: string | null): number {
+  if (key === null) return 3;
+  if (key >= "0" && key <= "9") return 0;
+  return /^[a-z]$/i.test(key) ? 1 : 2;
+}
+
+/**
+ * Reading order for a level whose keys are hand-picked: digits first, then
+ * alphabetically. Ranks past the letters (arrow and punctuation rows) keep
+ * their declared order — the sort is stable, so those stay grouped as written.
+ * Levels with auto-assigned keys are never sorted: there the list order is the
+ * meaningful one (open tasks first, and so on) and the keys just follow it.
+ */
+export function sortByKey<T extends { key: string | null }>(items: readonly T[]): T[] {
+  return [...items].sort((a, b) => {
+    const [left, right] = [rank(a.key), rank(b.key)];
+    if (left !== right) return left - right;
+    return left <= 1 && a.key !== null && b.key !== null ? a.key.localeCompare(b.key) : 0;
+  });
+}
+
 /**
  * Trigger keys for `count` list items, in order: digits first, then letters,
  * skipping any key the level reserves for a fixed row (the unblock level

@@ -21,11 +21,18 @@
 
   /** onrename: effective name after the ACTIVE project is renamed.
       oncolor: the active project's colour (override or derived), null when
-      unknown — drives the wordmark/favicon tint (bronze default). */
+      unknown — drives the wordmark/favicon tint (bronze default).
+      refresh: the store's outline-change counter — each bump means the active
+      project's outline landed on disk, so the open-task badges refetch. */
   let {
     onrename,
     oncolor,
-  }: { onrename?: (name: string) => void; oncolor?: (color: string | null) => void } = $props();
+    refresh = 0,
+  }: {
+    onrename?: (name: string) => void;
+    oncolor?: (color: string | null) => void;
+    refresh?: number;
+  } = $props();
 
   const activeSlug = apiBase.slice("/p/".length);
 
@@ -51,6 +58,19 @@
     }
   }
   void loadProjects();
+
+  // Refetch the badges when the active project's outline changes. Debounced:
+  // a burst of SSE events while typing must not refetch per keystroke. The
+  // guard reads at fire time (untracked), skipping while a rename or drag is
+  // in flight — replacing the list mid-gesture would fight the user.
+  $effect(() => {
+    if (refresh === 0) return; // mount — the initial loadProjects() above covers it
+    const timer = setTimeout(() => {
+      if (editingSlug !== null || dragSlug !== null) return;
+      void loadProjects();
+    }, 300);
+    return () => clearTimeout(timer);
+  });
 
   /** Non-destructive: deregisters the project; it re-registers on next CLI use. */
   async function removeProject(slug: string): Promise<void> {
@@ -254,9 +274,13 @@
   }
 </script>
 
+<!-- onfocus: other projects' outlines may have changed while this tab was
+     backgrounded (e.g. an agent working in another repo) — no SSE covers
+     those, so returning to the tab resyncs the whole list. -->
 <svelte:window
   onkeydowncapture={onWindowKeydown}
   onpointerdown={colorSlug !== null ? onWindowPointerDown : undefined}
+  onfocus={() => void loadProjects()}
 />
 
 {#if projects !== null}

@@ -294,6 +294,18 @@ export class OutlineViewState extends OutlineDocument {
     this.persistUiStateSoon();
   }
 
+  /** Whether collapseChildren would act — folded already counts as nothing to do. */
+  canCollapseChildren(id: string): boolean {
+    return (this.tree.children.get(id) ?? []).length > 0 && !this.collapsed.has(id);
+  }
+
+  /** The collapse-only half of toggleCollapse (palette "Collapse children"); the caret stays put. */
+  collapseChildren(id: string): void {
+    if (!this.canCollapseChildren(id)) return;
+    this.collapsed.add(id);
+    this.persistUiStateSoon();
+  }
+
   /**
    * The parent collapseParent would fold, or null when there is nothing
    * rendered above to fold: the node is gone, root-level, or the zoom root
