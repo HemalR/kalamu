@@ -105,7 +105,7 @@ export function createHubServer(assetsDir: string | null, options: HubOptions = 
   app.get("/api/hub", (c) => c.json({ hub: true }));
 
   // Registry array order IS the sidebar order (manual, drag-to-reorder) —
-  // stable positions keep the Mod+Shift+1…9 shortcuts stable. Recency only
+  // stable positions keep the palette's ⌘K 1…9 project digits stable. Recency only
   // picks where the hub root lands.
   app.get("/api/projects", (c) => {
     const projects = readRegistry(options.registryFile).projects.map((entry) => ({

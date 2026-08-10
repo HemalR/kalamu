@@ -1300,6 +1300,7 @@ The UI should feel like Workflowy:
 * Discussions marked with a speech-bubble glyph in place of the checkbox (clicking it toggles done, like a task's checkbox)
 * Every unfocused node shows a subtle copy affordance at the end of its text. A normal click copies the same agent-context block as Cmd/Ctrl+C; Mod-click copies only the raw node text, like Cmd/Ctrl+Shift+C. Both actions are uniform across node kinds
 * Modifier chords make the whole row a mouse target for the two operations whose own affordance is small or absent: **Mod+click** toggles collapse (the chevron alone is a 10px target), **Alt+click** zooms in. One modifier each, so neither is a two-hand stretch; holding both is a slip, not a third gesture, and does nothing. Shift is left to the browser throughout, so Shift+click still extends a native text selection. The chords are claimed in the capture phase, so the chevron, glyph, priority badge, tag chips and inline links never fire their own action as well — the copy affordance is the one exemption, since Mod+click there is already its own action
+* A blocked node carries a **Blocked** badge, and the badge is the way to what it waits on: with one open blocker it jumps straight there, with several it opens a menu of them first. The jump is the app's one reveal primitive — it drops a zoom the target sits outside of, unfolds the ancestors hiding it, and reprieves it from the active filters (`hideDone` included) until those filters next change. Nothing is restored afterwards: the zoom change is a history entry, so the way back is browser Back
 * Every node carries its creation time in a meta row beneath it, as a relative age that keeps aging in a window left open (one shared clock, not a timer per row), with the exact local timestamp on hover. It shares that row with the progress bar, and the row is a fixed height whether or not either is showing, so nothing ever reflows
 * Zoom (Workflowy-style): any node can become the temporary root — only its subtree is displayed, with a sticky breadcrumb trail above the outline (project name › ancestors › current node) whose crumbs are clickable to change the zoom level. The zoom target lives in the URL hash (`#z=<id>`), so reload restores it and browser Back unwinds it; zoom is per-tab view state, never in `ui-state.json` or the outline file. Operations that would move a node outside the zoomed subtree (indent/outdent/move on the zoom root, outdenting its direct children) are inert; Enter on the zoom root creates a child rather than an invisible sibling; deleting the zoom root lands the zoom on its parent; Escape (when not editing, once no tag filter is active) zooms fully out
 * Minimal visual clutter
@@ -1382,7 +1383,8 @@ Cmd/Ctrl+Enter           mark item done/reopen — visual-only strikethrough on
                          but falls through to the browser's bookmark dialog when
                          no node is focused)
 Cmd/Ctrl+Shift+Enter     cycle kind: bullet → task → discussion → bullet
-Cmd/Ctrl+K               open the command palette (priority, labels, assign)
+Cmd/Ctrl+K               open the command palette — a leader-key menu (see
+                         [Command palette](#command-palette))
 Cmd/Ctrl+.               toggle collapse/expand
 Cmd/Ctrl+Shift+ArrowUp   collapse the parent — the caret jumps up to it (inert on
                          root-level nodes and on the zoom root)
@@ -1421,77 +1423,119 @@ Need not implement all shortcuts in first pass, but structure the code so they c
 
 ## Command palette
 
-Cmd/Ctrl+K opens a command palette — including while a node is being edited. It
-acts on the last-focused node and offers, at the top level:
+Cmd/Ctrl+K opens the command palette — including while a node is being edited.
+(Amended 2026-08-10.) It is a **leader-key menu** in the style of
+[LeaderKey](https://github.com/mikker/LeaderKey), not a search box: a static
+panel listing every action alongside the single key that triggers it. There is
+no text input, no filtering, no cursor to move — pressing an action's key runs
+it immediately, so every action is a short memorizable sequence (`Cmd+K d`
+toggles done, `Cmd+K p 1` sets p1) that can never clash with a browser or OS
+shortcut, because only the opening chord involves a modifier. The panel is
+self-documenting: keys are printed next to their labels, so nothing has to be
+memorized before it can be used.
+
+The palette acts on the last-focused node and offers, at the root level:
 
 ```text
-1  Priority  ->  submenu: 1-3 set the priority (2 = back to default), current level marked
-2  Labels    ->  submenu: every #tag in the outline, checkmark if the node has it;
-                 selecting toggles the #token in the node's text (tags stay inline —
-                 key decision 7); stays open for multi-toggle
-3  Assign    ->  submenu: Human / Agent / Unassigned, current value marked;
-                 selecting sets the task's assignee (Unassigned clears it), closes
-4  Toggle done   direct action: marks the task done / reopens it, closes
-5  Collapse parent          direct action: folds the current node's parent and
-                 moves the caret to the parent (same as Cmd/Ctrl+Shift+ArrowUp),
-                 closes with focus on the PARENT, not the node it acted on
-6  Expand children          direct action: unfolds the current node's children and
-                 moves the caret into the first visible child (same as
-                 Cmd/Ctrl+Shift+ArrowDown), closes with focus on that CHILD
-7  Copy CLI command -> submenu: ready-to-run CLI commands for this node with its
-                 real (server) id filled in — show --children always; done or
-                 reopen (by state); add-child-task;
-                 delete (--recursive when the node has children). Picking one
-                 copies it to the clipboard, shows a toast, closes with focus
-                 restore.
-8  Activate dark mode       direct action: switches the theme, closes; the label
-                 reads "Activate light mode" when the current mode is dark
-9  Clean up                 direct action: deletes every done task with its
-                 subtree, plus done bullets and blank nodes (same as
-                 `kalamu clean`), applied through the UI's undo stack so it
-                 is undoable in-session; toasts the result ("Deleted 4 nodes
-                 (3 done tasks)" / "Nothing to clean."), closes
-10 View keyboard shortcuts   opens the keyboard cheat sheet
-11 View CLI commands         opens the CLI commands sheet
+1-9  Open project n       hub mode only: switch to the n-th sidebar project
+                          (registry order — the same order that numbers the
+                          sidebar), each row
+                          showing the project's name and colour swatch; only
+                          as many digit rows as there are projects render, and
+                          none in standalone mode
+d    Toggle done          marks the task done / reopens it, closes
+p    Priority ->          submenu: 1-3 set the priority (2 = back to default),
+                          current level marked
+a    Assign ->            submenu: h Human / a Agent / u Unassigned, current
+                          value marked; selecting sets the task's assignee
+                          (Unassigned clears it), closes
+l    Labels ->            submenu: every #tag in the outline, checkmark if the
+                          node has it; selecting toggles the #token in the
+                          node's text (tags stay inline — key decision 7);
+                          stays open for multi-toggle
+s    Start / End          claims the task (`startedAt`) or releases the claim —
+                          the label shows whichever applies; closes
+b    Block on ->          submenu: candidate nodes to record in `blockedBy`;
+                          selecting adds the blocker, closes
+u    Unblock ->           submenu: the node's current blockers, plus "Remove
+                          all blockers" (on key `a`) when there is more than
+                          one; selecting removes that entry, closes
+y    Copy CLI command ->  submenu: ready-to-run CLI commands for this node with
+                          its real (server) id filled in — show --children
+                          always; done or reopen (by state); add-child-task;
+                          delete (--recursive when the node has children).
+                          Picking one copies it to the clipboard, shows a
+                          toast, closes with focus restore.
+z    Collapse/expand children   toggles the fold of the node's own children in
+                          place (same as Cmd/Ctrl+.), closes
+c    Collapse parent      folds the current node's parent and moves the caret
+                          to it (same as Cmd/Ctrl+Shift+ArrowUp); closes with
+                          focus on the PARENT, not the node it acted on
+e    Expand children      unfolds the node's children and moves the caret into
+                          the first visible child (same as
+                          Cmd/Ctrl+Shift+ArrowDown); closes with focus on that
+                          CHILD
+v    View ->              submenu of toggles whose labels reflect the current
+                          state: h Hide/show done · m Enter/leave compact
+                          mode · t Activate dark/light mode; each closes
+x    Clean up             deletes every done task with its subtree, plus done
+                          bullets and blank nodes (same as `kalamu clean`),
+                          applied through the UI's undo stack so it is undoable
+                          in-session; toasts the result ("Deleted 4 nodes
+                          (3 done tasks)" / "Nothing to clean."), closes
+k    Keyboard cheat sheet opens the keyboard cheat sheet
+i    CLI reference        opens the CLI commands sheet
 ```
 
-The list is fixed: all eleven items always render, in this order, with stable
-numbers — the two view sheets are always the last items (numbering badges and
-digit activation cover items 1–9 only, so the view sheets are reached by
-arrows or filtering). Items that don't apply
-are greyed out and disabled rather than hidden — with no node focused, 1–7 are
-disabled (the theme, clean and view items need no target and are always
-enabled — Clean up with nothing to clean just toasts "Nothing to clean."); on a
-bullet, only Assign is disabled — Priority applies (picking 1 or 3 converts the
-bullet into a task, exactly like `--p` on the CLI; 2 clears back to default
-without converting) and Toggle done
-works on bullets as a visual-only strikethrough (Copy CLI command stays
-enabled, with task-only commands omitted from its submenu; done/reopen appear
-for bullets too). On a discussion, only Assign is disabled (discussions are
-never assigned); Priority, Toggle done, and Copy CLI command all apply.
-Collapse parent and Expand children
-apply to every kind (they are structural, not metadata) but carry their own
-disabled cases: Collapse parent on root-level nodes and on the zoom root
-(nothing rendered above them to fold), Expand children on leaves (nothing
-beneath to unfold). Disabled items don't respond to digits, Enter, or clicks, and
-arrow navigation skips them. The CLI commands sheet mirrors `kalamu --help` —
-command names with one-line descriptions — as a reference for the developer;
-agents use `--help` itself.
+The lettered action list is fixed: every lettered item always renders, in this
+order, on a stable key — only the project digit rows vary, with the hub
+registry. Items that don't apply are greyed out and disabled rather than
+hidden — with no node focused, every node-targeting action (`d p a l s b u y z
+c e`) is disabled (the view, clean and sheet items need no target and are
+always enabled — Clean up with nothing to clean just toasts "Nothing to
+clean."). On a bullet, Assign, Start/End, and Block on are disabled (bullets
+are structure, not work — key decision 16) — Priority applies (picking 1 or 3
+converts the bullet into a task, exactly like `--p` on the CLI; 2 clears back
+to default without converting) and Toggle done works on bullets as a
+visual-only strikethrough (Copy CLI command stays enabled, with task-only
+commands omitted from its submenu; done/reopen appear for bullets too). On a
+discussion, Assign and Start/End are disabled (discussions are never assigned
+and never claimed — key decision 12); Priority, Toggle done, Block on, and
+Copy CLI command all apply. The fold actions (`z c e`) apply to every kind
+(they are structural, not metadata) but carry their own disabled cases:
+Collapse/expand children and Expand children on leaves (nothing beneath to
+fold), Collapse parent on root-level nodes and on the zoom root (nothing
+rendered above to fold). Unblock is disabled while the node has no blockers,
+Start on a done task. Disabled items don't respond to keys or clicks. The CLI
+commands sheet mirrors `kalamu --help` — command names with one-line
+descriptions — as a reference for the developer; agents use `--help` itself.
 
 Key rules:
 
-* Items are numbered; a digit activates that item **only while the query is
-  empty** — so `Cmd+K 1 2` sets p2, yet typing `v2` still filters to the `#v2` tag.
-* Any other typing filters the current level's items; ArrowUp/Down + Enter select.
-* Esc steps back up a level and closes at the top; Backspace on an empty query
-  does the same. Closing returns focus to the node the palette was acting on.
+* A key acts immediately — no query, no Enter-to-confirm. At the root, digits
+  belong exclusively to project switching.
+* Submenus over dynamic lists (labels, block candidates, blockers, CLI
+  commands) assign keys automatically: `1`-`9`, then letters in home-row order
+  (`a s d f g h j k l`, then `q w e r t y u i o p`, then `z x c v b n m`),
+  skipping any key the level reserves (`a` at the unblock level). Items past
+  the key supply remain reachable by click and scroll — in practice only an
+  enormous tag or candidate set gets there.
+* Rows are also clickable, exactly as before.
+* Esc steps back up a level and closes at the top; Backspace does the same.
+  Closing returns focus to the node the palette was acting on.
 * When focus falls to the body while the window stays focused (Tab out, or an
   extension that blurs inputs on Esc — e.g. Vimium — eating the keypress before
   the page sees it), the palette treats the blur as Esc: step back and refocus
   at a sublevel, close at the root. Esc therefore behaves identically with or
   without such an extension. Focus moving to a real element outside the palette
   closes it without refocusing; switching apps does not close it.
-* Priority and assign actions close the palette; label toggles keep it open.
+* Label toggles keep the palette open; every other action closes it.
+* The direct shortcuts that duplicate palette actions (Mod+Enter, Mod+.,
+  Mod+Shift+↑/↓, Mod+Shift+H) remain for now, but the leader sequences are the
+  canonical path — new actions get a leader key first and a direct shortcut
+  only if proven necessary. Mod+Shift+1-9 project switching is already
+  retired (2026-08-10): `⌘K n` replaced it, ending the clash with macOS's
+  Mod+Shift+3/4/5 screenshot shortcuts.
 
 ---
 
@@ -1786,7 +1830,7 @@ GET /p/:slug                         (deep link, sidebar pre-selected)
 Behaviour:
 
 * Per-project server instances are the existing `createServer()` — created lazily on first request for a slug, torn down after an idle period so the hub doesn't hold file watchers for dormant projects.
-* The sidebar lists projects in **registry array order** — a manual order, dragged into place row by row in the UI (`PATCH {"index": n}` moves a project to 0-based position n, clamped). New projects register at the end; re-registration touches `lastSeenAt` only and never moves an entry. Recency deliberately does not order the sidebar — a stable order is what keeps the `Mod+Shift+1…9` project shortcuts stable — and only picks which project `GET /` lands on.
+* The sidebar lists projects in **registry array order** — a manual order, dragged into place row by row in the UI (`PATCH {"index": n}` moves a project to 0-based position n, clamped). New projects register at the end; re-registration touches `lastSeenAt` only and never moves an entry. Recency deliberately does not order the sidebar — a stable order is what keeps the palette's `⌘K 1…9` project digits stable — and only picks which project `GET /` lands on.
 * Every project has a **theme colour** so multiple Kalamus are tellable apart at a glance: the sidebar is tinted with the active project's colour and each row carries a swatch. Like tag colours (key decision 7), the colour is the slug hashed into the shared palette — automatic, stable, stored nowhere — until a swatch pick stores an override in the registry (`PATCH {"color": "#rrggbb"}`; blank clears back to derived).
 * Removing a project from the sidebar is a **forget**, consistent with the registry being plumbing: the entry is dropped, the project's `.kalamu/` data is untouched, and the next kalamu command run inside the project re-registers it. The UI's per-entry remove affordance and `kalamu hub forget <slug>` both expose this operation without confirmation because it is non-destructive; `kalamu hub list` prints the stable slugs and paths needed to identify entries from the terminal.
 * SSE live reload, mtime-checked atomic writes, and undo work unchanged per project; hub, standalone `kalamu open` servers, and CLI agents can all write concurrently because every writer already does mtime-checked atomic writes.

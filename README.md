@@ -44,7 +44,7 @@ kalamu add --kind task --text "Fix login redirect" --p 1
 In the UI, everything is a keystroke away:
 
 - **Enter / Tab / Shift+Tab** — new item, indent, outdent
-- **⌘K** — command palette: priority, labels, done, mine, start/block, copy CLI commands
+- **⌘K** — command palette: a leader-key menu with every action on a printed key — done, priority, assign, labels, start/block, copy CLI commands
 - **⌘Enter** — done/reopen · **⌘⇧Enter** — cycle bullet/task/discussion · **⌘.** — collapse · **⌘⇧C** — copy only the item's text
 - **?** — the full cheat sheet
 - Inline tokens as you type: `p1`…`p3` set priority, `#tag` becomes a coloured chip, `@human` keeps a task for yourself, `@agent` marks it as agent work
@@ -106,7 +106,7 @@ kalamu block <id> --by <id2>   # <id> waits on <id2>; next skips it until <id2> 
 kalamu unblock <id>            # clear one blocker, or all of them
 ```
 
-Blockers cross the tree freely — dependency order and outline order are different things — and a blocker cycle is a validation error, exactly like a parent cycle. Discussions can be blocked as well as tasks, so a conversation that can't usefully happen until other work lands stays out of `kalamu next --discussion` until it can. In the UI, a claimed task shows a play glyph in its checkbox, and ⌘K offers **Start**, **Block on…**, and **Unblock**.
+Blockers cross the tree freely — dependency order and outline order are different things — and a blocker cycle is a validation error, exactly like a parent cycle. Discussions can be blocked as well as tasks, so a conversation that can't usefully happen until other work lands stays out of `kalamu next --discussion` until it can. In the UI, a claimed task shows a play glyph in its checkbox, and ⌘K offers **Start**, **Block on…**, and **Unblock**. A blocked row carries a **Blocked** badge: click it to jump to what the row is waiting on — the target is revealed wherever it's hiding, whether it's folded away, filtered out, or outside the zoom you're in.
 
 Kalamu also records *who wrote* each node, without anyone having to remember a flag: anything created from the web UI is yours, anything an agent creates from a non-interactive shell is marked `createdBy: "agent"`. That's what makes it safe for an agent to keep its own forward work in your outline — filter agent-created items out while you're thinking.
 

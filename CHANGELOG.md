@@ -16,6 +16,64 @@ under `Added` / `Changed` / `Fixed` / `Removed`.
 
 ## [Unreleased]
 
+### Added
+
+- **Every row shows when it was created**, as a relative age that keeps ticking
+  in a window you left open, with the exact local timestamp on hover. It sits
+  in the same fixed-height strip as the progress bar, so nothing on the page
+  moves as ages change or bars come and go.
+- **The Blocked badge is now the way to what a row is waiting on.** Click it to
+  jump to the blocker — with several open blockers it lists them first — and
+  the target is revealed wherever it was hiding: a zoom it sits outside of is
+  dropped, the folds above it are opened, and the active filters (including
+  hide-completed) let it through until you change them next. Nothing is put
+  back afterwards, so browser Back is the way home.
+- **Mouse chords on the row**, for the two moves whose own target is small or
+  absent: Cmd/Ctrl-click a row to collapse it, Alt-click to zoom into it. The
+  whole row is the target, not the 10px chevron, and Shift-click is left alone
+  so text selection still works.
+- **`kalamu hub list` and `kalamu hub forget <slug>`**: see the projects the
+  hub knows about — slug, name and path — and drop an entry you no longer want
+  in the sidebar. Forgetting touches the registry only: the project's
+  `.kalamu/` data is untouched, and the next kalamu command run inside it
+  registers it again.
+- The row you're editing is now tinted, so the caret's line stands out in a
+  dense outline.
+
+### Changed
+
+- **The command palette is a leader-key menu.** Cmd/Ctrl+K opens a panel with
+  every action listed beside the single key that runs it — `⌘K d` toggles done,
+  `⌘K p 1` sets p1, `⌘K v h` hides completed — so actions become short
+  sequences you can learn by using them, with nothing to type and nothing to
+  select. The keys are printed next to their labels, so none of it has to be
+  memorised first. Rows are still clickable, Esc still steps back a level, and
+  the new `⌘K 1…9` switches hub projects. Blockers, start/end and the view
+  toggles are all on the menu now.
+- **Copy is uniform across node kinds, and both copy keys changed meaning.**
+  Cmd/Ctrl+C copies an agent-context block — a `Kalamu {kind} ID: {id}` header,
+  the item's ancestor path, then the item and its whole subtree as nested
+  markdown, with every sibling branch left out — so pasting one item into an
+  agent chat carries the context that item sits in. Cmd/Ctrl+Shift+C copies
+  only the item's raw text; it used to copy the item's id, which now travels in
+  the context block's header. Every row carries the same copy button: a plain
+  click copies context, a Cmd/Ctrl-click copies text.
+- **Progress bars count the work beneath a node, not the node itself**, and now
+  appear for any actionable descendant at any depth rather than only for direct
+  children — so an umbrella several levels above the real tasks finally shows
+  its progress.
+
+### Removed
+
+- **The discussion-only "Copy prompt" affordance.** Every node now has the same
+  copy button, and the context block it produces carries the node's id and
+  subtree; the do-not-code instruction that used to ride along lives in the
+  agent skill and the standing instruction `kalamu init` plants.
+- **`Mod+Shift+1…9` for switching hub projects**, replaced by `⌘K 1…9` in the
+  palette. The old chord collided with macOS's Cmd+Shift+3/4/5 screenshot
+  shortcuts; the leader sequence never can, since only the opening chord uses a
+  modifier.
+
 ## [0.11.0] - 2026-08-10
 
 ### Added

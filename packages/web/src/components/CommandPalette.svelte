@@ -1,9 +1,10 @@
 <script lang="ts">
   import { deriveTags, effectivePriority } from "@kalamu/core";
+  import { apiBase } from "../lib/api";
   import { nodeCommands } from "../lib/cli-commands";
   import { writeClipboard } from "../lib/copy";
   import type { OutlineStore } from "../lib/outline.svelte";
-  import { digitPick, filterItems, snapSelection, stepSelection } from "../lib/palette";
+  import { assignKeys } from "../lib/palette";
   import { blockerCandidates, blockerEntries, candidateLabel, isBlockable, isStarted } from "../lib/task-state";
   import { theme } from "../lib/theme.svelte";
   import Overlay from "./Overlay.svelte";
@@ -18,7 +19,7 @@
 
   let { store, onclose, onshowshortcuts, onshowcli }: Props = $props();
 
-  type Level = "root" | "priority" | "assign" | "labels" | "cli" | "block" | "unblock";
+  type Level = "root" | "priority" | "assign" | "labels" | "cli" | "block" | "unblock" | "view";
 
   const CRUMBS: Record<Exclude<Level, "root">, string> = {
     priority: "Priority",
@@ -27,33 +28,62 @@
     cli: "Copy CLI",
     block: "Block on",
     unblock: "Unblock",
+    view: "View",
   };
 
   /**
-   * One row; `stays` keeps the palette open after running (label multi-toggle),
-   * `disabled` greys it out — still listed, never selectable or activatable.
+   * One row of the leader-key menu. `key` is the single key that triggers it —
+   * null past the auto-assign supply (the row stays clickable). `stays` keeps
+   * the palette open after running (label multi-toggle), `disabled` greys the
+   * row out — still listed, never activatable.
    */
   interface Item {
     id: string;
+    key: string | null;
     label: string;
-    /** Text the query matches but the row doesn't show — a shortened label's tail. */
-    search?: string;
     checked?: boolean;
     stays?: boolean;
     disabled?: boolean;
+    /** Hub project rows carry the project's colour. */
+    swatch?: string;
     run: () => void;
   }
 
   let level = $state<Level>("root");
-  let query = $state("");
-  let cursor = $state(0);
-  /** Arrow keys were used since the query last changed — Enter then always activates. */
-  let navigated = $state(false);
-  let input = $state<HTMLInputElement>();
+  let panel = $state<HTMLDivElement>();
 
   // The palette steals focus from the editable, so it targets the store's
   // last-focused node; that id may point at a since-deleted node.
   const node = $derived(store.lastFocusedId === null ? undefined : store.tree.byId.get(store.lastFocusedId));
+
+  // ---- hub project rows -------------------------------------------------------
+
+  /** The slice of the hub registry the digit rows need (see Sidebar). */
+  interface HubProject {
+    slug: string;
+    name: string;
+    color: string;
+  }
+
+  const activeSlug = apiBase.slice("/p/".length);
+
+  /** Hub mode only; empty until the list loads (quiet on failure, like Sidebar). */
+  let projects = $state<HubProject[]>([]);
+
+  async function loadProjects(): Promise<void> {
+    try {
+      // Hub-global endpoint — deliberately NOT prefixed with apiBase.
+      const response = await fetch("/api/projects");
+      if (!response.ok) return;
+      const body: unknown = await response.json();
+      if (body !== null && typeof body === "object" && "projects" in body && Array.isArray(body.projects)) {
+        projects = (body.projects as HubProject[]).slice(0, 9); // digits 1-9 are the whole supply
+      }
+    } catch {
+      // No sidebar list, no digit rows — the lettered menu stands alone.
+    }
+  }
+  if (apiBase !== "") void loadProjects();
 
   // Same wording as PriorityMenu, so the two priority surfaces read alike.
   const PRIORITIES = [
@@ -69,6 +99,7 @@
       const current = effectivePriority(target);
       return PRIORITIES.map(({ p, label }) => ({
         id: `p${p}`,
+        key: String(p),
         label,
         checked: current === p,
         run: () => {
@@ -82,12 +113,13 @@
       const task = target;
       // Same wording as AssignMenu, so the two assign surfaces read alike.
       const picks = [
-        { id: "assign-human", label: "Human — agents skip the task", value: "human" },
-        { id: "assign-agent", label: "Agent", value: "agent" },
-        { id: "assign-none", label: "Unassigned", value: null },
+        { id: "assign-human", key: "h", label: "Human — agents skip the task", value: "human" },
+        { id: "assign-agent", key: "a", label: "Agent", value: "agent" },
+        { id: "assign-none", key: "u", label: "Unassigned", value: null },
       ] as const;
-      return picks.map(({ id, label, value }) => ({
+      return picks.map(({ id, key, label, value }) => ({
         id,
+        key,
         label,
         checked: (task.assignee ?? null) === value,
         run: () => {
@@ -99,8 +131,10 @@
     if (level === "labels") {
       if (!target) return [];
       const present = deriveTags(target.text);
-      return store.allTags.map((tag) => ({
+      const keys = assignKeys(store.allTags.length);
+      return store.allTags.map((tag, index) => ({
         id: `tag-${tag}`,
+        key: keys[index] ?? null,
         label: `#${tag}`,
         checked: present.includes(tag),
         stays: true,
@@ -111,13 +145,15 @@
       if (!target || !isBlockable(target)) return [];
       const blocked = target;
       // The whole outline is the candidate pool — blockers cross the tree, and
-      // zoom/filters are view state (SPEC key decision 16). The palette's own
-      // query box does the searching; no separate picker. Open tasks lead the
-      // list and every row is shortened (see candidateLabel).
-      return blockerCandidates(store.nodes, blocked).map((candidate) => ({
+      // zoom/filters are view state (SPEC key decision 16). Open tasks lead the
+      // list and every row is shortened (see candidateLabel); rows past the key
+      // supply stay reachable by click and scroll.
+      const candidates = blockerCandidates(store.nodes, blocked);
+      const keys = assignKeys(candidates.length);
+      return candidates.map((candidate, index) => ({
         id: `block-${candidate.id}`,
+        key: keys[index] ?? null,
         label: candidateLabel(candidate),
-        search: candidate.text, // the shortened label must not shrink what the query finds
         run: () => {
           store.addBlocker(blocked.id, candidate.id);
           close();
@@ -128,8 +164,13 @@
       if (!target) return [];
       const blocked = target;
       const entries = blockerEntries(store.tree, blocked);
-      const rows: Item[] = entries.map((entry) => ({
+      // "Remove all blockers" appears with more than one blocker, on `a` — the
+      // one key this level reserves out of the auto-assign sequence.
+      const removeAll = entries.length > 1;
+      const keys = assignKeys(entries.length, removeAll ? new Set(["a"]) : undefined);
+      const rows: Item[] = entries.map((entry, index) => ({
         id: `unblock-${entry.id}`,
+        key: keys[index] ?? null,
         // A done blocker is still recorded, so it is still removable — the
         // suffix says why it isn't holding anything up.
         label: entry.open ? entry.label : `${entry.label} — done`,
@@ -138,9 +179,10 @@
           close();
         },
       }));
-      if (entries.length > 1) {
+      if (removeAll) {
         rows.push({
           id: "unblock-all",
+          key: "a",
           label: "Remove all blockers",
           run: () => {
             store.removeBlocker(blocked.id);
@@ -152,35 +194,82 @@
     }
     if (level === "cli") {
       if (!target) return [];
-      return nodeCommands({
+      const commands = nodeCommands({
         serverId: store.serverId(target.id),
         done: target.doneAt !== null,
         hasChildren: (store.tree.children.get(target.id) ?? []).length > 0,
         isTask: target.kind === "task",
         started: target.startedAt !== undefined,
-      }).map((command) => ({
+      });
+      const keys = assignKeys(commands.length);
+      return commands.map((command, index) => ({
         id: `cli-${command.split(" ")[1] ?? command}`, // the subcommand word — unique within this list
+        key: keys[index] ?? null,
         label: command,
         run: () => void copyCommand(command),
       }));
     }
-    // Root level: a fixed list with stable numbers (SPEC). Items that don't
-    // apply — node actions without a target, Assign on a bullet or a
-    // discussion (never assigned — SPEC key decision 12), or Collapse parent
-    // with nothing rendered above to fold — are disabled rather than hidden.
-    // Priority works on every kind, matching the inline badge: p1/p3 on a
-    // bullet converts it to a task (core behavior).
+    if (level === "view") {
+      // View state, no target needed — labels reflect what pressing would do.
+      return [
+        {
+          id: "hide-done",
+          key: "h",
+          label: store.hideDone ? "Show done items" : "Hide done items",
+          run: () => {
+            store.toggleHideDone();
+            close();
+          },
+        },
+        {
+          id: "compact",
+          key: "m",
+          label: store.compact ? "Leave compact mode" : "Enter compact mode",
+          run: () => {
+            store.toggleCompact();
+            close();
+          },
+        },
+        {
+          id: "theme",
+          key: "t",
+          label: theme.mode === "dark" ? "Activate light mode" : "Activate dark mode",
+          run: () => {
+            theme.toggle();
+            close();
+          },
+        },
+      ];
+    }
+    // Root level: hub project digits, then the fixed lettered list on stable
+    // keys, in SPEC order. Items that don't apply — node actions without a
+    // target, Assign on a bullet or a discussion (never assigned — SPEC key
+    // decision 12), or Collapse parent with nothing rendered above to fold —
+    // are disabled rather than hidden. Priority works on every kind, matching
+    // the inline badge: p1/p3 on a bullet converts it to a task (core behavior).
     const task = target?.kind === "task" ? target : undefined;
     const started = task !== undefined && isStarted(task);
     // Blocking is the one node action that covers discussions as well as tasks.
     const blockable = target !== undefined && isBlockable(target);
+    // Registry order — the same order that numbers the sidebar.
+    const projectRows: Item[] = projects.map((project, index) => ({
+      id: `project-${project.slug}`,
+      key: String(index + 1),
+      label: project.name,
+      swatch: project.color,
+      checked: project.slug === activeSlug,
+      run: () => {
+        // Plain navigation on purpose: each project is a fresh app instance.
+        if (project.slug === activeSlug) close();
+        else location.href = `/p/${project.slug}`;
+      },
+    }));
     return [
-      { id: "priority", label: "Priority…", disabled: !target, run: () => enter("priority") },
-      { id: "labels", label: "Labels…", disabled: !target, run: () => enter("labels") },
-      { id: "assign", label: "Assign…", disabled: !task, run: () => enter("assign") },
+      ...projectRows,
       {
         // Done works on bullets too — visual-only strikethrough (SPEC).
         id: "done",
+        key: "d",
         label: "Toggle done",
         checked: target !== undefined && target.doneAt !== null,
         disabled: !target,
@@ -190,11 +279,15 @@
           close();
         },
       },
+      { id: "priority", key: "p", label: "Priority…", disabled: !target, run: () => enter("priority") },
+      { id: "assign", key: "a", label: "Assign…", disabled: !task, run: () => enter("assign") },
+      { id: "labels", key: "l", label: "Labels…", disabled: !target, run: () => enter("labels") },
       {
         // Claim / release, one slot labelled by state (SPEC key decision 17).
         // A done task keeps its startedAt as a record of how long the work
         // took, so End is never offered there — only Start, disabled.
         id: started ? "end" : "start",
+        key: "s",
         label: started ? "End — release the claim" : "Start — claim this task",
         disabled: !task || (!started && task.doneAt !== null),
         run: () => {
@@ -210,6 +303,7 @@
         // for the submenu to have something to offer, so no candidate list is
         // built just to grey the item out.
         id: "block",
+        key: "b",
         label: "Block on…",
         disabled: !blockable || store.nodes.length < 2,
         run: () => enter("block"),
@@ -218,14 +312,31 @@
         // Lists what is recorded, done blockers included — they are removable
         // even though they no longer hold anything up.
         id: "unblock",
+        key: "u",
         label: "Unblock…",
         disabled: !target || (target.blockedBy ?? []).length === 0,
         run: () => enter("unblock"),
       },
+      // Copy CLI command works on bullets too — only a target is required.
+      { id: "copy-cli", key: "y", label: "Copy CLI command…", disabled: !target, run: () => enter("cli") },
       {
-        // Structural, so it applies to every kind; inert on root-level nodes
-        // and on the zoom root (canCollapseParent mirrors the store's guards).
+        // Structural, so it applies to every kind; inert on leaves (the same
+        // children check canExpandChildren makes — nothing beneath to fold).
+        id: "toggle-collapse",
+        key: "z",
+        label: "Collapse/expand children",
+        disabled: !target || !store.canExpandChildren(target.id),
+        run: () => {
+          if (!target) return;
+          store.toggleCollapse(target.id);
+          close();
+        },
+      },
+      {
+        // Inert on root-level nodes and on the zoom root (canCollapseParent
+        // mirrors the store's guards).
         id: "collapse-parent",
+        key: "c",
         label: "Collapse parent",
         disabled: !target || !store.canCollapseParent(target.id),
         run: () => {
@@ -237,10 +348,10 @@
         },
       },
       {
-        // The inverse: structural too, inert on leaves (canExpandChildren
-        // mirrors the store's guard — no zoom guard, expanding descends
-        // into the view).
+        // The inverse: inert on leaves (canExpandChildren mirrors the store's
+        // guard — no zoom guard, expanding descends into the view).
         id: "expand-children",
+        key: "e",
         label: "Expand children",
         disabled: !target || !store.canExpandChildren(target.id),
         run: () => {
@@ -250,27 +361,10 @@
           onclose();
         },
       },
-      // Copy CLI command works on bullets too — only a target is required.
-      { id: "copy-cli", label: "Copy CLI command…", disabled: !target, run: () => enter("cli") },
-      {
-        // View state, so it needs no target — same family as the theme toggle.
-        id: "compact",
-        label: store.compact ? "Leave compact mode" : "Enter compact mode",
-        run: () => {
-          store.toggleCompact();
-          close();
-        },
-      },
-      {
-        id: "theme",
-        label: theme.mode === "dark" ? "Activate light mode" : "Activate dark mode",
-        run: () => {
-          theme.toggle();
-          close();
-        },
-      },
+      { id: "view", key: "v", label: "View…", run: () => enter("view") },
       {
         id: "clean",
+        key: "x",
         label: "Clean up",
         run: () => {
           store.clean();
@@ -278,21 +372,13 @@
         },
       },
       // The view sheets always come last (SPEC).
-      { id: "view-shortcuts", label: "View keyboard shortcuts", run: onshowshortcuts },
-      { id: "view-cli", label: "View CLI commands", run: onshowcli },
+      { id: "view-shortcuts", key: "k", label: "Keyboard cheat sheet", run: onshowshortcuts },
+      { id: "view-cli", key: "i", label: "CLI reference", run: onshowcli },
     ];
   });
 
-  const filtered = $derived(filterItems(items, query));
-  // Filtering can shrink the list under the cursor, and the cursor must never
-  // rest on a disabled item; -1 when nothing is selectable.
-  const selected = $derived(snapSelection(filtered, cursor));
-
   function enter(sublevel: Level): void {
     level = sublevel;
-    query = "";
-    cursor = 0;
-    navigated = false;
   }
 
   /** Close and put the caret back in the target node's editor (if it survives). */
@@ -334,23 +420,8 @@
       close();
     } else {
       enter("root");
-      input?.focus(); // regaining focus lands inside the overlay, so this can't re-trigger the focus-leave
+      panel?.focus(); // regaining focus lands inside the overlay, so this can't re-trigger the focus-leave
     }
-  }
-
-  function activate(item: Item): void {
-    item.run();
-    if (item.stays) {
-      // Ready for the next toggle: full list again, checkmarks just updated.
-      query = "";
-      cursor = 0;
-      navigated = false;
-    }
-  }
-
-  function onQueryInput(): void {
-    cursor = 0;
-    navigated = false;
   }
 
   function onkeydown(event: KeyboardEvent): void {
@@ -359,94 +430,66 @@
     // Escape never reaches here — Overlay intercepts it at the window's
     // capture phase, so it works even when focus has left the panel.
     event.stopPropagation();
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      const next = stepSelection(filtered, selected, event.key === "ArrowDown" ? 1 : -1);
-      if (next === -1) return;
-      navigated = true;
-      cursor = next;
-      return;
-    }
-    if (event.key === "Enter") {
-      event.preventDefault();
-      // Labels is a multi-toggle level: Enter on an empty, un-navigated query means "done".
-      if (level === "labels" && query === "" && !navigated) {
-        close();
-        return;
-      }
-      const item = filtered[selected];
-      if (item) activate(item);
-      return;
-    }
-    if (event.key === "Backspace" && query === "") {
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    // No query to erase anymore, so Backspace mirrors Escape (SPEC).
+    if (event.key === "Backspace") {
       event.preventDefault();
       onescape();
       return;
     }
-    // Digits quick-select only while the query is empty; afterwards they type (so
-    // "v2" works). A digit on a disabled item is swallowed, not typed.
-    if (/^[1-9]$/.test(event.key) && !event.metaKey && !event.ctrlKey && !event.altKey) {
-      const action = digitPick(filtered, query, Number(event.key));
-      if (action.kind === "type") return;
-      event.preventDefault();
-      if (action.kind === "activate") activate(action.item);
-    }
+    // A printed key acts immediately; on a disabled row it is swallowed.
+    const item = items.find((candidate) => candidate.key === event.key);
+    if (item === undefined) return;
+    event.preventDefault();
+    if (!item.disabled) item.run();
   }
-
 </script>
 
 <Overlay top="12vh" onclose={close} {onescape} {onfocusleave}>
-  <div class="panel" role="dialog" aria-modal="true" aria-label="Command palette" tabindex="-1" {onkeydown}>
-    {#if node}
+  <!-- No input to focus, so the panel itself takes focus: keys land here and
+       the Overlay's focus-leave logic keeps working. -->
+  <div
+    class="panel"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Command palette"
+    tabindex="-1"
+    {onkeydown}
+    {@attach (element: HTMLDivElement) => {
+      panel = element; // kept for the focus-leave back-step refocus
+      element.focus();
+      return () => (panel = undefined);
+    }}
+  >
+    {#if node !== undefined || level !== "root"}
       <div class="context">
         {#if level !== "root"}<span class="crumb">{CRUMBS[level]}</span>{/if}
-        <span class="target">{node.text.trim() === "" ? "(empty item)" : node.text}</span>
+        {#if node}<span class="target">{node.text.trim() === "" ? "(empty item)" : node.text}</span>{/if}
       </div>
     {/if}
-    <input
-      type="text"
-      bind:value={query}
-      oninput={onQueryInput}
-      placeholder={level === "root" ? "Type to filter, 1–9 to pick…" : "Type to filter, Backspace for back…"}
-      aria-label="Filter commands"
-      aria-controls="palette-list"
-      aria-activedescendant={filtered[selected] ? `palette-opt-${filtered[selected].id}` : undefined}
-      {@attach (element: HTMLInputElement) => {
-        input = element; // kept for the focus-leave back-step refocus
-        element.focus();
-        return () => (input = undefined);
-      }}
-    />
 
-    {#if !node}
+    {#if !node && level === "root"}
       <p class="hint">Focus an item to use the item actions — the view commands work anywhere.</p>
     {/if}
     {#if level === "labels" && store.allTags.length === 0}
       <p class="hint">No tags yet — type <code>#tag</code> inline in an item's text.</p>
-    {:else if filtered.length === 0}
-      <p class="hint">No matches.</p>
+    {:else if items.length === 0}
+      <p class="hint">Nothing to list.</p>
     {:else}
-      <!-- preventDefault keeps focus on the input when items are clicked -->
-      <div
-        class="items"
-        id="palette-list"
-        role="listbox"
-        aria-label="Commands"
-        tabindex="-1"
-        onpointerdown={(event) => event.preventDefault()}
-      >
-        {#each filtered as item, index (item.id)}
+      <!-- preventDefault keeps focus on the panel when items are clicked -->
+      <div class="items" role="menu" aria-label="Commands" tabindex="-1" onpointerdown={(event) => event.preventDefault()}>
+        {#each items as item (item.id)}
           <button
-            class={["item", { active: index === selected }]}
-            id="palette-opt-{item.id}"
-            role="option"
-            aria-selected={index === selected}
+            class="item"
+            role={item.checked === undefined ? "menuitem" : "menuitemcheckbox"}
+            aria-checked={item.checked}
             aria-disabled={item.disabled || undefined}
             disabled={item.disabled}
             tabindex="-1"
-            onclick={() => activate(item)}
+            onclick={() => item.run()}
           >
-            <span class="badge">{index < 9 ? index + 1 : ""}</span>
+            <span class={["badge", { blank: item.key === null }]} aria-hidden="true">{item.key ?? ""}</span>
+            {#if item.swatch !== undefined}<span class="swatch" style:background={item.swatch} aria-hidden="true"></span>{/if}
             <span class={["label", { mono: level === "cli" }]}>{item.label}</span>
             {#if item.checked}<span class="tick" aria-hidden="true">✓</span>{/if}
           </button>
@@ -460,7 +503,7 @@
   .panel {
     width: 420px;
     max-width: 100%;
-    max-height: 60vh;
+    max-height: 70vh;
     display: flex;
     flex-direction: column;
     padding: 10px;
@@ -468,13 +511,14 @@
     background: var(--panel);
     border: 1px solid var(--guide);
     box-shadow: 0 16px 48px rgba(0, 0, 0, 0.3);
+    outline: none;
   }
 
   .context {
     display: flex;
     align-items: baseline;
     gap: 8px;
-    margin: 0 2px 8px;
+    margin: 0 2px 6px;
     min-width: 0;
   }
 
@@ -497,23 +541,7 @@
     color: var(--muted);
   }
 
-  input {
-    width: 100%;
-    padding: 7px 10px;
-    border: 1px solid var(--guide);
-    border-radius: 8px;
-    background: none;
-    color: var(--fg);
-    font: inherit;
-    font-size: 13.5px;
-    outline: none;
-  }
-  input::placeholder {
-    color: var(--muted);
-  }
-
   .items {
-    margin-top: 6px;
     overflow-y: auto;
   }
 
@@ -535,9 +563,6 @@
   .item:hover:enabled {
     background: color-mix(in srgb, var(--fg) 5%, transparent);
   }
-  .item.active {
-    background: color-mix(in srgb, var(--fg) 9%, transparent);
-  }
   .item:disabled {
     color: var(--muted);
     opacity: 0.55;
@@ -558,6 +583,17 @@
     font-size: 10px;
     color: var(--muted);
   }
+  /* Rows past the key supply keep the column, not the box. */
+  .badge.blank {
+    visibility: hidden;
+  }
+
+  .swatch {
+    flex: none;
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+  }
 
   .label {
     flex: 1;
@@ -577,7 +613,7 @@
   }
 
   .hint {
-    margin: 10px 2px 4px;
+    margin: 4px 2px 8px;
     font-size: 12.5px;
     color: var(--muted);
   }

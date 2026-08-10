@@ -1,71 +1,20 @@
 /**
- * Pure list logic for the command palette (no Svelte imports, unit-tested):
- * query filtering, disabled-aware selection, and the digits-as-quick-select
- * rule. Disabled items stay visible (the root list is fixed — SPEC) but can
- * never be selected or activated.
+ * Pure key logic for the leader-key command palette (no Svelte imports,
+ * unit-tested). Dynamic submenus (labels, block candidates, blockers, CLI
+ * commands) get their trigger keys auto-assigned from a fixed sequence;
+ * fixed levels (root, priority, assign, view) carry hand-picked keys.
  */
+
+/** `1`-`9`, then letters in home-row order (SPEC "Command palette"). */
+const KEY_SEQUENCE = [..."123456789", ..."asdfghjkl", ..."qwertyuiop", ..."zxcvbnm"];
 
 /**
- * Rows whose label is a shortened form of something longer (a blocker
- * candidate's node text) carry the full text as `search`, so the query keeps
- * reaching what the row no longer shows.
+ * Trigger keys for `count` list items, in order: digits first, then letters,
+ * skipping any key the level reserves for a fixed row (the unblock level
+ * reserves `a` for "Remove all blockers"). Items past the key supply get
+ * null — rendered without a badge, reachable only by click/scroll.
  */
-export function filterItems<T extends { label: string; search?: string }>(items: readonly T[], query: string): T[] {
-  const needle = query.trim().toLowerCase();
-  if (needle === "") return [...items];
-  return items.filter(
-    (item) => item.label.toLowerCase().includes(needle) || item.search?.toLowerCase().includes(needle) === true,
-  );
-}
-
-/**
- * Where the selection rests: `cursor` clamped into the list, then snapped
- * forward (wrapping) to an enabled item. -1 when nothing is selectable.
- */
-export function snapSelection<T extends { disabled?: boolean }>(filtered: readonly T[], cursor: number): number {
-  if (filtered.length === 0) return -1;
-  const start = Math.min(Math.max(cursor, 0), filtered.length - 1);
-  for (let step = 0; step < filtered.length; step++) {
-    const index = (start + step) % filtered.length;
-    if (!filtered[index]?.disabled) return index;
-  }
-  return -1;
-}
-
-/**
- * ArrowUp/Down: the next enabled index in `delta` direction, wrapping and
- * skipping disabled items; unchanged when nothing else is enabled.
- */
-export function stepSelection<T extends { disabled?: boolean }>(
-  filtered: readonly T[],
-  selected: number,
-  delta: -1 | 1,
-): number {
-  if (selected === -1) return -1;
-  const length = filtered.length;
-  for (let step = 1; step <= length; step++) {
-    const index = (((selected + delta * step) % length) + length) % length;
-    if (!filtered[index]?.disabled) return index;
-  }
-  return selected;
-}
-
-/**
- * What a digit keypress means: with an empty query it activates the Nth
- * (1-based) filtered item — unless that item is disabled, in which case the
- * press is swallowed (a disabled number must not leak into the query). Once
- * anything is typed, or the digit points past the list, it is ordinary query
- * text (so tags like "v2" stay typeable).
- */
-export type DigitAction<T> = { kind: "activate"; item: T } | { kind: "swallow" } | { kind: "type" };
-
-export function digitPick<T extends { disabled?: boolean }>(
-  filtered: readonly T[],
-  query: string,
-  digit: number,
-): DigitAction<T> {
-  if (query !== "") return { kind: "type" };
-  const item = filtered[digit - 1];
-  if (!item) return { kind: "type" };
-  return item.disabled ? { kind: "swallow" } : { kind: "activate", item };
+export function assignKeys(count: number, reserved: ReadonlySet<string> = new Set()): (string | null)[] {
+  const available = KEY_SEQUENCE.filter((key) => !reserved.has(key));
+  return Array.from({ length: count }, (_, index) => available[index] ?? null);
 }

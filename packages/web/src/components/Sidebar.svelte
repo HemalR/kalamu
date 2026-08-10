@@ -204,24 +204,10 @@
   const narrow = window.matchMedia("(max-width: 999.98px)");
 
   // Capture phase, so this wins over App's window listener when it stops
-  // propagation (Escape is a global "clear filter" key there), and so
-  // Mod+Shift+1…9 works even mid-edit. A rename in progress gets Escape
-  // first: its own handler cancels it and stops there. Then innermost-out:
-  // colour popover before the drawer.
+  // propagation (Escape is a global "clear filter" key there). A rename in
+  // progress gets Escape first: its own handler cancels it and stops there.
+  // Then innermost-out: colour popover before the drawer.
   function onWindowKeydown(event: KeyboardEvent): void {
-    // Mod+Shift+digit opens the nth project. Matched by event.code, not
-    // event.key: Shift turns digit keys into punctuation (e.g. "!") on most
-    // layouts. Digits without a project fall through untouched.
-    if ((event.metaKey || event.ctrlKey) && event.shiftKey && !event.altKey) {
-      const digit = /^Digit([1-9])$/.exec(event.code);
-      const project = digit === null ? undefined : projects?.[Number(digit[1]) - 1];
-      if (project !== undefined) {
-        event.preventDefault();
-        event.stopPropagation();
-        if (project.slug !== activeSlug) location.href = `/p/${project.slug}`;
-        return;
-      }
-    }
     if (event.key !== "Escape" || editingSlug !== null) return;
     if (colorSlug !== null) {
       event.stopPropagation();
@@ -290,9 +276,9 @@
   {/if}
   <nav class="sidebar" class:open={drawerOpen} aria-label="Projects" style:--project-color={activeProject?.color}>
     <span class="brand"><Wordmark size={13} /></span>
-    <!-- Presentational: with the numbered swatches below it spells Mod+Shift+N. -->
+    <!-- Presentational: with the numbered swatches below it spells the palette's leader sequence, ⌘K → n. -->
     <span class="hint" aria-hidden="true">
-      <kbd>{isMac ? "⌘" : "Ctrl"}</kbd><span class="plus">+</span><kbd>Shift</kbd><span class="plus">+</span>
+      <kbd>{isMac ? "⌘" : "Ctrl+"}K</kbd><span class="plus">→</span>
     </span>
     <ul ondragleave={onListDragLeave}>
       {#each projects as project, index (project.slug)}
