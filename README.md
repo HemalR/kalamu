@@ -45,11 +45,12 @@ In the UI, everything is a keystroke away:
 
 - **Enter / Tab / Shift+Tab** — new item, indent, outdent
 - **⌘K** — command palette: priority, labels, done, mine, start/block, copy CLI commands
-- **⌘Enter** — done/reopen · **⌘⇧Enter** — cycle bullet/task/discussion · **⌘.** — collapse · **⌘⇧C** — copy the item's id
+- **⌘Enter** — done/reopen · **⌘⇧Enter** — cycle bullet/task/discussion · **⌘.** — collapse · **⌘⇧C** — copy only the item's text
 - **?** — the full cheat sheet
 - Inline tokens as you type: `p1`…`p3` set priority, `#tag` becomes a coloured chip, `@human` keeps a task for yourself, `@agent` marks it as agent work
+- Mouse shortcuts: **⌘-click** a row to collapse it, **⌥-click** to zoom into it — the whole row is the target, not just the chevron
 
-Two view controls sit in the header. **Compact mode** shortens every row to a derived one-line label so a long outline stays scannable — nothing is stored, and the full text comes back the moment you edit. The **filter menu** hides items by who wrote them (you or an agent) and who they're assigned to, and holds the show/hide-completed toggle (⌘⇧H). Any item with work beneath it carries a segmented progress bar showing what's done, what's in progress, and what's left.
+Two view controls sit in the header. **Compact mode** shortens every row to a derived one-line label so a long outline stays scannable — nothing is stored, and the full text comes back the moment you edit. The **filter menu** hides items by who wrote them (you or an agent) and who they're assigned to, and holds the show/hide-completed toggle (⌘⇧H). Any item with work beneath it carries a segmented progress bar showing what's done, what's in progress, and what's left, and every row shows how long ago it was created — hover for the exact timestamp.
 
 Commit `.kalamu/` with your code — the outline's line order is the outline, so diffs stay readable.
 
@@ -82,7 +83,7 @@ kalamu next --discussion       # the discussion queue, kept separate from tasks
 kalamu list --discussions
 ```
 
-In the UI a discussion shows a speech-bubble glyph with a **Copy prompt** affordance: paste it into an agent session, talk it through, and the agent records the outcome as child bullets and marks the discussion done. Discussions can't be assigned, and completing one never blocks the follow-up tasks recorded beneath it.
+In the UI a discussion shows a speech-bubble glyph. Use its copy affordance (or Cmd/Ctrl+C) to paste its agent-context block into a chat, talk it through, then record the outcome as child bullets and mark the discussion done. Discussions can't be assigned, and completing one never blocks the follow-up tasks recorded beneath it.
 
 ## Claims and blockers
 

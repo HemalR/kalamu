@@ -1,7 +1,7 @@
 /**
  * Markdown serialization of outline subtrees — the single source of truth
- * for the format shared by the CLI (`show --format markdown`) and the web
- * UI's copy-subtree (Cmd+C). Two-space indent per depth; roots at depth 0.
+ * for the CLI (`show --format markdown`) and outline-shaped text embedded in
+ * web clipboard prompts. Two-space indent per depth; roots at depth 0.
  */
 import { effectivePriority, type KalamuNode } from "./model.js";
 import type { Tree } from "./tree.js";

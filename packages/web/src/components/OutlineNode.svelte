@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { DEFAULT_PRIORITY, deriveTags, tagColor, type KalamuNode } from "@kalamu/core";
+  import { DEFAULT_PRIORITY, deriveTags, formatRelativeTime, tagColor, type KalamuNode } from "@kalamu/core";
   import { tick } from "svelte";
   import {
     caretHit,
@@ -15,8 +15,8 @@
   } from "../lib/caret";
   import { api } from "../lib/api";
   import { tokenBeforeCaret } from "../lib/commit";
-  import { writeClipboard } from "../lib/copy";
   import { clearTagHighlights, updateTagHighlights } from "../lib/highlight";
+  import { now } from "../lib/now.svelte";
   import type { FocusTarget, OutlineStore } from "../lib/outline.svelte";
   import { assetUrl, segmentText } from "../lib/segments";
   import { matches, SHORTCUTS as S } from "../lib/shortcuts";
@@ -129,6 +129,14 @@
   /** Exact numbers only where attention is — see the store's captionIds. */
   const showCaption = $derived(store.captionIds.has(node.id));
 
+  // ---- created time ----------------------------------------------------------
+
+  /* Off the app's shared clock, not `new Date()`: a derived that closed over
+     the current time would never re-run, so a row would still read "now" hours
+     later in a window nobody reloads. */
+  const createdAgo = $derived(formatRelativeTime(node.createdAt, { now: now.current }));
+  const createdTitle = $derived(`Created ${new Date(node.createdAt).toLocaleString()}`);
+
   /**
    * Tell the store where the caret is, for the caption rule. The cleanup also
    * covers unmount; clearCaret only clears a claim this node still owns — when
@@ -180,6 +188,10 @@
   /** Full token parsing happens here — on Enter/blur/structural keys, never per keystroke. */
   function commit(): void {
     if (editing) store.commitText(node.id, draft);
+  }
+
+  function currentRawText(): string {
+    return editing ? draft : node.text;
   }
 
   function onEditableFocus(): void {
@@ -410,6 +422,61 @@
   }
 
   /**
+   * Modifier chords on the row, the mouse twins of Mod+. and Mod+Shift+.: the
+   * chevron is a 10px target, and these make the whole row one. Each takes a
+   * single modifier — Mod collapses, Alt zooms — so neither is a two-hand
+   * stretch; holding both is not a third gesture, it's a slip, and does
+   * nothing. Shift is excluded throughout, staying with the browser so
+   * Shift+click still extends a native text selection.
+   */
+  function rowChord(event: MouseEvent): "collapse" | "zoom" | null {
+    const target = event.target;
+    if (target instanceof Element && target.closest(".copy-context")) return null;
+    if (event.shiftKey) return null;
+    const mod = event.metaKey || event.ctrlKey;
+    if (mod === event.altKey) return null; // neither held, or both
+    return mod ? "collapse" : "zoom";
+  }
+
+  /*
+   * Both handlers run in the CAPTURE phase, which is what makes the row a
+   * single target: the event is claimed on the way down, so the chevron, the
+   * glyph, the priority badge, the tag chips and the link anchors never see it
+   * and cannot fire their own action as well. The copy button is explicitly
+   * exempt because Mod+click has its own raw-text action.
+   * pointerdown's preventDefault is the one that suppresses caret placement and
+   * focus — without it the display textbox takes focus and onDisplayFocus opens
+   * an edit underneath the chord.
+   */
+  function onRowPointerDownCapture(event: PointerEvent): void {
+    if (!rowChord(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  function onRowClickCapture(event: MouseEvent): void {
+    const chord = rowChord(event);
+    if (!chord) return;
+    // preventDefault matters on the inline link segments: Mod+click would open
+    // a tab, and Alt+click would download the target.
+    event.preventDefault();
+    event.stopPropagation();
+    if (chord === "zoom") store.zoomIn(node.id);
+    else store.toggleCollapse(node.id);
+  }
+
+  function onCopyClick(event: MouseEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.metaKey || event.ctrlKey) {
+      store.copyNodeText(node.id, currentRawText());
+      return;
+    }
+    commit();
+    store.copyNodeContext(node.id);
+  }
+
+  /**
    * Parse-on-space: extract a just-typed pN/@human/@agent token in place. #tags stay
    * in the text (they become chips on blur). Commit-time parsing remains the
    * backstop.
@@ -583,29 +650,20 @@
       }
       return;
     }
-    if (matches(event, S.copyId)) {
+    if (matches(event, S.copyText)) {
       // Chrome binds this combo to DevTools inspect, but pages may claim it
       // (Google Docs precedent) — preventDefault suffices.
       event.preventDefault();
-      if (node.kind === "discussion") {
-        // Keyboard twin of the row's "Copy prompt" link.
-        store.copyDiscussionPrompt(node.id);
-        return;
-      }
-      const id = store.serverId(node.id);
-      writeClipboard(id).then(
-        () => store.showToast(`Copied ${id}`),
-        () => store.showToast("could not access the clipboard"),
-      );
+      store.copyNodeText(node.id, currentRawText());
       return;
     }
-    if (matches(event, S.copySubtree)) {
+    if (matches(event, S.copyContext)) {
       // A real text selection keeps native copy; a collapsed caret copies the
-      // subtree.
+      // node's ancestor path and subtree as agent-chat context.
       if (window.getSelection()?.isCollapsed !== true) return;
       event.preventDefault();
       commit();
-      store.copySubtree(node.id);
+      store.copyNodeContext(node.id);
       return;
     }
     if (matches(event, S.redo)) {
@@ -667,11 +725,13 @@
 
 <div class="node" {@attach registerHandle}>
   <!-- Pointer position feeds the progress bar's caption rule (store.captionIds);
-       the row has no other pointer behaviour of its own. -->
+       the capture-phase chords are the row's only other pointer behaviour. -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class={["row", { done: isDone, discussion: node.kind === "discussion" }]}
     bind:this={rowEl}
+    onpointerdowncapture={onRowPointerDownCapture}
+    onclickcapture={onRowClickCapture}
     onpointerenter={() => store.setHover(node.id)}
     onpointerleave={() => store.clearHover(node.id)}
   >
@@ -933,18 +993,15 @@
       <!-- Absolute in the row's right gutter and mounted even while editing, so
            entering/leaving edit mode never shifts the row; CSS reveals it on
            row hover/focus. Clicking mid-edit blurs the editable, which commits
-           the draft before the copy reads the tree. Keyboard twins: Mod+Shift+C
-           for a discussion's agent prompt, Mod+C (nothing selected) for the
-           subtree copy on every other kind. -->
+           the draft before a normal click reads the tree. A normal click copies
+           agent context like Mod+C; Mod+click copies only raw text like
+           Mod+Shift+C. Both mappings are uniform across node kinds. -->
       <button
-        class="copy-prompt"
-        aria-label={node.kind === "discussion" ? "Copy agent prompt" : "Copy item and sub-items"}
-        title={node.kind === "discussion" ? "Copy agent prompt" : "Copy item and sub-items"}
+        class="copy-context"
+        aria-label="Copy item context; modifier-click copies item text only"
+        title="Copy item context (Mod-click: copy text only)"
         tabindex="-1"
-        onclick={() =>
-          node.kind === "discussion"
-            ? store.copyDiscussionPrompt(node.id)
-            : store.copySubtree(node.id)}
+        onclick={onCopyClick}
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
@@ -954,17 +1011,19 @@
     </div>
   </div>
 
-  <!-- Its own row, under the parent and above the children. Rendered for every
-       qualifying node whatever the state of the outline: a bar that appeared on
-       hover would shove the hovered row out from under the pointer and
-       oscillate. Only the caption comes and goes, and the row's fixed height
-       keeps even that free of reflow. Presentational — no tab stop, no
-       handlers, so click-to-edit and caret navigation never see it. -->
-  {#if showBar}
-    <div class="bar-row">
+  <!-- Its own row, under the parent and above the children, carrying whatever
+       this node has to say about itself. Rendered for every node whatever the
+       state of the outline: furniture that appeared on hover would shove the
+       hovered row out from under the pointer and oscillate. Only the bar and
+       the caption come and go, and the row's fixed height keeps even that free
+       of reflow. Presentational — no tab stop, no handlers, so click-to-edit
+       and caret navigation never see it. -->
+  <div class={["meta-row", { done: isDone }]}>
+    {#if showBar}
       <ProgressBar done={progress.done} active={progress.active} total={progress.total} caption={showCaption} />
-    </div>
-  {/if}
+    {/if}
+    <time class="created" datetime={node.createdAt} title={createdTitle}>{createdAgo}</time>
+  </div>
 
   {#if hasChildren && !isCollapsed}
     <div class="children">
@@ -1311,7 +1370,7 @@
   /* In the row's right gutter (main's 32px right padding, which every nesting
      depth keeps — children indent only on the left), anchored to .row like the
      chevron is on the left. Absolute, so it never reshapes the row. */
-  .copy-prompt {
+  .copy-context {
     position: absolute;
     right: -24px;
     top: 6px;
@@ -1330,13 +1389,13 @@
     transition: opacity 0.1s;
     z-index: 1;
   }
-  .row:hover .copy-prompt,
-  .row:focus-within .copy-prompt,
-  .copy-prompt:focus-visible {
+  .row:hover .copy-context,
+  .row:focus-within .copy-context,
+  .copy-context:focus-visible {
     opacity: 1;
     pointer-events: auto;
   }
-  .copy-prompt:hover {
+  .copy-context:hover {
     color: var(--fg);
   }
   /* Forgiving hover, left side: approaching a row through the left gutter
@@ -1364,16 +1423,32 @@
     width: 32px;
   }
 
-  /* Starts exactly where THIS row's text starts — the bar reads as a footer to
+  /* Starts exactly where THIS row's text starts — the meta reads as a footer to
      its own row, not as the first of its children. Height is fixed rather than
-     intrinsic: the caption is taller than the dashes, and it must be able to
-     appear without moving anything. */
-  .bar-row {
+     intrinsic, and one constant for every node: the bar comes and goes with the
+     subtree, and neither it nor the caption may move anything when it does. */
+  .meta-row {
     display: flex;
     align-items: center;
+    gap: 8px;
     height: 14px;
     padding-left: var(--text-col);
     user-select: none;
+  }
+
+  /* Same weight as the bar's caption — this is ambient provenance, and the
+     exact timestamp is a hover away. */
+  .created {
+    font-size: 11px;
+    line-height: 1;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    cursor: help;
+  }
+  /* A finished node's age is history, like its other badges. */
+  .meta-row.done .created {
+    opacity: 0.6;
   }
 
   /* Every row now carries the same gutter — glyph (18px) + prio column

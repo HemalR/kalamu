@@ -6,7 +6,7 @@ import { bullet, discussion, task } from "./helpers.js";
 const NOW = "2026-07-09T09:00:00.000Z";
 
 describe("serializeMarkdown", () => {
-  it("renders the canonical shared format (CLI show --format markdown == web Cmd+C)", () => {
+  it("renders the canonical Markdown outline format", () => {
     const nodes = [
       bullet("n_001", { text: "Auth improvements #auth" }),
       task("n_002", { parentId: "n_001", text: "Fix redirect", priority: 1 }),

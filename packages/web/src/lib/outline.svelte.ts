@@ -34,7 +34,7 @@ import {
 } from "@kalamu/core";
 import { api, type Priority } from "./api";
 import { commitPatch, tokenPatch, type CommitPatch } from "./commit";
-import { discussionPrompt, serializeSubtree, writeClipboard } from "./copy";
+import { rawNodeText, serializeNodeContext, writeClipboard } from "./copy";
 import { nextNumberPrefix } from "./numbering";
 import { OutlineViewState } from "./view-state.svelte";
 
@@ -423,22 +423,22 @@ export class OutlineStore extends OutlineViewState {
     this.deleteAndRefocus(id, true);
   }
 
-  /** Mod+C with nothing selected: copy the node and all descendants as text. */
-  copySubtree(id: string): void {
+  /** Mod+C or the row button: copy the node's ancestor path and subtree for an agent chat. */
+  copyNodeContext(id: string): void {
     if (!this.tree.byId.has(id)) return;
-    const { text, count } = serializeSubtree(this.tree, id);
+    const { text, count } = serializeNodeContext(this.tree, id, this.serverId(id));
     writeClipboard(text).then(
       () => this.showToast(`Copied ${count} item${count === 1 ? "" : "s"}`),
       () => this.showToast("could not access the clipboard"),
     );
   }
 
-  /** A discussion's "Copy prompt": topic + subtree + a do-not-code instruction, ready for an agent. */
-  copyDiscussionPrompt(id: string): void {
-    const prompt = discussionPrompt(this.tree, id, this.serverId(id));
-    if (prompt === null) return;
-    writeClipboard(prompt).then(
-      () => this.showToast("Discussion prompt copied — paste it into your agent."),
+  /** Mod+Shift+C or Mod-click on the row button: copy only the node's unformatted text. */
+  copyNodeText(id: string, raw?: string): void {
+    const text = rawNodeText(this.tree, id, raw);
+    if (text === null) return;
+    writeClipboard(text).then(
+      () => this.showToast("Copied item text"),
       () => this.showToast("could not access the clipboard"),
     );
   }
@@ -463,17 +463,19 @@ export class OutlineStore extends OutlineViewState {
     if (fallback !== null) void this.focus(fallback, "end");
   }
 
-  /** Nearest visible node outside `id`'s subtree — where focus lands after deletion. */
+  /**
+   * Visible node that takes `id`'s rendered place after deletion: the first
+   * row below its subtree, falling back to the row above at the end.
+   */
   private neighborOf(id: string): string | null {
     const order = this.visibleIds;
     const index = order.indexOf(id);
-    if (index > 0) return order[index - 1] ?? null;
     const doomed = subtreeIds(this.tree, id);
     for (let i = index + 1; i < order.length; i++) {
       const candidate = order[i];
       if (candidate !== undefined && !doomed.has(candidate)) return candidate;
     }
-    return null;
+    return index > 0 ? (order[index - 1] ?? null) : null;
   }
 
   /** `kalamu clean` in the UI: delete every done task with its subtree, plus done bullets, done discussions, and blank nodes — undoable. */

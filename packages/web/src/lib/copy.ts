@@ -1,35 +1,43 @@
-/**
- * Copy a node and its descendants as a markdown indented list — for pasting
- * into an agent chat. Operates on data, not visibility: collapsed
- * descendants are included. The format itself lives in @kalamu/core
- * (serializeMarkdown), shared with `kalamu show --format markdown`, so the
- * two can never drift.
- */
-import { serializeMarkdown, type Tree } from "@kalamu/core";
+/** Copy context for pasting a focused node into an agent chat. */
+import { ancestors, markdownLine, serializeMarkdown, type NodeKind, type Tree } from "@kalamu/core";
 
-export function serializeSubtree(tree: Tree, rootId: string): { text: string; count: number } {
+const KIND_LABEL: Record<NodeKind, string> = {
+  bullet: "Bullet",
+  task: "Task",
+  discussion: "Discussion",
+};
+
+/**
+ * Format the direct ancestor path and the selected node's whole subtree.
+ * Siblings of both the ancestors and the selected node are deliberately
+ * excluded. This operates on document data rather than visibility, so
+ * collapsed descendants are still included.
+ *
+ * `serverId` is the stable id understood by the CLI. During an optimistic
+ * create it can differ from `rootId`, which is the store's temporary key.
+ */
+export function serializeNodeContext(
+  tree: Tree,
+  rootId: string,
+  serverId: string,
+): { text: string; count: number } {
   const root = tree.byId.get(rootId);
   if (!root) return { text: "", count: 0 };
-  const text = serializeMarkdown(tree, [root]);
-  return { text, count: text.split("\n").length };
+  const path = ancestors(tree, root);
+  const subtreeLines = serializeMarkdown(tree, [root]).split("\n");
+  const body = [
+    ...path.map((node, depth) => `${"  ".repeat(depth)}${markdownLine(node)}`),
+    ...subtreeLines.map((line) => `${"  ".repeat(path.length)}${line}`),
+  ].join("\n");
+  const text = ["---", `Kalamu ${KIND_LABEL[root.kind]} ID: ${serverId}`, "", body, "---"].join("\n");
+  return { text, count: path.length + subtreeLines.length };
 }
 
-/**
- * The "Copy prompt" text for a discussion node (SPEC key decision 12): the
- * topic, its subtree (indented as in copy-subtree, minus the node's own
- * line), and a do-not-code instruction telling the agent how to record the
- * outcome. `serverId` is the id as the CLI knows it — never a local alias.
- */
-export function discussionPrompt(tree: Tree, rootId: string, serverId: string): string | null {
-  const root = tree.byId.get(rootId);
-  if (!root || root.kind !== "discussion") return null;
-  // Drop the node's own line; children keep their as-serialized indentation.
-  const subtree = serializeMarkdown(tree, [root]).split("\n").slice(1).join("\n");
-  return [
-    `Kalamu discussion ${serverId}: ${root.text}`,
-    ...(subtree === "" ? [] : [subtree]),
-    `This is for discussion only — do not make any code changes yet. When we reach a conclusion, help me record the outcome as child bullets under ${serverId} (kalamu add --parent ${serverId} --text "..."), then mark the discussion done (kalamu done ${serverId}).`,
-  ].join("\n\n");
+/** The node's text exactly as stored, or the current editor draft when supplied. */
+export function rawNodeText(tree: Tree, id: string, draft?: string): string | null {
+  const node = tree.byId.get(id);
+  if (!node) return null;
+  return draft ?? node.text;
 }
 
 /** navigator.clipboard when available; hidden-textarea execCommand otherwise. */
