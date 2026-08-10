@@ -4,13 +4,15 @@ Repo-local, keyboard-first outliner for solo developers and coding agents. **SPE
 
 ## Dogfooding rule
 
-This repo uses Kalamu itself. Any deferred todo — including todos for the human — goes into `.kalamu/outline.jsonl`:
+This repo uses Kalamu itself — as a parking lot for deferred work, never as a log of the current conversation. Use the CLI: `node packages/cli/dist/index.js add --kind task --text "..."` (or the `kalamu` bin when linked); before the CLI builds, append a line to `.kalamu/outline.jsonl` by hand following SPEC.md's data model exactly.
 
-- Once the CLI builds, use it: `node packages/cli/dist/index.js add --kind task --text "..."` (or the `kalamu` bin when linked).
-- Before the CLI exists/builds, append a line to `.kalamu/outline.jsonl` by hand following SPEC.md's data model exactly.
-- Tasks for the human (not for agents) get `--assign human` (`"assignee": "human"`). Agents must never work on human-assigned tasks.
-- Topics to talk through with the human get `--kind discussion`. Discussions are never coding work: when the human raises one, discuss only — no code changes — then record the outcome as child bullets and mark it done.
-- When your work needs the human to do something (a decision, a credential, a manual step), don't just say so in chat — also record it as a human-assigned task so it survives the conversation.
+- Agents add nodes in exactly three cases, always `--kind task`:
+  1. Work discovered in this conversation but deliberately not done in it.
+  2. Something the human must do that this conversation won't deliver (a decision for later, a credential, a manual step) — `--assign human`. Agents must never work on human-assigned tasks.
+  3. The human explicitly asked for it to be tracked. (This covers human-invoked workflows whose spec writes to the outline — e.g. wayfinder charting, the one context where an agent may create `--kind discussion`, because the human invoked the skill that defines those tickets.)
+- Nothing else becomes a node. Findings, summaries, live topics, and outcomes belong in chat — or in SPEC.md when it's a settled design decision. When unsure, don't record: say it in chat and let the human park it.
+- Placement is part of the record. Before adding, find the branch the node belongs to (`kalamu list`, `kalamu search <term>`) and nest it there with `--parent <id>` — work discovered while doing a task usually belongs under that task or its umbrella; a human-assigned follow-up belongs under the work that raised it. Top level is for genuinely new areas only, never the path of least effort: a bolted-on orphan at the end of the outline disrupts the human's structure instead of extending it.
+- Discussions are the human's tool. The human creates them to park topics for a later agent session; agents never create one on their own initiative. When the human brings one to a session (by id, or via the UI's Copy prompt), discuss only — no code changes — then record the outcome as child bullets and mark it done.
 - Do NOT use TODO comments, a TODO.md, or other task systems for deferred work in this repo.
 
 ## Structure
@@ -35,3 +37,9 @@ pnpm monorepo:
 - Tags live inline in node text as `#tokens` (no `tags` field); the tag set is derived from text. Priority stays a field.
 - `outline.jsonl` line order IS sibling order; writer emits pre-order traversal; all file writes are temp-file + atomic rename with mtime conflict check.
 - Svelte work goes through the svelte-developer agent with the svelte-code-writer skill.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in Kalamu (`.kalamu/outline.jsonl`). See `docs/agents/issue-tracker.md` — its "Wayfinding operations" section is what `/wayfinder` consults.

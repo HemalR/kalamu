@@ -5,6 +5,7 @@ import {
   blockerCandidates,
   blockerEntries,
   candidateLabel,
+  isBlockable,
   isStarted,
   nodeLabel,
   openBlockers,
@@ -40,6 +41,18 @@ describe("isStarted", () => {
   });
 });
 
+describe("isBlockable", () => {
+  it("covers tasks and discussions, but not bullets", () => {
+    expect(isBlockable(node({ id: "a" }))).toBe(true);
+    expect(isBlockable(node({ id: "b", kind: "discussion" }))).toBe(true);
+    expect(isBlockable(node({ id: "c", kind: "bullet" }))).toBe(false);
+  });
+
+  it("does not depend on done state — a done item can still record what it waited on", () => {
+    expect(isBlockable(node({ id: "a", doneAt: DONE }))).toBe(true);
+  });
+});
+
 describe("openBlockers", () => {
   const open = node({ id: "open", text: "Ship the API" });
   const closed = node({ id: "closed", text: "Write docs", doneAt: DONE });
@@ -63,6 +76,11 @@ describe("openBlockers", () => {
 
   it("returns nothing when the field is absent", () => {
     expect(openBlockers(tree, free)).toEqual([]);
+  });
+
+  it("blocks a discussion the same way, so the Blocked badge renders on it", () => {
+    const talk = node({ id: "talk", kind: "discussion", text: "Decide the schema", blockedBy: ["open"] });
+    expect(openBlockers(buildTree([open, talk]), talk)).toEqual([open]);
   });
 });
 
@@ -109,6 +127,11 @@ describe("blockerCandidates", () => {
       "b",
       "done-bullet",
     ]);
+  });
+
+  it("offers the same pool when the blocked node is a discussion", () => {
+    const talk = node({ id: "talk", kind: "discussion", text: "Decide the schema" });
+    expect(blockerCandidates([api, docs, talk, bullet], talk).map((n) => n.id)).toEqual(["a", "c", "b"]);
   });
 
   it("keeps outline order within a group", () => {

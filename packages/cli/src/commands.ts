@@ -33,6 +33,7 @@ import { initKalamu, readOutline, withOutline } from "@kalamu/core/store";
 import { readFileSync } from "node:fs";
 import { parseActor, resolveActor } from "./actor.js";
 import { ensureAgentDocs } from "./agent-docs.js";
+import { ensureWayfinderDocs } from "./wayfinder-docs.js";
 import { CliError, looksLikeRepo, resolvePaths, type CommandResult } from "./context.js";
 import { ensureGitignore, IGNORE_ENTRIES } from "./gitignore.js";
 import { registerProject } from "./registry.js";
@@ -66,7 +67,10 @@ export function parseAssignee(value: string, allowNone: boolean): Assignee | nul
   return value;
 }
 
-export function init(cwd: string, options: { agentDocs?: boolean; gitignore?: boolean } = {}): CommandResult {
+export function init(
+  cwd: string,
+  options: { agentDocs?: boolean; gitignore?: boolean; wayfinder?: boolean } = {},
+): CommandResult {
   const { created, paths } = initKalamu(cwd);
   registerProject(paths.root);
   const docs = options.agentDocs === false ? [] : ensureAgentDocs(cwd);
@@ -74,11 +78,14 @@ export function init(cwd: string, options: { agentDocs?: boolean; gitignore?: bo
   // prints the entries as a suggestion (SPEC ".gitignore entries").
   const inRepo = looksLikeRepo(cwd);
   const ignores = options.gitignore === false || !inRepo ? [] : ensureGitignore(cwd);
+  const wayfinder = options.wayfinder ? ensureWayfinderDocs(cwd) : { tracker: null, pointers: [] };
   const lines = [
     ...(docs.length ? [`Added the agent standing instruction to ${docs.join(" and ")}.`] : []),
     ...(ignores.length ? [`Added ${ignores.length} .kalamu ignore entr${ignores.length === 1 ? "y" : "ies"} to .gitignore.`] : []),
+    ...(wayfinder.tracker ? [`Wrote ${wayfinder.tracker} (wayfinder issue-tracker doc).`] : []),
+    ...(wayfinder.pointers.length ? [`Added the issue-tracker pointer to ${wayfinder.pointers.join(" and ")}.`] : []),
   ];
-  const json = { created, dir: paths.dir, agentDocs: docs, gitignore: ignores };
+  const json = { created, dir: paths.dir, agentDocs: docs, gitignore: ignores, wayfinder };
   if (!created) {
     return { text: [`Already initialised (${paths.dir})`, ...lines].join("\n"), json };
   }

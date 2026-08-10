@@ -100,6 +100,26 @@ describe("kalamu block / unblock", () => {
     expect((commands.show(cwd, dependent, {}).json as { blockedBy: string[] }).blockedBy).toEqual([blocker]);
   });
 
+  it("blocks a discussion, hides it from next --discussion, and frees it when the blocker is done", () => {
+    const blocker = addTask("research the options");
+    const topic = (
+      commands.add(cwd, { text: "grill the design", kind: "discussion", blockedBy: [blocker] }).json as { id: string }
+    ).id;
+
+    expect(commands.next(cwd, { discussion: true }).exitCode).toBe(2);
+    expect(commands.list(cwd, { blocked: true }).text).toContain("grill the design");
+
+    commands.done(cwd, blocker);
+    expect((commands.next(cwd, { discussion: true }).json as { id: string }).id).toBe(topic);
+  });
+
+  it("refuses to block a bullet", () => {
+    const target = (commands.add(cwd, { text: "just structure" }).json as { id: string }).id;
+    expect(() => commands.block(cwd, target, { by: [addTask("real work")] })).toThrow(
+      /only tasks and discussions can be blocked/,
+    );
+  });
+
   it("deleting a blocker leaves no dangling reference and validates", () => {
     const blocked = addTask("dependent");
     const blocker = addTask("goes away");

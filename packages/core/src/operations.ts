@@ -115,9 +115,10 @@ export function updateNode(nodes: readonly KalamuNode[], id: string, input: Upda
 
   if (input.text !== undefined) updated.text = input.text;
   // Converting away from task preserves doneAt/priority/assignee — and
-  // startedAt/blockedBy — inert on other kinds, restored if converted back
-  // (SPEC "kalamu update"). Inertness matters: eligibleTasks only reads
-  // these fields on the kinds they gate.
+  // startedAt/blockedBy — inert on kinds they do not gate, restored if
+  // converted back (SPEC "kalamu update"). Inertness matters: eligibleTasks
+  // reads each field only on the kinds it gates — blockedBy on tasks and
+  // discussions, startedAt/assignee on tasks, neither on a bullet.
   if (input.kind !== undefined) updated.kind = input.kind;
   if (input.priority !== undefined) {
     if (input.priority === "default" || input.priority === 2) delete updated.priority;
@@ -280,7 +281,12 @@ export function dependsOn(nodes: readonly KalamuNode[], fromId: string, targetId
   return false;
 }
 
-/** Record that `id` waits on `blockerId`. Adding a known blocker is a no-op. */
+/**
+ * Record that `id` waits on `blockerId`. Adding a known blocker is a no-op.
+ * Tasks and discussions can be blocked (key decision 16, amended 2026-08-10 —
+ * a discussion whose conversation cannot usefully happen yet is a real
+ * dependency); bullets are structure, not work, so they cannot.
+ */
 export function addBlocker(
   nodes: readonly KalamuNode[],
   id: string,
@@ -289,7 +295,7 @@ export function addBlocker(
   const tree = buildTree(nodes);
   const node = requireNode(tree, id);
   requireNode(tree, blockerId);
-  if (node.kind !== "task") throw new OperationError(`${id} is a ${node.kind}; only tasks can be blocked`);
+  if (node.kind === "bullet") throw new OperationError(`${id} is a bullet; only tasks and discussions can be blocked`);
   if (id === blockerId) throw new OperationError(`${id} cannot block itself`);
   const existing = node.blockedBy ?? [];
   if (existing.includes(blockerId)) return { nodes: preorder(tree), node };
@@ -338,13 +344,14 @@ export interface NextOptions {
 
 /**
  * The full queue for one kind (default: the agent task queue). Eligibility:
- * open node of that kind with non-blank text and no done ancestor TASK (a
- * closed parent task closes its umbrella; bullets and discussions never affect
- * eligibility). Tasks must additionally be unclaimed (no `startedAt`), not
- * blocked by an open node, and not assigned to the human; on discussions an
- * assignee is an inert leftover from a past life as a task and never gates.
- * Sort: priority ascending (p1 first, missing = p2), then outline order. Sort
- * is stable, so outline order is the tie-breaker for free.
+ * open node of that kind with non-blank text, not blocked by an open node, and
+ * no done ancestor TASK (a closed parent task closes its umbrella; bullets and
+ * discussions never affect eligibility). Tasks must additionally be unclaimed
+ * (no `startedAt`) and not assigned to the human; discussions can be neither
+ * claimed nor assigned, so on them a `startedAt`/`assignee` is an inert
+ * leftover from a past life as a task and never gates. Sort: priority
+ * ascending (p1 first, missing = p2), then outline order. Sort is stable, so
+ * outline order is the tie-breaker for free.
  */
 export function eligibleTasks(
   nodes: readonly KalamuNode[],
@@ -359,7 +366,8 @@ export function eligibleTasks(
         n.kind === kind &&
         n.text.trim() !== "" &&
         n.doneAt === null &&
-        (kind === "discussion" || (n.startedAt === undefined && n.assignee !== "human" && !isBlocked(tree, n))) &&
+        !isBlocked(tree, n) &&
+        (kind === "discussion" || (n.startedAt === undefined && n.assignee !== "human")) &&
         (scope === null || scope.has(n.id)) &&
         !ancestors(tree, n).some((a) => a.kind === "task" && a.doneAt !== null),
     )
@@ -368,10 +376,10 @@ export function eligibleTasks(
 }
 
 /**
- * A task is blocked while any node it waits on is still open. A blocker that
- * no longer exists cannot block — deletes strip references, so this only
- * guards hand-edited files, where a dangling id must not strand the task
- * forever (`validate` reports it as an error).
+ * A task or discussion is blocked while any node it waits on is still open. A
+ * blocker that no longer exists cannot block — deletes strip references, so
+ * this only guards hand-edited files, where a dangling id must not strand the
+ * node forever (`validate` reports it as an error).
  */
 export function isBlocked(tree: Tree, node: KalamuNode): boolean {
   return (node.blockedBy ?? []).some((id) => {

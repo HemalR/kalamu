@@ -41,7 +41,7 @@ const TOUR: TourNode = {
         { kind: "bullet", text: "When done work piles up, Clean up in the palette (or kalamu clean) deletes it all — undoable in-session" },
         { kind: "bullet", text: "Zoom into any item (Cmd/Ctrl+Shift+.) to focus just its subtree, with a breadcrumb trail above — Escape backs out; Cmd/Ctrl+Shift+H hides completed items when the list gets long" },
         { kind: "bullet", text: "Two view buttons up top: Compact mode shortens every row to a one-line label (your text is untouched — it returns when you edit), and Filters hides items by who created them and who they're assigned to. Anything with work beneath it shows a progress bar" },
-        { kind: "bullet", text: "Agents claim a task with kalamu start before working on it, so a second session can't take it — a claimed task shows ▶ in its checkbox. Real dependencies go in the data: Block on… in the palette (kalamu block) keeps a task out of the queue until its blocker is done" },
+        { kind: "bullet", text: "Agents claim a task with kalamu start before working on it, so a second session can't take it — a claimed task shows ▶ in its checkbox. Real dependencies go in the data: Block on… in the palette (kalamu block) keeps a task or discussion out of the queue until its blocker is done" },
       ],
     },
     { kind: "task", text: "Done touring? Focus the top 'Welcome to Kalamu' line and press Cmd/Ctrl+Shift+Backspace to delete the whole tour (it's undoable)" },

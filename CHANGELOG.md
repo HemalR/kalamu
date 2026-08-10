@@ -16,6 +16,50 @@ under `Added` / `Changed` / `Fixed` / `Removed`.
 
 ## [Unreleased]
 
+### Added
+
+- **Kalamu as an issue-tracker backend for skills: `kalamu init --wayfinder`.**
+  Writes `docs/agents/issue-tracker.md` — the tracker doc
+  [wayfinder](https://github.com/mattpocock/skills/blob/main/skills/engineering/wayfinder/SKILL.md)
+  and its companions read — and plants a pointer to it in your
+  `CLAUDE.md`/`AGENTS.md` (creating `AGENTS.md` when neither exists). The
+  planning map and its tickets then live in your outline: the tree is the
+  map/ticket hierarchy, `blockedBy` is the dependency edge, `startedAt` is the
+  claim, and `kalamu next --under <map-id>` computes the frontier in one
+  command. The wayfinder skill itself needs no modification. Safe to re-run:
+  both files refresh in place on a later Kalamu update and your own text is
+  never touched. Delete the generated line at the top of the tracker doc to
+  take ownership of it and stop refreshes. See
+  [`examples/wayfinder/`](examples/wayfinder/) for the template and a manual
+  setup path.
+
+### Changed
+
+- **Discussions can be blocked, exactly as tasks can.** A conversation that
+  can't usefully be had until other work lands — the design discussion waiting
+  on a research task — is a real dependency, and now records as one:
+  `kalamu block <id> --by <blockerId>` and `kalamu add --kind discussion
+  --blocked-by <id>` accept discussions, `kalamu next --discussion` skips a
+  blocked one until every blocker is done, `kalamu list --blocked` lists both
+  kinds, and the UI's "Block on…" and Blocked badge cover discussions too.
+  Cycles and dangling blocker references stay `kalamu validate` errors, and
+  deletes strip the references, the same as for tasks. Bullets remain
+  unblockable — they're structure, not work.
+- **`kalamu init` now upgrades the agent instruction it planted earlier.**
+  The standing Kalamu block in `CLAUDE.md`/`AGENTS.md` is fenced by markers,
+  and re-running `init` replaces a stale block from an older Kalamu with the
+  current text instead of leaving it as it was. Only the text between the
+  markers changes; anything you wrote around it is untouched, and a block whose
+  end marker you removed is left alone entirely.
+- **A sharper standing instruction for agents**, in the planted block and in
+  the `kalamu` agent skill. Agents add nodes in three enumerated cases — work
+  discovered but deliberately not done, something only you can do
+  (`--assign human`), or work you asked to be tracked — and nothing else, so
+  findings and running commentary stay in chat instead of accumulating in your
+  outline. New nodes must be placed under the branch they belong to rather than
+  bolted onto the end, and agents no longer create discussions: those are yours
+  to write.
+
 ## [0.10.0] - 2026-08-09
 
 ### Removed

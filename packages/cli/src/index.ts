@@ -54,6 +54,7 @@ interface InitOptions {
   skill?: boolean;
   agentDocs?: boolean;
   gitignore?: boolean;
+  wayfinder?: boolean;
   format?: string;
 }
 
@@ -78,7 +79,15 @@ async function initWithOffers(opts: InitOptions, guard: { skipRepoGuard?: boolea
       return false;
     }
   }
-  const result = run(() => commands.init(process.cwd(), { agentDocs: opts.agentDocs, gitignore: opts.gitignore }), opts);
+  const result = run(
+    () =>
+      commands.init(process.cwd(), {
+        agentDocs: opts.agentDocs,
+        gitignore: opts.gitignore,
+        wayfinder: opts.wayfinder,
+      }),
+    opts,
+  );
   if (!result || process.exitCode) return false;
   const fresh = (result.json as { created: boolean }).created;
   if (opts.tour === true) {
@@ -103,6 +112,7 @@ program
   .option("--skill", "install the Kalamu agent skill via skills.sh (asks which agents)")
   .option("--no-skill", "never offer the agent-skill install")
   .option("--no-agent-docs", "do not add the standing instruction to CLAUDE.md/AGENTS.md")
+  .option("--wayfinder", "also set up the wayfinder issue tracker (docs/agents/issue-tracker.md + agent-docs pointer)")
   .option("--no-gitignore", "do not add the .kalamu view-state/cache entries to .gitignore")
   .option("--open", "open the web UI when done (default when run interactively)")
   .option("--no-open", "do not open the web UI")
@@ -215,7 +225,7 @@ program
   .option("--open", "open tasks only")
   .option("--done", "done tasks only")
   .option("--started", "claimed (in-progress) tasks only")
-  .option("--blocked", "tasks with at least one blocker")
+  .option("--blocked", "tasks and discussions with at least one blocker")
   .option("--discussions", "discussions only")
   .option("--assignee <who>", "tasks assigned to human or agent")
   .option("--created-by <who>", "nodes authored by human or agent")
@@ -246,7 +256,7 @@ program
   .option("--tag <tag>", "tag (repeatable)", collect, [])
   .option("--assign <who>", "assign the task: human (excluded from next) or agent")
   .option("--by <who>", "author: human or agent (default: detected from the terminal)")
-  .option("--blocked-by <id>", "node this task waits on (repeatable)", collect, [])
+  .option("--blocked-by <id>", "node this task or discussion waits on (repeatable)", collect, [])
   .option("--after <id>", "insert after this sibling")
   .option("--before <id>", "insert before this sibling")
   .option("--format <format>", "output format (text|json)")
@@ -324,7 +334,7 @@ program
 
 program
   .command("block <id>")
-  .description("record that a task waits on another node")
+  .description("record that a task or discussion waits on another node")
   .requiredOption("--by <id>", "the blocking node (repeatable)", collect, [])
   .option("--format <format>", "output format (text|json)")
   .action((id: string, opts: { by: string[]; format?: string }) => {

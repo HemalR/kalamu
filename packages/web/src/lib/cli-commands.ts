@@ -58,7 +58,7 @@ export const CLI_COMMANDS: readonly CliCommand[] = [
   { name: "reopen", does: "Reopen an item" },
   { name: "start", does: "Claim a task so another agent session does not take it" },
   { name: "end", does: "Release a claim, returning the task to the queue" },
-  { name: "block", does: "Record that a task waits on another node" },
+  { name: "block", does: "Record that a task or discussion waits on another node" },
   { name: "unblock", does: "Remove one blocker, or all of them" },
   { name: "search", does: "Search node text" },
   { name: "next", does: "Print the next task for an agent" },

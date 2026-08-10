@@ -96,7 +96,7 @@ kalamu block <id> --by <id2>   # <id> waits on <id2>; next skips it until <id2> 
 kalamu unblock <id>            # clear one blocker, or all of them
 ```
 
-Blockers cross the tree freely — dependency order and outline order are different things — and a blocker cycle is a validation error, exactly like a parent cycle. In the UI, a claimed task shows a play glyph in its checkbox, and ⌘K offers **Start**, **Block on…**, and **Unblock**.
+Blockers cross the tree freely — dependency order and outline order are different things — and a blocker cycle is a validation error, exactly like a parent cycle. Discussions can be blocked as well as tasks, so a conversation that can't usefully happen until other work lands stays out of `kalamu next --discussion` until it can. In the UI, a claimed task shows a play glyph in its checkbox, and ⌘K offers **Start**, **Block on…**, and **Unblock**.
 
 Kalamu also records *who wrote* each node, without anyone having to remember a flag: anything created from the web UI is yours, anything an agent creates from a non-interactive shell is marked `createdBy: "agent"`. That's what makes it safe for an agent to keep its own forward work in your outline — filter agent-created items out while you're thinking.
 
@@ -150,6 +150,16 @@ kalamu validate                # before finishing
 6. If you promote a task into another system (a GitHub issue, Linear, a plan file), move it there and delete it here — Kalamu keeps no forwarding record.
 7. After completing Kalamu-originated work, mark the originating task done and
    run `kalamu validate`. Do not run `kalamu done` for ordinary direct requests.
+
+## Kalamu as your issue tracker
+
+Skills that expect a repo issue tracker can use Kalamu as the backend. [Wayfinder](https://github.com/mattpocock/skills/blob/main/skills/engineering/wayfinder/SKILL.md) — which plans a large effort as a shared map of decision tickets — is wired up with one command:
+
+```bash
+kalamu init --wayfinder
+```
+
+That writes `docs/agents/issue-tracker.md` (the tracker doc the skill reads) and plants a pointer to it in your `CLAUDE.md`/`AGENTS.md`. The map and its tickets then live in your outline: the tree is the map/ticket hierarchy, `blockedBy` is the dependency edge, and `kalamu next --under <map-id>` computes the frontier in one command. Re-running it refreshes the generated files in place and never touches your own text — delete the generated line at the top of the tracker doc to take ownership of it. See [`examples/wayfinder/`](examples/wayfinder/).
 
 ## The data
 

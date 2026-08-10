@@ -77,7 +77,8 @@
   // An agent's claim (SPEC key decision 17): the checkbox holds a play glyph
   // where the CLI prints `▶`, so an in-progress task never reads as merely open.
   const started = $derived(isStarted(node));
-  // Only OPEN blockers hold a task up — a fully-done blocker list looks normal
+  // Tasks and discussions can both be blocked, so the badge is not kind-gated.
+  // Only OPEN blockers hold a node up — a fully-done blocker list looks normal
   // (SPEC key decision 16).
   const blockers = $derived(openBlockers(store.tree, node));
   /** When the claim was made — the checkbox's tooltip while in progress. */
@@ -887,9 +888,10 @@
         {/if}
       {/if}
 
-      <!-- What the task waits on (SPEC key decision 16). Read-only signal: the
-           palette's Unblock owns the editing, so this stays a plain label —
-           role="img" + aria-label so the tooltip is announced, not just hovered. -->
+      <!-- What the task or discussion waits on (SPEC key decision 16). Read-only
+           signal: the palette's Unblock owns the editing, so this stays a plain
+           label — role="img" + aria-label so the tooltip is announced, not just
+           hovered. -->
       {#if blockers.length > 0}
         {@const title = blockedTitle(blockers)}
         <span class="blocked" role="img" aria-label={title} {title}>

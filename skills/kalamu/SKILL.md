@@ -52,15 +52,34 @@ kalamu validate                                    # before finishing (exit 1 = 
 ```
 
 Record real dependencies with `block` (repeatable `--by`, or `--blocked-by` on
-`add`): a blocked task is skipped by `next` until every blocker is done, so
-ordering lives in the data instead of in your memory. Blockers may point at any
-node anywhere in the outline.
+`add`): a blocked task or discussion is skipped by `next` (and `next
+--discussion`) until every blocker is done, so ordering lives in the data
+instead of in your memory. Blockers may point at any node anywhere in the
+outline.
 
 Only record work in Kalamu when it originated from Kalamu or the user explicitly
 asked for it to be tracked there. Direct user requests are not Kalamu tasks just
 because the repository contains a `.kalamu/` directory. In particular, do not
 create a task with `kalamu add` or mark one done with `kalamu done` for ordinary
 direct user work unless the user supplied a Kalamu task ID or requested tracking.
+
+The outline is a parking lot for deferred work, never a log of the current
+session. You add nodes in exactly three cases, always `--kind task`: work
+discovered but deliberately not done in this session, a human-assigned task for
+something only the human can do, or work the user explicitly asked to track.
+Findings, summaries, and topics under live discussion are never recorded — when
+unsure, don't; say it in chat and let the human park it. Never create a
+`--kind discussion` node: discussions are the human's tool (the one exception
+is a human-invoked workflow whose own spec creates discussion nodes).
+
+Placement is part of the record. The outline is the developer's thinking
+space, so a new node must land where they would look for it: read the tree
+first (`kalamu list`, `kalamu search <term>`, or the `ancestors` context you
+already hold from `next --format json`) and pass `--parent <id>` — work
+discovered while doing a task usually belongs under that task or its umbrella,
+and a human-assigned follow-up belongs under the work that raised it. Add at
+top level only when the node starts a genuinely new area, never because
+finding the parent takes effort.
 
 When working on a Kalamu-originated task, defer work you discover but don't do:
 add it as a task rather than leaving TODO comments — in a Kalamu repo, the
@@ -88,7 +107,7 @@ to the human (`--assign human`) when you need something from them.
 ## Rules
 
 1. Only work on nodes where `kind` is `"task"`. Plain bullets are context, never work items.
-2. Nodes with `kind: "discussion"` are conversations the developer wants to have with an agent, never coding work. `kalamu next` never returns them. When the human raises one (usually by pasting a discussion prompt), discuss only — make no code changes, record the agreed outcome as child bullets under the discussion node (`kalamu add --parent <id> --text "..."`), then `kalamu done <id>`. Query them with `kalamu next --discussion` (most urgent first) or `kalamu list --discussions`.
+2. Nodes with `kind: "discussion"` are conversations the developer wants to have with an agent, never coding work. `kalamu next` never returns them, and you never create them — discussions are authored by the human. When the human brings one to a session (usually by pasting a discussion prompt), discuss only — make no code changes, record the agreed outcome as child bullets under the discussion node (`kalamu add --parent <id> --text "..."`), then `kalamu done <id>`. Query them with `kalamu next --discussion` (most urgent first) or `kalamu list --discussions`.
 3. Never work on tasks with `"assignee": "human"` (rendered as `@human`; legacy files may write `"self": true`): they belong to the developer. `kalamu next` already excludes them — but they may appear as descendants of a returned task; leave those to the human. Tasks with `"assignee": "agent"` or no assignee are yours.
 4. Priority runs p1 (high) to p3 (low); a missing priority means p2 (medium). Set priority with `--p`; never write `"priority": 2` explicitly.
 5. Tags live inline in task text as `#tokens` (`#web`, `#bug`) — there is no separate tags field. Keep them when editing text.

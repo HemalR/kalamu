@@ -35,9 +35,10 @@ export interface KalamuNode {
    */
   createdBy?: "agent";
   /**
-   * Ids of nodes this task waits on (SPEC key decision 16). One direction
-   * only — there is no reverse `blocks` array, because two directions must be
-   * kept in sync and drift. Omitted rather than stored as an empty array.
+   * Ids of nodes this task or discussion waits on (SPEC key decision 16,
+   * amended 2026-08-10 to cover discussions). One direction only — there is no
+   * reverse `blocks` array, because two directions must be kept in sync and
+   * drift. Omitted rather than stored as an empty array.
    */
   blockedBy?: string[];
 }

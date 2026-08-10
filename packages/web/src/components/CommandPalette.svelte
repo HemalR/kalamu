@@ -4,7 +4,7 @@
   import { writeClipboard } from "../lib/copy";
   import type { OutlineStore } from "../lib/outline.svelte";
   import { digitPick, filterItems, snapSelection, stepSelection } from "../lib/palette";
-  import { blockerCandidates, blockerEntries, candidateLabel, isStarted } from "../lib/task-state";
+  import { blockerCandidates, blockerEntries, candidateLabel, isBlockable, isStarted } from "../lib/task-state";
   import { theme } from "../lib/theme.svelte";
   import Overlay from "./Overlay.svelte";
 
@@ -108,18 +108,18 @@
       }));
     }
     if (level === "block") {
-      if (!target || target.kind !== "task") return [];
-      const task = target;
+      if (!target || !isBlockable(target)) return [];
+      const blocked = target;
       // The whole outline is the candidate pool — blockers cross the tree, and
       // zoom/filters are view state (SPEC key decision 16). The palette's own
       // query box does the searching; no separate picker. Open tasks lead the
       // list and every row is shortened (see candidateLabel).
-      return blockerCandidates(store.nodes, task).map((candidate) => ({
+      return blockerCandidates(store.nodes, blocked).map((candidate) => ({
         id: `block-${candidate.id}`,
         label: candidateLabel(candidate),
         search: candidate.text, // the shortened label must not shrink what the query finds
         run: () => {
-          store.addBlocker(task.id, candidate.id);
+          store.addBlocker(blocked.id, candidate.id);
           close();
         },
       }));
@@ -172,6 +172,8 @@
     // bullet converts it to a task (core behavior).
     const task = target?.kind === "task" ? target : undefined;
     const started = task !== undefined && isStarted(task);
+    // Blocking is the one node action that covers discussions as well as tasks.
+    const blockable = target !== undefined && isBlockable(target);
     return [
       { id: "priority", label: "Priority…", disabled: !target, run: () => enter("priority") },
       { id: "labels", label: "Labels…", disabled: !target, run: () => enter("labels") },
@@ -203,12 +205,13 @@
         },
       },
       {
-        // Blockers are tasks-only and cross the tree freely (key decision 16).
-        // A second node is all it takes for the submenu to have something to
-        // offer, so no candidate list is built just to grey the item out.
+        // Tasks and discussions can be blocked (bullets cannot), and blockers
+        // cross the tree freely (key decision 16). A second node is all it takes
+        // for the submenu to have something to offer, so no candidate list is
+        // built just to grey the item out.
         id: "block",
         label: "Block on…",
-        disabled: !task || store.nodes.length < 2,
+        disabled: !blockable || store.nodes.length < 2,
         run: () => enter("block"),
       },
       {

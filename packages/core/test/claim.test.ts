@@ -89,14 +89,29 @@ describe("addBlocker / removeBlocker", () => {
     expect(twice.node.blockedBy).toEqual(["n_002"]);
   });
 
-  it("rejects self-blocking, missing nodes, and non-tasks", () => {
+  it("rejects self-blocking, missing nodes, and bullets", () => {
     expect(() => addBlocker([task("n_001")], "n_001", "n_001")).toThrow(/cannot block itself/);
     expect(() => addBlocker([task("n_001")], "n_001", "n_404")).toThrow(/n_404/);
-    expect(() => addBlocker([bullet("n_001"), task("n_002")], "n_001", "n_002")).toThrow(/only tasks can be blocked/);
+    expect(() => addBlocker([bullet("n_001"), task("n_002")], "n_001", "n_002")).toThrow(
+      /only tasks and discussions can be blocked/,
+    );
+  });
+
+  // Key decision 16, amended 2026-08-10: a conversation can wait on work.
+  it("blocks a discussion, by a task or by another discussion", () => {
+    const byTask = addBlocker([discussion("n_001"), task("n_002")], "n_001", "n_002");
+    expect(byTask.node.blockedBy).toEqual(["n_002"]);
+    const byDiscussion = addBlocker([discussion("n_001"), discussion("n_002")], "n_001", "n_002");
+    expect(byDiscussion.node.blockedBy).toEqual(["n_002"]);
   });
 
   it("rejects a direct cycle", () => {
     const first = addBlocker([task("n_001"), task("n_002")], "n_001", "n_002");
+    expect(() => addBlocker(first.nodes, "n_002", "n_001")).toThrow(/cycle/);
+  });
+
+  it("rejects a cycle running through a discussion", () => {
+    const first = addBlocker([discussion("n_001"), task("n_002")], "n_001", "n_002");
     expect(() => addBlocker(first.nodes, "n_002", "n_001")).toThrow(/cycle/);
   });
 
@@ -159,6 +174,20 @@ describe("blockers and the queue", () => {
     const blocked = addBlocker(nodes, "n_001", "n_002").nodes;
     expect(nextTask(blocked)?.node.id).toBe("n_001");
   });
+
+  it("an open blocker hides a discussion from the discussion queue and finishing it frees it", () => {
+    const nodes = addBlocker([discussion("n_001"), task("n_002")], "n_001", "n_002").nodes;
+    expect(eligibleTasks(nodes, { kind: "discussion" })).toEqual([]);
+    expect(nextTask(nodes, { kind: "discussion" })).toBeNull();
+
+    const freed = markDone(nodes, "n_002", NOW);
+    expect(nextTask(freed.nodes, { kind: "discussion" })?.node.id).toBe("n_001");
+  });
+
+  it("a blocked discussion never leaks into the task queue either", () => {
+    const nodes = addBlocker([discussion("n_001"), task("n_002")], "n_001", "n_002").nodes;
+    expect(eligibleTasks(nodes).map((e) => e.node.id)).toEqual(["n_002"]);
+  });
 });
 
 describe("delete cleans up blocker references", () => {
@@ -172,6 +201,12 @@ describe("delete cleans up blocker references", () => {
 
     const afterBoth = deleteNode(afterOne, "n_003").nodes;
     expect(afterBoth.find((n) => n.id === "n_001")?.blockedBy).toBeUndefined();
+  });
+
+  it("strips the deleted id from a discussion's blockers too", () => {
+    const nodes = addBlocker([discussion("n_001"), task("n_002")], "n_001", "n_002").nodes;
+    const after = deleteNode(nodes, "n_002").nodes;
+    expect(after.find((n) => n.id === "n_001")?.blockedBy).toBeUndefined();
   });
 
   it("cleans references to every node in a recursive delete", () => {
@@ -238,11 +273,11 @@ describe("nodeSchema blockedBy", () => {
 });
 
 describe("validate", () => {
-  const line = (id: string, blockedBy?: string[]): string =>
+  const line = (id: string, blockedBy?: string[], kind: "task" | "discussion" = "task"): string =>
     JSON.stringify({
       id,
       parentId: null,
-      kind: "task",
+      kind,
       text: id,
       createdAt: NOW,
       doneAt: null,
@@ -269,6 +304,11 @@ describe("validate", () => {
 
   it("accepts a legitimate cross-tree blocker", () => {
     const result = validateOutline(`${line("n_001", ["n_002"])}\n${line("n_002")}\n`);
+    expect(result.valid).toBe(true);
+  });
+
+  it("accepts blockedBy on a discussion", () => {
+    const result = validateOutline(`${line("n_001", ["n_002"], "discussion")}\n${line("n_002")}\n`);
     expect(result.valid).toBe(true);
   });
 });
