@@ -1012,37 +1012,6 @@
         </span>
       {/if}
 
-      {#if node.assignee}
-        {@const assignTitle =
-          node.assignee === "human" ? "Assigned to you — agents skip this task" : "Assigned to agents"}
-        <span class="assign-wrap" bind:this={assignWrap}>
-          <button
-            class="assignee"
-            class:human={node.assignee === "human"}
-            aria-haspopup="menu"
-            aria-expanded={assignOpen}
-            aria-label={assignTitle}
-            title={assignTitle}
-            tabindex="-1"
-            onclick={() => (assignOpen = !assignOpen)}
-          >
-            {@render assigneeIcon(node.assignee)}
-            <!-- Only human gets a word: agents skip those rows, so it is the one
-                 assignment worth the width. Hidden from AT — aria-label above
-                 already names the button, and would otherwise say it twice. -->
-            {#if node.assignee === "human"}<span aria-hidden="true">Human</span>{/if}
-          </button>
-          {#if assignOpen}
-            <AssignMenu
-              current={node.assignee}
-              onpick={(picked) => {
-                store.setAssignee(node.id, picked);
-                assignOpen = false;
-              }}
-            />
-          {/if}
-        </span>
-      {/if}
       <!-- Absolute in the row's right gutter and mounted even while editing, so
            entering/leaving edit mode never shifts the row; CSS reveals it on
            row hover/focus. Clicking mid-edit blurs the editable, which commits
@@ -1069,12 +1038,50 @@
        state of the outline: furniture that appeared on hover would shove the
        hovered row out from under the pointer and oscillate. Only the bar and
        the caption come and go, and the row's fixed height keeps even that free
-       of reflow. Presentational — no tab stop, no handlers, so click-to-edit
-       and caret navigation never see it. -->
+       of reflow. All but the assignment badge is presentational, and that badge
+       keeps tabindex="-1" like the row's other furniture, so click-to-edit and
+       caret navigation still step straight past this row. -->
   <div class={["meta-row", { done: isDone }]}>
     {#if showBar}
       <ProgressBar done={progress.done} active={progress.active} total={progress.total} caption={showCaption} />
     {/if}
+
+    <!-- Who owns this task, parked on the meta row rather than after the text:
+         inline it belongs to the last word, so a long row wraps it onto a line
+         of its own and strands the badge where nothing scans for it. Here it
+         sits in the row's fixed-height footer, next to the age it reads with. -->
+    {#if node.assignee}
+      {@const assignTitle =
+        node.assignee === "human" ? "Assigned to you — agents skip this task" : "Assigned to agents"}
+      <span class="assign-wrap" bind:this={assignWrap}>
+        <button
+          class="assignee"
+          class:human={node.assignee === "human"}
+          aria-haspopup="menu"
+          aria-expanded={assignOpen}
+          aria-label={assignTitle}
+          title={assignTitle}
+          tabindex="-1"
+          onclick={() => (assignOpen = !assignOpen)}
+        >
+          {@render assigneeIcon(node.assignee)}
+          <!-- Only human gets a word: agents skip those rows, so it is the one
+               assignment worth the width. Hidden from AT — aria-label above
+               already names the button, and would otherwise say it twice. -->
+          {#if node.assignee === "human"}<span aria-hidden="true">Human</span>{/if}
+        </button>
+        {#if assignOpen}
+          <AssignMenu
+            current={node.assignee}
+            onpick={(picked) => {
+              store.setAssignee(node.id, picked);
+              assignOpen = false;
+            }}
+          />
+        {/if}
+      </span>
+    {/if}
+
     <time class="created" datetime={node.createdAt} title={createdTitle}>{createdAgo}</time>
   </div>
 
@@ -1419,48 +1426,59 @@
     opacity: 0.6;
   }
 
+  /* Anchors the assign menu, so it stays a positioned box of its own. Centred
+     because the meta row's divider is generated inside it (see .meta-row's
+     .assign-wrap rules): centring is what puts that dot on the row's midline
+     alongside the one in front of the timestamp. */
   .assign-wrap {
     position: relative;
     flex: none;
     align-self: center;
     display: flex;
+    align-items: center;
   }
 
+  /* Both variants are built to land inside the meta row's fixed 14px: nothing
+     on that row may ever reflow the outline, so the badge fits the row rather
+     than the row growing for the badge. Agent = 12px icon + 1px ring of pad. */
   .assignee {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 3px;
+    padding: 1px;
     border: none;
     border-radius: 999px;
     background: color-mix(in srgb, var(--fg) 9%, transparent);
     color: var(--muted);
     cursor: pointer;
   }
+  /* The shared assignee icon ships at 14px, which both overpowers the row's
+     11px text and busts its height budget. */
+  .assignee :global(svg) {
+    width: 12px;
+    height: 12px;
+  }
   .assignee:hover,
   .assignee[aria-expanded="true"] {
     color: var(--fg);
   }
 
-  /* The human badge borrows .blocked's pill wholesale — same size, weight and
+  /* The human badge borrows .blocked's pill — same weight, radius and
      deepen-on-approach — because both are signals the reader hunts for at a
-     scan distance; only the hue differs. Agent keeps the quiet icon dot above:
-     it is the default, and defaults should not compete. */
+     scan distance; only the hue differs. It runs a half-point tighter than the
+     inline badges so it clears 14px, which also sets it with the 11px timestamp
+     it now sits beside. Agent keeps the quiet icon dot above: it is the
+     default, and defaults should not compete. */
   .assignee.human {
     gap: 4px;
-    padding: 2px 7px;
+    padding: 1px 6px;
     font: inherit;
-    font-size: 11.5px;
+    font-size: 11px;
     font-weight: 500;
     line-height: 1;
     color: var(--assigned-human);
     background: color-mix(in srgb, var(--assigned-human) 14%, transparent);
     user-select: none;
-  }
-  /* The shared assignee icon ships at 14px, a size that overpowers 11.5px text. */
-  .assignee.human :global(svg) {
-    width: 12px;
-    height: 12px;
   }
   .assignee.human:hover,
   .assignee.human:focus-visible,
@@ -1468,8 +1486,10 @@
     color: var(--assigned-human);
     background: color-mix(in srgb, var(--assigned-human) 26%, transparent);
   }
-  /* A done task's assignment is history, not a live signal. */
-  .row.done .assignee.human {
+  /* A done task's assignment is history, not a live signal. Keyed off the meta
+     row's own done flag, like .created below: the badge lives down there now,
+     outside anything .row can reach. */
+  .meta-row.done .assignee.human {
     opacity: 0.6;
   }
 
@@ -1564,6 +1584,7 @@
      subtree, and neither it nor the caption may move anything when it does. */
   .meta-row {
     --meta-gap: 10px;
+    --meta-dot: 3px;
     display: flex;
     align-items: center;
     gap: var(--meta-gap);
@@ -1582,12 +1603,25 @@
   .meta-row > :global(:not(:first-child))::before {
     content: "";
     display: inline-block;
-    width: 3px;
-    height: 3px;
+    width: var(--meta-dot);
+    height: var(--meta-dot);
     border-radius: 50%;
     vertical-align: middle;
     margin-right: var(--meta-gap);
     background: color-mix(in srgb, var(--muted) 50%, transparent);
+  }
+
+  /* The assignment badge is the one item here that is itself a flex container,
+     so its divider is generated *inside* it — widening the very box the assign
+     menu anchors to, which would drop the menu off the badge by a dot. Out of
+     flow it draws in exactly the same place; the margin gives the row back the
+     width the dot no longer holds. */
+  .meta-row > .assign-wrap:not(:first-child) {
+    margin-left: calc(var(--meta-dot) + var(--meta-gap));
+  }
+  .meta-row > .assign-wrap::before {
+    position: absolute;
+    right: 100%;
   }
 
   /* Same weight as the bar's caption — this is ambient provenance, and the
