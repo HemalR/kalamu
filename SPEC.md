@@ -1382,7 +1382,7 @@ Cmd/Ctrl+Enter           mark item done/reopen — visual-only strikethrough on
                          bullets (not Cmd+D — it works while editing
                          but falls through to the browser's bookmark dialog when
                          no node is focused)
-Cmd/Ctrl+Shift+Enter     cycle kind: bullet → task → discussion → bullet
+Alt/Option+Enter         cycle kind: bullet → task → discussion → bullet
 Cmd/Ctrl+K               open the command palette — a leader-key menu (see
                          [Command palette](#command-palette))
 Cmd/Ctrl+.               toggle collapse/expand
@@ -1410,10 +1410,12 @@ Cmd/Ctrl+Z               undo
 Cmd/Ctrl+Shift+Z         redo
 ```
 
-Modifier choice is deliberate: no Alt/Option combos **as keyboard shortcuts**
-(macOS Option-key character substitution, and tiling window managers like
-Aerospace bind them globally — neither of which touches Alt as a *mouse* chord,
-where the UI does use it), no
+Modifier choice is deliberate: Alt/Option+Enter is the sole Alt keyboard
+shortcut. Enter is not a character, so macOS Option-key character substitution
+does not apply, and the focused editor handles and prevents the chord before
+contenteditable can act. Configurable tiling window managers may still claim it
+globally before the browser receives it. Other Alt/Option keyboard shortcuts
+remain excluded (Alt as a *mouse* chord is unaffected), as do
 Cmd+M / Cmd+1..9 / Cmd+Shift+3-5 (OS- or browser-reserved). Node metadata that
 previously had Alt shortcuts (priority, assignee) lives in the command palette.
 
@@ -1476,7 +1478,7 @@ s    Start / End          claims the task (`startedAt`) or releases the claim �
                           the label shows whichever applies; closes
 t    Kind ->              submenu: b Bullet / d Discussion / t Task, current
                           kind marked; selecting sets that kind outright — the
-                          same three Mod+Shift+Enter cycles through — closes
+                          same three Alt/Option+Enter cycles through — closes
 u    Undo                 walks the document back one change (same as Mod+Z);
                           disabled with nothing to undo
 v    View ->              submenu of toggles whose labels reflect the current
@@ -1555,7 +1557,7 @@ Key rules:
   closes it without refocusing; switching apps does not close it.
 * Label toggles keep the palette open; every other action closes it.
 * The direct shortcuts that duplicate palette actions (Mod+Enter, Mod+.,
-  Mod+Shift+Enter, Mod+Shift+↑/↓, Mod+Shift+H, Mod+Shift+./,, Mod+C,
+  Alt+Enter, Mod+Shift+↑/↓, Mod+Shift+H, Mod+Shift+./,, Mod+C,
   Mod+Shift+C, Mod+Z, Mod+Shift+Z) remain for now, but the leader sequences are
   the canonical path — new actions get a leader key first and a direct shortcut
   only if proven necessary. Mod+Shift+1-9 project switching is already

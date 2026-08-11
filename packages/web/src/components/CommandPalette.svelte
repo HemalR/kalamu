@@ -141,7 +141,7 @@
     { p: 3, label: "p3 · low" },
   ] as const;
 
-  // Named outright rather than cycled (Mod+Shift+Enter), so the target kind is
+  // Named outright rather than cycled (Alt/Option+Enter), so the target kind is
   // one keypress away whatever the node is now.
   const KINDS = [
     { key: "b", kind: "bullet", label: "Bullet" },

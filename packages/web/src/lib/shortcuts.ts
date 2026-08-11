@@ -37,7 +37,7 @@ export function matches(event: KeyboardEvent, shortcut: Shortcut): boolean {
 export const SHORTCUTS = {
   newSibling: { combo: { key: "Enter" }, keys: "Enter", does: "New item below — on an empty item it cycles the kind instead" },
   lineBreak: { keys: "Shift+Enter", does: "Line break inside the item" },
-  cycleKind: { combo: { key: "Enter", mod: true, shift: true }, keys: "Mod+Shift+Enter", does: "Cycle bullet / task / discussion" },
+  cycleKind: { combo: { key: "Enter", alt: true }, keys: "Alt+Enter", does: "Cycle bullet / task / discussion" },
   indent: { combo: { key: "Tab" }, keys: "Tab", does: "Indent (become child of the previous sibling)" },
   outdent: { combo: { key: "Tab", shift: true }, keys: "Shift+Tab", does: "Outdent" },
   focusMove: { keys: "↑ / ↓", does: "Move focus between items (at the first/last line), keeping your column" },

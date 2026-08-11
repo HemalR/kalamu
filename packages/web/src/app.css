@@ -22,9 +22,14 @@
      in dark mode for contrast. */
   --brand: light-dark(#9a6a2e, #d0a256);
   /* Task state beyond done: a claimed task in progress (startedAt) and one
-     waiting on an open blocker (blockedBy). Kept off the brand bronze so the
-     two signals never read as chrome. */
-  --started: light-dark(#1a7f52, #4fc08d);
+     waiting on an open blocker (blockedBy). Started is the same amber as
+     --progress-active below, because both mean "claimed but unfinished" — the
+     checkbox's pulsing dot and the active progress dash should speak one
+     colour, not two. That amber does sit close to the brand bronze; what keeps
+     it from reading as chrome is that it only ever appears on a work item's own
+     glyph, and on the started checkbox it breathes. Blocked stays well clear of
+     both. */
+  --started: light-dark(#c08a3e, #c99a4f);
   --blocked: light-dark(#b04b3c, #e0897c);
   /* Segmented progress dashes. Done reads at full saturation — at 7×4px a muted
      green disappeared into the row it was meant to report on. Lifted in dark

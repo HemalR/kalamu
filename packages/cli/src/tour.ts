@@ -24,7 +24,7 @@ const TOUR: TourNode = {
       kind: "bullet",
       text: "TL;DR",
       children: [
-        { kind: "task", text: "Everything is a bullet, a task, or a discussion — Cmd/Ctrl+Shift+Enter cycles the kind. Click my checkbox (or Cmd/Ctrl+Enter) to mark me done" },
+        { kind: "task", text: "Everything is a bullet, a task, or a discussion — Alt/Option+Enter cycles the kind. Click my checkbox (or Cmd/Ctrl+Enter) to mark me done" },
         { kind: "task", priority: 1, tags: ["demo"], text: "Metadata lives in the text: p1…p3 sets priority (p1 = high, p3 = low; the default p2 shows no badge), #tokens become tag chips, and @ assigns a task to human or agent" },
         { kind: "bullet", text: "Enter adds an item; Tab and Shift+Tab indent and outdent; Cmd/Ctrl+K is the do-everything command palette — every action has its key printed next to it, so Cmd/Ctrl+K then d marks done and p then 1 sets p1; ? shows the full cheat sheet" },
         { kind: "bullet", text: "The point: todos you write here are an agent work queue — agents run kalamu next to receive your most urgent task with its context, and kalamu done when finished" },

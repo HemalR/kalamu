@@ -82,8 +82,9 @@
   const priority = $derived(node.priority ?? DEFAULT_PRIORITY);
   // Done bullets are visual only (strikethrough) — they stay non-work-items.
   const isDone = $derived(node.doneAt !== null);
-  // An agent's claim (SPEC key decision 17): the checkbox holds a play glyph
-  // where the CLI prints `▶`, so an in-progress task never reads as merely open.
+  // An agent's claim (SPEC key decision 17): the checkbox holds a slowly pulsing
+  // amber dot — the UI's equivalent of the `▶` the CLI prints — so an in-progress
+  // task never reads as merely open.
   const started = $derived(isStarted(node));
   // Tasks and discussions can both be blocked, so the badge is not kind-gated.
   // Only OPEN blockers hold a node up — a fully-done blocker list looks normal
@@ -790,9 +791,7 @@
               <path d="M3 8.5 6.5 12 13 4.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
             </svg>
           {:else if started}
-            <svg viewBox="0 0 16 16" width="8" height="8" aria-hidden="true">
-              <path d="M4.5 3 12 8l-7.5 5z" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
-            </svg>
+            <span class="pulse" aria-hidden="true"></span>
           {/if}
         </button>
       {:else}
@@ -1167,7 +1166,7 @@
   }
 
   .check {
-    position: relative; /* the checkmark/play svg overlays the ::after box */
+    position: relative; /* the checkmark svg / pulsing dot overlays the ::after box */
     padding: 0;
     border: none;
     background: none;
@@ -1185,17 +1184,43 @@
   .check.ringed::after {
     box-shadow: 0 0 0 3px var(--ring);
   }
-  .check svg {
+  .check svg,
+  .check .pulse {
     position: absolute;
     z-index: 1;
   }
-  /* Claimed and still open: the box keeps its outline (the work isn't done)
-     and holds the play glyph, the CLI's `▶`. */
-  .check.started {
-    color: var(--started);
-  }
+  /* Claimed and still open: the box keeps its outline (the work isn't done) and
+     holds a breathing amber dot. It reports what the CLI reports by printing
+     `▶` — the same claim, said the way a live surface can say it. */
   .check.started::after {
     border-color: var(--started);
+  }
+  .pulse {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--started);
+    /* opacity + transform only: this animates on the compositor, so a screenful
+       of claimed tasks costs no layout or paint work per frame. */
+    animation: breathe 1.8s ease-in-out infinite;
+  }
+  @keyframes breathe {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.45;
+      transform: scale(0.8);
+    }
+  }
+  /* Reduced motion: the dot still has to say "claimed", so it stays — it just
+     stops breathing. */
+  @media (prefers-reduced-motion: reduce) {
+    .pulse {
+      animation: none;
+    }
   }
   .row.done .check {
     color: var(--bg);
