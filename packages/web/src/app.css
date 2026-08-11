@@ -31,6 +31,13 @@
      both. */
   --started: light-dark(#c08a3e, #c99a4f);
   --blocked: light-dark(#b04b3c, #e0897c);
+  /* Human-assigned work is what the reader scans a long outline *for* — agents
+     skip those rows, so they are the only ones they must find — which is why it
+     gets a hue nothing else in the app uses: clear of the blocked red, the
+     started amber, the brand bronze and the done green, and still legible as
+     badge text at 11.5px. Lightened in dark mode, where the light-mode blue
+     sinks into the ground. */
+  --assigned-human: light-dark(#2f6fd0, #8ab4f8);
   /* Segmented progress dashes. Done reads at full saturation — at 7×4px a muted
      green disappeared into the row it was meant to report on. Lifted in dark
      mode, where the same hue sits duller against the ground. Active stays

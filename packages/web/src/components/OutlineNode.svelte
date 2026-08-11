@@ -1018,6 +1018,7 @@
         <span class="assign-wrap" bind:this={assignWrap}>
           <button
             class="assignee"
+            class:human={node.assignee === "human"}
             aria-haspopup="menu"
             aria-expanded={assignOpen}
             aria-label={assignTitle}
@@ -1026,6 +1027,10 @@
             onclick={() => (assignOpen = !assignOpen)}
           >
             {@render assigneeIcon(node.assignee)}
+            <!-- Only human gets a word: agents skip those rows, so it is the one
+                 assignment worth the width. Hidden from AT — aria-label above
+                 already names the button, and would otherwise say it twice. -->
+            {#if node.assignee === "human"}<span aria-hidden="true">Human</span>{/if}
           </button>
           {#if assignOpen}
             <AssignMenu
@@ -1435,6 +1440,37 @@
   .assignee:hover,
   .assignee[aria-expanded="true"] {
     color: var(--fg);
+  }
+
+  /* The human badge borrows .blocked's pill wholesale — same size, weight and
+     deepen-on-approach — because both are signals the reader hunts for at a
+     scan distance; only the hue differs. Agent keeps the quiet icon dot above:
+     it is the default, and defaults should not compete. */
+  .assignee.human {
+    gap: 4px;
+    padding: 2px 7px;
+    font: inherit;
+    font-size: 11.5px;
+    font-weight: 500;
+    line-height: 1;
+    color: var(--assigned-human);
+    background: color-mix(in srgb, var(--assigned-human) 14%, transparent);
+    user-select: none;
+  }
+  /* The shared assignee icon ships at 14px, a size that overpowers 11.5px text. */
+  .assignee.human :global(svg) {
+    width: 12px;
+    height: 12px;
+  }
+  .assignee.human:hover,
+  .assignee.human:focus-visible,
+  .assignee.human[aria-expanded="true"] {
+    color: var(--assigned-human);
+    background: color-mix(in srgb, var(--assigned-human) 26%, transparent);
+  }
+  /* A done task's assignment is history, not a live signal. */
+  .row.done .assignee.human {
+    opacity: 0.6;
   }
 
   .combo-anchor {

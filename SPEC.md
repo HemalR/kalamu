@@ -1296,7 +1296,7 @@ The UI should feel like Workflowy:
 * Priority visible only when useful, as a badge at the START of the row (scannable column)
 * Tags as small coloured chips rendered IN PLACE within the text (raw `#token` text while the node is focused)
 * URLs recognised in text (`http://`/`https://` schemes only — no bare-domain guessing) render underlined and clickable, opening in a new tab; while the node is focused the URL is raw editable text, like tags. Trailing sentence punctuation is not part of the link, and a `#fragment` inside a URL never becomes a tag chip
-* Assigned tasks visibly distinct: a small user icon marks human-assigned tasks, a robot icon marks agent-assigned ones; unassigned tasks show neither
+* Assigned tasks visibly distinct: human-assigned tasks carry a blue **Human** badge (user icon plus the word), a small muted robot icon marks agent-assigned ones; unassigned tasks show neither. The asymmetry is deliberate — human-assigned rows are the ones the developer scans a long outline for, and agents skip them, so only that side is worth colour and width
 * Discussions marked with a speech-bubble glyph in place of the checkbox (clicking it toggles done, like a task's checkbox)
 * Every unfocused node shows a subtle copy affordance at the end of its text. A normal click copies the same agent-context block as Cmd/Ctrl+C; Mod-click copies only the raw node text, like Cmd/Ctrl+Shift+C. Both actions are uniform across node kinds
 * Modifier chords make the whole row a mouse target for the two operations whose own affordance is small or absent: **Mod+click** toggles collapse (the chevron alone is a 10px target), **Alt+click** zooms in. One modifier each, so neither is a two-hand stretch; holding both is a slip, not a third gesture, and does nothing. Shift is left to the browser throughout, so Shift+click still extends a native text selection. The chords are claimed in the capture phase, so the chevron, glyph, priority badge, tag chips and inline links never fire their own action as well — the copy affordance is the one exemption, since Mod+click there is already its own action
@@ -1354,10 +1354,10 @@ Tagged task (chip renders in place, mid-sentence when the token sits mid-sentenc
 ☐ Build a new [feature] to do xyz
 ```
 
-Assigned task (user icon for human, robot icon for agent, rendered after the text):
+Assigned task (blue Human badge, robot icon for agent, rendered after the text):
 
 ```text
-☐ Write launch blog post  [user icon]
+☐ Write launch blog post  [user icon Human]
 ☐ Migrate the config loader  [robot icon]
 ```
 
@@ -1651,7 +1651,7 @@ Every tag gets a colour with zero configuration:
 
 ### Assignment in the UI
 
-* Assigned tasks show a subtle icon after the text — a user icon for `"human"`, a robot icon for `"agent"` — so they scan differently from unassigned tasks. The icons match the @ dropdown's.
+* Assigned tasks show a badge after the text so they scan differently from unassigned tasks. `"human"` gets a blue pill — user icon plus the word **Human** — sized and shaped like the Blocked badge, because it must be findable at a glance down a long outline. `"agent"` stays a subtle icon-only marker: it is the default audience, and the default should not compete. Both icons match the @ dropdown's.
 * Assignment is set from the @ dropdown, `@human`/`@agent` tokens, or the palette's Assign submenu (no dedicated shortcut — Cmd+M is OS-reserved). The palette also offers Assign on a bullet; choosing Human or Agent promotes it to a task and assigns it in the same operation. Discussions never offer Assign.
 
 ---
