@@ -7,6 +7,7 @@
  *   pnpm release major           # 0.1.0 -> 1.0.0
  *   pnpm release 0.2.5           # explicit version
  *   pnpm release minor --otp 123456   # pass a 2FA one-time code to npm publish
+ *   pnpm release --publish-only       # resume a tagged release whose publish failed
  *
  * Steps: clean-tree check -> bump packages/cli/package.json (single source
  * of truth; the build injects it into the binary) -> sync README version line
@@ -21,7 +22,10 @@
  */
 import { execSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
+import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
+
+import { confirmed, parseReleaseArgs, recoverableVersion } from "./release-helpers.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const cliDir = fileURLToPath(new URL("../packages/cli", import.meta.url));
@@ -39,28 +43,26 @@ function capture(cmd, opts = {}) {
   return execSync(cmd, { encoding: "utf8", cwd: root, ...opts }).trim();
 }
 
+function captureOptional(cmd, opts = {}) {
+  try {
+    return capture(cmd, { stdio: ["ignore", "pipe", "ignore"], ...opts });
+  } catch {
+    return undefined;
+  }
+}
+
 function fail(message) {
   console.error(`\nrelease: ${message}`);
   process.exit(1);
 }
 
-// Args: a bump keyword/version, plus an optional `--otp <code>` (or `--otp=<code>`)
-// passed straight through to `npm publish` for accounts with 2FA enabled. TOTP
-// codes expire in seconds, so supply it right before running, not minutes ahead.
-const rawArgs = process.argv.slice(2);
-let otp;
-const otpIdx = rawArgs.findIndex((a) => a === "--otp" || a.startsWith("--otp="));
-if (otpIdx !== -1) {
-  const flag = rawArgs[otpIdx];
-  otp = flag.includes("=") ? flag.slice("--otp=".length) : rawArgs[otpIdx + 1];
-  rawArgs.splice(otpIdx, flag.includes("=") ? 1 : 2);
-  if (!otp) fail("--otp was given without a code");
+let releaseArgs;
+try {
+  releaseArgs = parseReleaseArgs(process.argv.slice(2));
+} catch (error) {
+  fail(error instanceof Error ? error.message : String(error));
 }
-
-const bump = rawArgs[0] ?? "patch";
-if (!/^(patch|minor|major|\d+\.\d+\.\d+)$/.test(bump)) {
-  fail(`expected patch, minor, major, or x.y.z — got "${bump}"`);
-}
+const { bump, otp, publishOnly } = releaseArgs;
 
 // Refuse to release anything that isn't committed, and only release from main.
 if (capture("git status --porcelain") !== "") {
@@ -70,6 +72,35 @@ if (capture("git branch --show-current") !== "main") {
   fail("releases are cut from main only");
 }
 
+// A failed npm publish happens after the version commit and tag are made. At
+// that point a blind retry would bump again and stamp a second changelog
+// section. Detect the exact tagged-HEAD state before doing any mutation and
+// offer to resume at build/publish/push instead.
+const packageJsonUrl = new URL("../packages/cli/package.json", import.meta.url);
+const currentVersion = JSON.parse(readFileSync(packageJsonUrl, "utf8")).version;
+const tagAtHead = captureOptional("git describe --tags --exact-match HEAD");
+const recoveryVersion = recoverableVersion(currentVersion, tagAtHead);
+let recoverPublish = publishOnly;
+
+if (publishOnly && !recoveryVersion) {
+  fail(`--publish-only requires HEAD to be tagged v${currentVersion}`);
+}
+
+if (recoveryVersion && !publishOnly) {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    fail(
+      `HEAD is already the v${recoveryVersion} release; re-run with --publish-only to publish it without another version bump`,
+    );
+  }
+
+  const prompt = createInterface({ input: process.stdin, output: process.stdout });
+  const answer = await prompt.question(
+    `\nHEAD is already release v${recoveryVersion}. Resume with build, npm publish, and push? [Y/n] `,
+  );
+  prompt.close();
+  recoverPublish = confirmed(answer);
+}
+
 // npm sessions expire; catch that before we bump, commit, or tag anything.
 try {
   capture("npm whoami", { stdio: ["ignore", "pipe", "ignore"] });
@@ -77,8 +108,31 @@ try {
   fail("not logged in to npm (npm whoami failed) — run `npm login` first");
 }
 
+function verifyBuild(version) {
+  const reported = capture("node packages/cli/dist/index.js --version");
+  if (reported !== version) {
+    fail(`built binary reports ${reported}, expected ${version} — version injection is broken`);
+  }
+
+  const shippedReadme = readFileSync(new URL("../packages/cli/README.md", import.meta.url), "utf8");
+  if (!shippedReadme.includes(`**Current version: v${version}**`)) {
+    fail(`packages/cli/README.md does not carry 'Current version: v${version}' after build — a stale README clobbered the release`);
+  }
+}
+
+if (recoverPublish) {
+  console.log(`\nResuming release kalamu v${recoveryVersion} without a version bump`);
+  run("pnpm build");
+  verifyBuild(recoveryVersion);
+  run(`npm publish${otp ? ` --otp=${otp}` : ""}`, { cwd: cliDir });
+  run("git push --follow-tags");
+  console.log(`\nDone: kalamu v${recoveryVersion} is on npm and main is pushed.`);
+  console.log("Global installs are frozen snapshots — update each machine with: npm i -g kalamu");
+  process.exit(0);
+}
+
 run(`npm version ${bump} --no-git-tag-version`, { cwd: cliDir });
-const { version } = JSON.parse(readFileSync(new URL("../packages/cli/package.json", import.meta.url), "utf8"));
+const { version } = JSON.parse(readFileSync(packageJsonUrl, "utf8"));
 console.log(`\nReleasing kalamu v${version}`);
 
 // Keep the README's version line in lockstep — npm renders the README as the
@@ -117,18 +171,7 @@ run("pnpm test"); // typechecks every package (incl. web svelte-check), then run
 run("pnpm build");
 
 // The binary must report the version we are about to publish.
-const reported = capture("node packages/cli/dist/index.js --version");
-if (reported !== version) {
-  fail(`built binary reports ${reported}, expected ${version} — version injection is broken`);
-}
-
-// The README that ships (packages/cli/README.md) is regenerated from root by the
-// build; assert it survived with the right version. This is the backstop that
-// v0.4.0 lacked when a stale README clobbered the release.
-const shippedReadme = readFileSync(new URL("../packages/cli/README.md", import.meta.url), "utf8");
-if (!shippedReadme.includes(`**Current version: v${version}**`)) {
-  fail(`packages/cli/README.md does not carry 'Current version: v${version}' after build — a stale README clobbered the release`);
-}
+verifyBuild(version);
 
 run(`git commit -am "Release v${version}"`);
 run(`git tag v${version}`);

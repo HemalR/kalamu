@@ -408,40 +408,35 @@ export interface CleanResult {
 }
 
 /**
- * Remove every done task together with its subtree (a done parent closes its
- * umbrella — key decision 4), plus done bullets, done discussions, and blank
- * (whitespace-only text) nodes. Done bullets/discussions and blank nodes
- * never take surviving children with them: neither closes its subtree (a done
- * discussion's children are its recorded outcome) and a blank node is
- * structural, so each stays while anything beneath it survives.
+ * Remove every done node together with its subtree, regardless of kind, plus
+ * blank (whitespace-only text) nodes once they have no surviving children.
  */
 export function cleanDone(nodes: readonly KalamuNode[]): CleanResult {
   const tree = buildTree(nodes);
   const doomed = new Set<string>();
   let doneTasks = 0;
+  let doneBullets = 0;
+  let doneDiscussions = 0;
   for (const node of tree.byId.values()) {
-    if (node.kind === "task" && node.doneAt !== null) {
-      doneTasks += 1;
+    if (node.doneAt !== null) {
+      if (node.kind === "task") doneTasks += 1;
+      else if (node.kind === "discussion") doneDiscussions += 1;
+      else doneBullets += 1;
       for (const id of subtreeIds(tree, node.id)) doomed.add(id);
     }
   }
   const ordered = preorder(tree);
-  let doneBullets = 0;
-  let doneDiscussions = 0;
   let blankNodes = 0;
   // Reverse pre-order visits every child before its parent, so a chain of
   // removable nodes collapses in one pass.
   for (let i = ordered.length - 1; i >= 0; i--) {
     const node = ordered[i]!;
     if (doomed.has(node.id)) continue;
-    const doneNonTask = node.kind !== "task" && node.doneAt !== null;
-    if (!doneNonTask && node.text.trim() !== "") continue;
+    if (node.text.trim() !== "") continue;
     const children = tree.children.get(node.id) ?? [];
     if (!children.every((c) => doomed.has(c.id))) continue;
     doomed.add(node.id);
-    if (!doneNonTask) blankNodes += 1;
-    else if (node.kind === "discussion") doneDiscussions += 1;
-    else doneBullets += 1;
+    blankNodes += 1;
   }
   return {
     // Clean deletes nodes like `delete` does, so the same invariant applies:

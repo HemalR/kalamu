@@ -9,6 +9,17 @@ const STARTED = "2026-07-09T07:30:00.000Z";
 const progress = (nodes: Parameters<typeof buildTree>[0], id: string | null) => progressOf(buildTree(nodes), id);
 
 describe("progressOf", () => {
+  it("can count only tasks while preserving done-task subtree closure", () => {
+    const nodes = [
+      bullet("n_root"),
+      task("n_a", { parentId: "n_root", doneAt: DONE }),
+      task("n_b", { parentId: "n_a" }),
+      discussion("n_c", { parentId: "n_root" }),
+      task("n_d", { parentId: "n_root" }),
+    ];
+    expect(progressOf(buildTree(nodes), null, { kind: "task" })).toEqual({ total: 3, done: 2, active: 0 });
+  });
+
   it("counts tasks and discussions under a bullet, but not the bullet", () => {
     const nodes = [
       bullet("n_root"),

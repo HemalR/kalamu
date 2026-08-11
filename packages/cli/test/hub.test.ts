@@ -103,6 +103,27 @@ describe("hub", () => {
     expect(counts.projects.find((p) => p.slug === "alpha")?.openTasks).toBe(1);
   });
 
+  it("does not count open tasks beneath a done task in the sidebar badge", async () => {
+    const parent = (await (
+      await hub.app.request("/p/alpha/api/nodes", {
+        method: "POST",
+        body: JSON.stringify({ text: "Done umbrella", kind: "task" }),
+        headers: { "Content-Type": "application/json" },
+      })
+    ).json()) as { id: string };
+    await hub.app.request("/p/alpha/api/nodes", {
+      method: "POST",
+      body: JSON.stringify({ text: "Open child", kind: "task", parentId: parent.id }),
+      headers: { "Content-Type": "application/json" },
+    });
+    await hub.app.request(`/p/alpha/api/nodes/${parent.id}/done`, { method: "POST" });
+
+    const { projects } = (await (await hub.app.request("/api/projects")).json()) as {
+      projects: { slug: string; openTasks: number | null }[];
+    };
+    expect(projects.find((p) => p.slug === "alpha")?.openTasks).toBe(0);
+  });
+
   it("forgets a project on DELETE /api/projects/:slug", async () => {
     // Touch alpha first so its server instance exists and must be torn down.
     await hub.app.request("/p/alpha/api/nodes");

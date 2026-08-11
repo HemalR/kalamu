@@ -4,7 +4,7 @@
  * instance of the ordinary per-project server, torn down again after idling,
  * so the hub never holds file watchers for dormant projects.
  */
-import { appIconSvg } from "@kalamu/core";
+import { appIconSvg, buildTree, progressOf } from "@kalamu/core";
 import { pathsFor, readOutline } from "@kalamu/core/store";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
@@ -52,9 +52,9 @@ export interface HubOptions {
 /** Open (not done, non-blank) tasks — the sidebar badge. */
 function countOpenTasks(entry: RegistryEntry): number | null {
   try {
-    return readOutline(pathsFor(entry.path).outline).nodes.filter(
-      (n) => n.kind === "task" && n.text.trim() !== "" && n.doneAt === null,
-    ).length;
+    const tree = buildTree(readOutline(pathsFor(entry.path).outline).nodes);
+    const progress = progressOf(tree, null, { kind: "task" });
+    return progress.total - progress.done;
   } catch {
     return null;
   }

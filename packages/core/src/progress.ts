@@ -28,16 +28,22 @@ export interface Progress {
   active: number;
 }
 
+export interface ProgressOptions {
+  /** Limit actionable units to one work-item kind. Omitted counts both. */
+  kind?: "task" | "discussion";
+}
+
 /** Tasks and discussions carry work; blank rows are half-typed, not work. */
-function isActionable(node: KalamuNode): boolean {
-  return node.kind !== "bullet" && node.text.trim() !== "";
+function isActionable(node: KalamuNode, options: ProgressOptions): boolean {
+  const matchesKind = options.kind === undefined || node.kind === options.kind;
+  return node.kind !== "bullet" && node.text.trim() !== "" && matchesKind;
 }
 
 /**
  * Progress for every node in the tree, keyed by id. One bottom-up pass — call
  * it once per outline change rather than once per row.
  */
-function calculateProgress(tree: Tree): { byNode: Map<string, Progress>; outline: Progress } {
+function calculateProgress(tree: Tree, options: ProgressOptions = {}): { byNode: Map<string, Progress>; outline: Progress } {
   const out = new Map<string, Progress>();
   /** `closed` = a done ancestor task already finished everything below it. */
   const visit = (node: KalamuNode, closed: boolean): Progress => {
@@ -45,7 +51,7 @@ function calculateProgress(tree: Tree): { byNode: Map<string, Progress>; outline
     let ownTotal = 0;
     let ownDone = 0;
     let ownActive = 0;
-    if (isActionable(node)) {
+    if (isActionable(node, options)) {
       ownTotal = 1;
       // A claim on a closed task is spent: closure wins, and a task can carry
       // both timestamps. Discussions are never claimed (no `kalamu start`).
@@ -76,12 +82,12 @@ function calculateProgress(tree: Tree): { byNode: Map<string, Progress>; outline
   return { byNode: out, outline };
 }
 
-export function progressByNode(tree: Tree): Map<string, Progress> {
-  return calculateProgress(tree).byNode;
+export function progressByNode(tree: Tree, options: ProgressOptions = {}): Map<string, Progress> {
+  return calculateProgress(tree, options).byNode;
 }
 
 /** Progress for one subtree; `rootId: null` totals the whole outline. */
-export function progressOf(tree: Tree, rootId: string | null): Progress {
-  const result = calculateProgress(tree);
+export function progressOf(tree: Tree, rootId: string | null, options: ProgressOptions = {}): Progress {
+  const result = calculateProgress(tree, options);
   return rootId === null ? result.outline : (result.byNode.get(rootId) ?? { total: 0, done: 0, active: 0 });
 }

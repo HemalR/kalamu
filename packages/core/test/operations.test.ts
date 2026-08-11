@@ -257,15 +257,16 @@ describe("cleanDone", () => {
     expect(result.doneTasks).toBe(0);
   });
 
-  it("keeps a done bullet whose children survive", () => {
+  it("removes a done bullet with its whole subtree", () => {
     const nodes = [
       bullet("n_001", { doneAt: NOW }),
       task("n_002", { parentId: "n_001", text: "open task stays eligible" }),
       bullet("n_003", { parentId: "n_001", doneAt: NOW }),
     ];
     const result = cleanDone(nodes);
-    expect(result.nodes.map((n) => n.id)).toEqual(["n_001", "n_002"]);
-    expect(result.doneBullets).toBe(1);
+    expect(result.nodes).toEqual([]);
+    expect(result.removed.map((n) => n.id)).toEqual(["n_001", "n_002", "n_003"]);
+    expect(result.doneBullets).toBe(2);
   });
 
   it("removes a done bullet whose only children are done tasks", () => {
@@ -276,15 +277,16 @@ describe("cleanDone", () => {
     expect(result.doneBullets).toBe(1);
   });
 
-  it("treats done discussions like done bullets: removed alone, kept while children survive", () => {
+  it("removes a done discussion with its whole subtree", () => {
     const nodes = [
       discussion("n_001", { doneAt: NOW }),
       bullet("n_002", { parentId: "n_001", text: "recorded outcome survives" }),
       discussion("n_003", { doneAt: NOW }),
     ];
     const result = cleanDone(nodes);
-    expect(result.nodes.map((n) => n.id)).toEqual(["n_001", "n_002"]);
-    expect(result.doneDiscussions).toBe(1);
+    expect(result.nodes).toEqual([]);
+    expect(result.removed.map((n) => n.id)).toEqual(["n_001", "n_002", "n_003"]);
+    expect(result.doneDiscussions).toBe(2);
     expect(result.doneBullets).toBe(0);
   });
 
