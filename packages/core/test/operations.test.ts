@@ -74,11 +74,24 @@ describe("updateNode", () => {
     expect(explicit.node.kind).toBe("bullet");
   });
 
-  it("preserves doneAt/priority when converting task to bullet", () => {
-    const start = [task("n_001", { doneAt: NOW, priority: 1 })];
+  it("preserves doneAt/priority but clears assignee when converting task to bullet", () => {
+    const start = [task("n_001", { doneAt: NOW, priority: 1, assignee: "human" })];
     const { node } = updateNode(start, "n_001", { kind: "bullet" });
     expect(node.doneAt).toBe(NOW);
     expect(node.priority).toBe(1);
+    expect(node.assignee).toBeUndefined();
+  });
+
+  it("clears assignee whenever an update ends as a bullet", () => {
+    const staleDiscussion = discussion("n_001", { assignee: "human" });
+    const converted = updateNode([staleDiscussion], "n_001", { kind: "bullet" });
+    expect(converted.node.assignee).toBeUndefined();
+
+    const simultaneous = updateNode([task("n_002", { assignee: "agent" })], "n_002", {
+      kind: "bullet",
+      assignee: "human",
+    });
+    expect(simultaneous.node.assignee).toBeUndefined();
   });
 
   it("adds and removes tags as text surgery on inline #tokens", () => {

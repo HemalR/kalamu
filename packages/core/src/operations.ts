@@ -114,11 +114,10 @@ export function updateNode(nodes: readonly KalamuNode[], id: string, input: Upda
   const updated: KalamuNode = { ...node };
 
   if (input.text !== undefined) updated.text = input.text;
-  // Converting away from task preserves doneAt/priority/assignee — and
-  // startedAt/blockedBy — inert on kinds they do not gate, restored if
-  // converted back (SPEC "kalamu update"). Inertness matters: eligibleTasks
-  // reads each field only on the kinds it gates — blockedBy on tasks and
-  // discussions, startedAt/assignee on tasks, neither on a bullet.
+  // An update that ends in a bullet clears assignment: bullets are structure,
+  // so carrying an assignee into that state leaves an assignment badge whose
+  // meaning no longer matches the node. Other inert task metadata is kept and
+  // restored if the node becomes a task again (SPEC "kalamu update").
   if (input.kind !== undefined) updated.kind = input.kind;
   if (input.priority !== undefined) {
     if (input.priority === "default" || input.priority === 2) delete updated.priority;
@@ -139,6 +138,10 @@ export function updateNode(nodes: readonly KalamuNode[], id: string, input: Upda
       throw new OperationError("discussions involve both parties; only tasks can be assigned");
     } else updated.assignee = input.assignee;
   }
+  // The bullet kind wins even if this node carried a stale assignee through
+  // another kind, or a caller also supplies an assignee in the same update:
+  // there is no meaningful assignment to retain on a bullet.
+  if (updated.kind === "bullet") delete updated.assignee;
   if (input.createdBy !== undefined) {
     if (input.createdBy === "human") delete updated.createdBy;
     else updated.createdBy = "agent";

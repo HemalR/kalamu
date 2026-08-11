@@ -344,8 +344,11 @@ export class OutlineStore extends OutlineViewState {
   /** Assign a task; a real assignment promotes a bullet to a task. Discussions remain unassignable. */
   setAssignee(id: string, assignee: Assignee | null): void {
     const node = this.tree.byId.get(id);
-    if (!node || node.kind === "discussion" || (node.kind === "bullet" && assignee === null)) return;
-    const patch: PatchNodeBody = node.kind === "bullet" ? { kind: "task", assignee } : { assignee };
+    if (!node || node.kind === "discussion" || (node.kind === "bullet" && assignee === null && node.assignee === undefined)) return;
+    // A stale assigned bullet can come from an older conversion. Clearing it
+    // must not promote the bullet back to a task just to remove the assignee.
+    const patch: PatchNodeBody =
+      node.kind === "bullet" && assignee !== null ? { kind: "task", assignee } : { assignee };
     this.mutate(
       (nodes) => updateNode(nodes, id, patch).nodes,
       () => api.patchNode(this.serverId(id), patch),
