@@ -9,9 +9,12 @@ import { stopKalamu } from "../src/stop.js";
 
 let base: string;
 let logs: string[];
+let launchAgentPlist: string;
 
 beforeEach(() => {
   base = mkdtempSync(join(tmpdir(), "kalamu-stop-"));
+  launchAgentPlist = join(base, "LaunchAgents", "dev.kalamu.hub.plist");
+  process.env.KALAMU_HOME = join(base, "home");
   logs = [];
   vi.spyOn(console, "log").mockImplementation((msg: string) => {
     logs.push(msg);
@@ -20,20 +23,21 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  delete process.env.KALAMU_HOME;
   rmSync(base, { recursive: true, force: true });
 });
 
 describe("stopKalamu", () => {
   it("reports nothing running when there is no project and no hub lock", async () => {
     const empty = join(base, "nowhere");
-    await stopKalamu(empty);
+    await stopKalamu(empty, launchAgentPlist);
     expect(logs[0]).toMatch(/no kalamu server was found running/i);
   });
 
   it("reports nothing running for a project with no lock file", async () => {
     const root = join(base, "project");
     initKalamu(root);
-    await stopKalamu(root);
+    await stopKalamu(root, launchAgentPlist);
     expect(logs[0]).toMatch(/no kalamu server is running for this project/i);
   });
 
@@ -42,7 +46,7 @@ describe("stopKalamu", () => {
     initKalamu(root);
     const lockPath = join(pathsFor(root).dir, "server.lock");
     writeLock(lockPath, { pid: 2 ** 30, port: 4242 });
-    await stopKalamu(root);
+    await stopKalamu(root, launchAgentPlist);
     expect(readLock(lockPath)).toBeNull();
     expect(logs[0]).toMatch(/no kalamu server is running for this project/i);
   });
@@ -57,7 +61,7 @@ describe("stopKalamu", () => {
     if (pid === undefined) throw new Error("child did not get a pid");
     writeLock(lockPath, { pid, port: 4242 });
 
-    await stopKalamu(root);
+    await stopKalamu(root, launchAgentPlist);
 
     expect(isAlive(pid)).toBe(false);
     expect(readLock(lockPath)).toBeNull();
@@ -66,22 +70,18 @@ describe("stopKalamu", () => {
   });
 
   it("falls back to stopping a foreground hub when no project is found", async () => {
-    const home = join(base, "home");
+    const home = process.env.KALAMU_HOME;
+    if (home === undefined) throw new Error("test KALAMU_HOME was not set");
     mkdirSync(home, { recursive: true });
-    process.env.KALAMU_HOME = home;
-    try {
-      const child: ChildProcess = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
-      await new Promise((resolve) => child.once("spawn", resolve));
-      const pid = child.pid;
-      if (pid === undefined) throw new Error("child did not get a pid");
-      writeLock(join(home, "hub.lock"), { pid, port: 4400 });
+    const child: ChildProcess = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+    await new Promise((resolve) => child.once("spawn", resolve));
+    const pid = child.pid;
+    if (pid === undefined) throw new Error("child did not get a pid");
+    writeLock(join(home, "hub.lock"), { pid, port: 4400 });
 
-      await stopKalamu(join(base, "nowhere"));
+    await stopKalamu(join(base, "nowhere"), launchAgentPlist);
 
-      expect(isAlive(pid)).toBe(false);
-      expect(logs[0]).toMatch(/stopped the kalamu hub/i);
-    } finally {
-      delete process.env.KALAMU_HOME;
-    }
+    expect(isAlive(pid)).toBe(false);
+    expect(logs[0]).toMatch(/stopped the kalamu hub/i);
   });
 });

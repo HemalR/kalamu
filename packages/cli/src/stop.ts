@@ -6,7 +6,7 @@
  */
 import { findRoot, pathsFor } from "@kalamu/core/store";
 import { join } from "node:path";
-import { hubAgentInstalled } from "./launch.js";
+import { hubAgentInstalled, hubLaunchAgentPlist } from "./launch.js";
 import { hubLockPath } from "./hub.js";
 import { isAlive, readLock, removeLock, stopPid } from "./lock.js";
 
@@ -27,7 +27,7 @@ async function stopLock(path: string, describe: (port: number, pid: number) => s
   return true;
 }
 
-export async function stopKalamu(cwd: string): Promise<void> {
+export async function stopKalamu(cwd: string, launchAgentPlist = hubLaunchAgentPlist()): Promise<void> {
   const root = findRoot(cwd);
 
   if (root) {
@@ -38,7 +38,7 @@ export async function stopKalamu(cwd: string): Promise<void> {
     if (stopped) return;
   }
 
-  if (hubAgentInstalled()) {
+  if (hubAgentInstalled(launchAgentPlist)) {
     console.log(
       "A kalamu hub is installed as a login item — use `kalamu hub uninstall` (or `kalamu restart` to keep it, just refreshed) instead of stop.",
     );

@@ -13,8 +13,8 @@ export function hubLaunchAgentPlist(): string {
 }
 
 /** True when `kalamu hub install` has been run — the plist IS the installed state. */
-export function hubAgentInstalled(): boolean {
-  return process.platform === "darwin" && existsSync(hubLaunchAgentPlist());
+export function hubAgentInstalled(plistPath = hubLaunchAgentPlist()): boolean {
+  return process.platform === "darwin" && existsSync(plistPath);
 }
 
 export function portIsFree(port: number): Promise<boolean> {
