@@ -4,8 +4,15 @@
   import { nodeCommands } from "../lib/cli-commands";
   import { writeClipboard } from "../lib/copy";
   import type { OutlineStore } from "../lib/outline.svelte";
-  import { assignKeys, keyBadge, sortByKey } from "../lib/palette";
-  import { blockerCandidates, blockerEntries, candidateLabel, isBlockable, isStarted } from "../lib/task-state";
+  import { assignKeys, keyBadge, LEADER_KEYS as K, sortByKey } from "../lib/palette";
+  import {
+    blockerCandidates,
+    blockerEntries,
+    candidateLabel,
+    isAssignable,
+    isBlockable,
+    isStarted,
+  } from "../lib/task-state";
   import { theme } from "../lib/theme.svelte";
   import Overlay from "./Overlay.svelte";
 
@@ -19,7 +26,19 @@
 
   let { store, onclose, onshowshortcuts, onshowcli }: Props = $props();
 
-  type Level = "root" | "priority" | "assign" | "labels" | "copy" | "cli" | "kind" | "block" | "unblock" | "view";
+  type Level =
+    | "root"
+    | "priority"
+    | "assign"
+    | "labels"
+    | "copy"
+    | "cli"
+    | "kind"
+    | "blocking"
+    | "block"
+    | "unblock"
+    | "view"
+    | "zoom";
 
   const CRUMBS: Record<Exclude<Level, "root">, string> = {
     priority: "Priority",
@@ -28,12 +47,14 @@
     copy: "Copy",
     cli: "CLI command",
     kind: "Kind",
-    block: "Block on",
-    unblock: "Unblock",
+    blocking: "Block",
+    block: "Add block",
+    unblock: "Remove block",
     view: "View",
+    zoom: "Zoom",
   };
 
-  /** Where a level steps back to: only `cli` sits deeper than one below the root. */
+  /** Where a level steps back to; CLI and blocker pickers sit two levels deep. */
   const PARENT: Record<Exclude<Level, "root">, Level> = {
     priority: "root",
     assign: "root",
@@ -41,9 +62,11 @@
     copy: "root",
     cli: "copy",
     kind: "root",
-    block: "root",
-    unblock: "root",
+    blocking: "root",
+    block: "blocking",
+    unblock: "blocking",
     view: "root",
+    zoom: "root",
   };
 
   /**
@@ -145,8 +168,8 @@
       );
     }
     if (level === "assign") {
-      if (!target || target.kind !== "task") return [];
-      const task = target;
+      if (!target || !isAssignable(target)) return [];
+      const assignable = target;
       // Wording shared with AssignMenu, so the two assign surfaces read alike;
       // the order is this menu's own — alphabetical by key, like every level
       // whose keys are hand-picked.
@@ -160,9 +183,9 @@
           id,
           key,
           label,
-          checked: (task.assignee ?? null) === value,
+          checked: (assignable.assignee ?? null) === value,
           run: () => {
-            store.setAssignee(task.id, value);
+            store.setAssignee(assignable.id, value);
             close();
           },
         })),
@@ -231,6 +254,25 @@
         });
       }
       return rows;
+    }
+    if (level === "blocking") {
+      const blockable = target !== undefined && isBlockable(target);
+      return sortByKey([
+        {
+          id: "add-block",
+          key: K.block.add,
+          label: "Add block…",
+          disabled: !blockable || store.nodes.length < 2,
+          run: () => enter("block"),
+        },
+        {
+          id: "remove-block",
+          key: K.block.remove,
+          label: "Remove block…",
+          disabled: !target || (target.blockedBy ?? []).length === 0,
+          run: () => enter("unblock"),
+        },
+      ]);
     }
     if (level === "copy") {
       if (!target) return [];
@@ -321,14 +363,43 @@
         },
       ]);
     }
+    if (level === "zoom") {
+      return sortByKey([
+        {
+          // Already zoomed here is the one no-op worth greying — re-zooming
+          // would look like nothing happened.
+          id: "zoom-in",
+          key: K.zoom.in,
+          label: "Zoom in",
+          disabled: !target || store.zoomId === target.id,
+          run: () => {
+            if (!target) return;
+            store.zoomIn(target.id);
+            // Not close(): zoom puts the caret in the node it zooms to.
+            onclose();
+          },
+        },
+        {
+          // Acts on the zoom root, so it needs no target — only a zoom to leave.
+          id: "zoom-out",
+          key: K.zoom.out,
+          label: "Zoom out",
+          disabled: store.zoomNode === null,
+          run: () => {
+            store.zoomOut();
+            onclose();
+          },
+        },
+      ]);
+    }
     // Root level: hub project digits, then the lettered rows alphabetically,
     // then the arrow and punctuation rows — sortByKey imposes that reading
     // order, so rows are declared by affinity instead. Items that don't apply —
-    // node actions without a target, Assign on a bullet or a discussion (never
-    // assigned — SPEC key decision 12), or Collapse parent with nothing rendered
-    // above to fold — are disabled rather than hidden. Priority works on every
-    // kind, matching the inline badge: p1/p3 on a bullet converts it to a task
-    // (core behavior).
+    // node actions without a target, Assign on a discussion (never assigned —
+    // SPEC key decision 12), or Collapse parent with nothing rendered above to
+    // fold — are disabled rather than hidden. Assign and Priority both promote
+    // a bullet when given real task metadata.
+    const assignable = target !== undefined && isAssignable(target);
     const task = target?.kind === "task" ? target : undefined;
     const started = task !== undefined && isStarted(task);
     // Blocking is the one node action that covers discussions as well as tasks.
@@ -362,7 +433,7 @@
         },
       },
       { id: "priority", key: "p", label: "Priority…", disabled: !target, run: () => enter("priority") },
-      { id: "assign", key: "a", label: "Assign…", disabled: !task, run: () => enter("assign") },
+      { id: "assign", key: "a", label: "Assign…", disabled: !assignable, run: () => enter("assign") },
       { id: "labels", key: "l", label: "Labels…", disabled: !target, run: () => enter("labels") },
       { id: "kind", key: "t", label: "Kind…", disabled: !target, run: () => enter("kind") },
       {
@@ -381,24 +452,13 @@
         },
       },
       {
-        // Tasks and discussions can be blocked (bullets cannot), and blockers
-        // cross the tree freely (key decision 16). A second node is all it takes
-        // for the submenu to have something to offer, so no candidate list is
-        // built just to grey the item out.
-        id: "block",
-        key: "b",
-        label: "Block on…",
-        disabled: !blockable || store.nodes.length < 2,
-        run: () => enter("block"),
-      },
-      {
-        // Lists what is recorded, done blockers included — they are removable
-        // even though they no longer hold anything up.
-        id: "unblock",
-        key: "u",
-        label: "Unblock…",
-        disabled: !target || (target.blockedBy ?? []).length === 0,
-        run: () => enter("unblock"),
+        // Tasks and discussions can be blocked (bullets cannot). The submenu
+        // groups adding and removing blocker edges under one mnemonic.
+        id: "blocking",
+        key: K.root.block,
+        label: "Block…",
+        disabled: !blockable,
+        run: () => enter("blocking"),
       },
       // Copying works on bullets too — only a target is required.
       { id: "copy", key: "c", label: "Copy…", disabled: !target, run: () => enter("copy") },
@@ -406,7 +466,7 @@
         // Document-wide, so no target is needed; the stacks say when there is
         // nothing left to walk back (or forward) through.
         id: "undo",
-        key: "z",
+        key: K.root.undo,
         label: "Undo",
         disabled: !store.canUndo,
         run: () => {
@@ -416,7 +476,7 @@
       },
       {
         id: "redo",
-        key: "r",
+        key: K.root.redo,
         label: "Redo",
         disabled: !store.canRedo,
         run: () => {
@@ -425,6 +485,7 @@
         },
       },
       { id: "view", key: "v", label: "View…", run: () => enter("view") },
+      { id: "zoom", key: K.root.zoom, label: "Zoom…", run: () => enter("zoom") },
       {
         id: "clean",
         key: "x",
@@ -438,31 +499,6 @@
       { id: "view-shortcuts", key: "k", label: "Keyboard cheat sheet", run: onshowshortcuts },
       { id: "view-cli", key: "i", label: "CLI reference", run: onshowcli },
       // The movement rows, declared in the order sortByKey keeps them in.
-      {
-        // Already zoomed here is the one no-op worth greying — re-zooming would
-        // look like nothing happened.
-        id: "zoom-in",
-        key: ".",
-        label: "Zoom in",
-        disabled: !target || store.zoomId === target.id,
-        run: () => {
-          if (!target) return;
-          store.zoomIn(target.id);
-          // Not close(): zoom puts the caret in the node it zooms to.
-          onclose();
-        },
-      },
-      {
-        // Acts on the zoom root, so it needs no target — only a zoom to leave.
-        id: "zoom-out",
-        key: ",",
-        label: "Zoom out",
-        disabled: store.zoomNode === null,
-        run: () => {
-          store.zoomOut();
-          onclose();
-        },
-      },
       {
         // Structural, so it applies to every kind; inert on leaves and on an
         // already-folded node (Mod+. keeps the toggle for both directions).
@@ -592,10 +628,10 @@
       return () => (panel = undefined);
     }}
   >
-    {#if node !== undefined || level !== "root"}
+    {#if (node !== undefined && node.text.trim() !== "") || level !== "root"}
       <div class="context">
         {#each trail as crumb (crumb)}<span class="crumb">{crumb}</span>{/each}
-        {#if node}<span class="target">{node.text.trim() === "" ? "(empty item)" : node.text}</span>{/if}
+        {#if node && node.text.trim() !== ""}<span class="target">{node.text}</span>{/if}
       </div>
     {/if}
 

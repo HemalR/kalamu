@@ -1,8 +1,6 @@
 /**
- * Pure helpers for the two states the outline surfaces beyond done: an agent's
- * claim (`startedAt` — SPEC key decision 17, tasks only) and what a task or
- * discussion waits on (`blockedBy` — key decision 16). No Svelte imports,
- * unit-tested.
+ * Pure helpers for work-item state and actions: assignment, claims and
+ * blockers. No Svelte imports; unit-tested.
  */
 import type { KalamuNode, Tree } from "@kalamu/core";
 import { summarize } from "./summary";
@@ -19,6 +17,11 @@ export function isStarted(node: KalamuNode): boolean {
  */
 export function isBlockable(node: KalamuNode): boolean {
   return node.kind !== "bullet";
+}
+
+/** Tasks can be assigned directly; bullets can be promoted by assigning them. */
+export function isAssignable(node: KalamuNode): boolean {
+  return node.kind !== "discussion";
 }
 
 /**

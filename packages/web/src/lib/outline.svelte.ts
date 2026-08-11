@@ -32,7 +32,7 @@ import {
   type KalamuNode,
   type ParsedTokens,
 } from "@kalamu/core";
-import { api, type Priority } from "./api";
+import { api, type PatchNodeBody, type Priority } from "./api";
 import { commitPatch, tokenPatch, type CommitPatch } from "./commit";
 import { rawNodeText, serializeNodeContext, writeClipboard } from "./copy";
 import { nextNumberPrefix } from "./numbering";
@@ -341,13 +341,14 @@ export class OutlineStore extends OutlineViewState {
     );
   }
 
-  /** Tasks only; null clears back to unassigned. */
+  /** Assign a task; a real assignment promotes a bullet to a task. Discussions remain unassignable. */
   setAssignee(id: string, assignee: Assignee | null): void {
     const node = this.tree.byId.get(id);
-    if (!node || node.kind !== "task") return;
+    if (!node || node.kind === "discussion" || (node.kind === "bullet" && assignee === null)) return;
+    const patch: PatchNodeBody = node.kind === "bullet" ? { kind: "task", assignee } : { assignee };
     this.mutate(
-      (nodes) => updateNode(nodes, id, { assignee }).nodes,
-      () => api.patchNode(this.serverId(id), { assignee }),
+      (nodes) => updateNode(nodes, id, patch).nodes,
+      () => api.patchNode(this.serverId(id), patch),
     );
   }
 

@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { assignKeys, keyBadge, sortByKey } from "../src/lib/palette";
+import { assignKeys, keyBadge, LEADER_KEYS, sortByKey } from "../src/lib/palette";
+
+describe("leader keys", () => {
+  it("groups zoom and blocking while keeping undo one key away", () => {
+    expect(LEADER_KEYS.root).toEqual({ block: "b", redo: "r", undo: "u", zoom: "z" });
+    expect(LEADER_KEYS.block).toEqual({ add: "a", remove: "r" });
+    expect(LEADER_KEYS.zoom).toEqual({ in: "i", out: "o" });
+  });
+});
 
 describe("assignKeys", () => {
   it("assigns digits 1-9 first, then letters in home-row order", () => {

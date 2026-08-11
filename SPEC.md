@@ -42,6 +42,7 @@ These were deliberated and are settled. Do not relitigate them during implementa
 6. **The UI ships with undo and delete.** A keyboard-first tool that moves subtrees without undo loses user data and trust.
 7. **Tags live inline in the text.** A tag IS its `#token` in the node's text ("Build a new #feature to do xyz") — there is no `tags` field; tags are derived from the text. Chips are a rendering of the token in place: unfocused nodes show chips, the focused node shows raw text, so tags are edited and deleted like any other text. Colours are derived deterministically from the tag name (overridable in `meta.json`). No tag-management commands — a tag exists because text mentions it.
 8. **Assignment: human or agent.** (Amended 2026-07-10: replaces the earlier `self: true` flag.) `assignee: "human"` marks a task the developer keeps for themselves — `next` never returns it. `assignee: "agent"` explicitly marks agent work; omitted means unassigned, which is agent-eligible exactly like `"agent"`. This is still audience, not people: the only two values are the developer at the keyboard and their agents — Kalamu has no concept of users. Legacy `"self": true` reads as `assignee: "human"` and is rewritten on the next write.
+   In the command palette, Assign is available on bullets as a promotion shortcut: choosing Human or Agent converts the bullet to a task and assigns it in one operation. Discussions remain unassignable.
 9. **Per-node plain-text contenteditable, no editor library.** Each node's text is its own `contenteditable="plaintext-only"` element using Svelte's native bindings (`bind:textContent`). Structural keys (Enter, Tab, Backspace-on-empty) are intercepted — guarded by `event.isComposing` for IME — and become outline operations; token parsing writes back only on commit (Enter/blur), never mid-keystroke, since external updates to bound content reset the caret. No TipTap/ProseMirror — those are document editors, and Kalamu's structure lives in the data model, not the editor. Fallback if the spike finds trouble: a roaming single editor where only the focused node is live. The UI spike exists to validate this.
 10. **Collapse state is view state, never document content.** It lives in a gitignored `.kalamu/ui-state.json`, not in `outline.jsonl` — otherwise every fold click dirties the canonical file and pollutes Git history. Agents and the CLI always operate on the full tree regardless of what is collapsed.
 11. **Images are files referenced by inline markdown tokens.** Pasting an image stores it in `.kalamu/assets/` (content-hashed filename, COMMITTED — assets are outline content and must survive a clone) and inserts `![](.kalamu/assets/img-<hash>.<ext>)` into the node text. Same rendering model as tags: unfocused nodes show a thumbnail in place, the focused node shows the raw token. No new node field; agents see an ordinary greppable path.
@@ -1444,9 +1445,13 @@ The palette acts on the last-focused node and offers, at the root level:
                           none in standalone mode
 a    Assign ->            submenu: a Agent / h Human / u Unassigned, current
                           value marked; selecting sets the task's assignee
-                          (Unassigned clears it), closes
-b    Block on ->          submenu: candidate nodes to record in `blockedBy`;
-                          selecting adds the blocker, closes
+                          (Unassigned clears it); choosing Human or Agent on a
+                          bullet converts it to a task and assigns it; closes
+b    Block ->             submenu: a Add block -> candidate nodes to record in
+                          `blockedBy`, selecting adds the blocker, closes ·
+                          r Remove block -> the node's current blockers, plus
+                          "Remove all blockers" (on key `a`) when there is more
+                          than one; selecting removes that entry, closes
 c    Copy ->              submenu: c CLI command -> (one level deeper:
                           ready-to-run CLI commands for this node with its real
                           (server) id filled in — show --children always; done
@@ -1472,9 +1477,8 @@ s    Start / End          claims the task (`startedAt`) or releases the claim �
 t    Kind ->              submenu: b Bullet / d Discussion / t Task, current
                           kind marked; selecting sets that kind outright — the
                           same three Mod+Shift+Enter cycles through — closes
-u    Unblock ->           submenu: the node's current blockers, plus "Remove
-                          all blockers" (on key `a`) when there is more than
-                          one; selecting removes that entry, closes
+u    Undo                 walks the document back one change (same as Mod+Z);
+                          disabled with nothing to undo
 v    View ->              submenu of toggles whose labels reflect the current
                           state: h Hide/show done · m Enter/leave compact
                           mode · t Activate dark/light mode; each closes
@@ -1483,14 +1487,12 @@ x    Clean up             deletes every done task with its subtree, plus done
                           applied through the UI's undo stack so it is undoable
                           in-session; toasts the result ("Deleted 4 nodes
                           (3 done tasks)" / "Nothing to clean."), closes
-z    Undo                 walks the document back one change (same as Mod+Z);
-                          disabled with nothing to undo
-.    Zoom in              zooms the view to this node (same as Mod+Shift+.);
-                          disabled when it is already the zoom root; closes
-                          with focus in the new root
-,    Zoom out             leaves one zoom level (same as Mod+Shift+,); needs no
-                          target, only a zoom to leave; closes with focus on
-                          the node just left
+z    Zoom ->              submenu: i Zoom in — zooms the view to this node
+                          (same as Mod+Shift+.), disabled when it is already the
+                          zoom root, closes with focus in the new root · o Zoom
+                          out — leaves one zoom level (same as Mod+Shift+,),
+                          needs no target, only a zoom to leave, closes with
+                          focus on the node just left
 ←    Collapse children    folds the node's own children in place; closes with
                           the caret where it was (Cmd/Ctrl+. still toggles)
 →    Expand children      unfolds the node's children and moves the caret into
@@ -1506,22 +1508,24 @@ The action list is fixed: every non-digit item always renders, on a stable key
 and in key order — digits, then the letters alphabetically, then the
 punctuation and arrow rows. Only the project digit rows vary, with the hub
 registry. Items that don't apply are greyed out and disabled rather than
-hidden — with no node focused, every node-targeting action (`c d p a l t s b u
-. ← → ↑`) is disabled (the view, clean, undo/redo, zoom out and sheet items
+hidden — with no node focused, every node-targeting action (`c d p a l t s b
+← → ↑`) is disabled (the view, clean, undo/redo, zoom and sheet items
 need no target and are always enabled — Clean up with nothing to clean just
-toasts "Nothing to clean."). On a bullet, Assign, Start/End, and Block on are
-disabled (bullets are structure, not work — key decision 16) — Priority applies
-(picking 1 or 3 converts the bullet into a task, exactly like `--p` on the CLI;
-2 clears back to default without converting) and Toggle done works on bullets
-as a visual-only strikethrough (Copy stays enabled, with task-only commands
-omitted from the CLI submenu; done/reopen appear for bullets too). On a
+toasts "Nothing to clean."). On a bullet, Start/End and Block are disabled
+(bullets are structure, not work — key decision 16), while Assign is enabled:
+choosing Human or Agent converts the bullet to a task and assigns it atomically;
+choosing Unassigned leaves the bullet unchanged. Priority also applies (picking
+1 or 3 converts the bullet into a task, exactly like `--p` on the CLI; 2 clears
+back to default without converting), and Toggle done works on bullets as a
+visual-only strikethrough (Copy stays enabled, with task-only commands omitted
+from the CLI submenu; done/reopen appear for bullets too). On a
 discussion, Assign and Start/End are disabled (discussions are never assigned
-and never claimed — key decision 12); Priority, Toggle done, Block on, Kind and
+and never claimed — key decision 12); Priority, Toggle done, Block, Kind and
 Copy all apply. The fold actions (`← → ↑`) apply to every kind (they are
 structural, not metadata) but carry their own disabled cases: Collapse children
 on leaves and on an already-folded node, Expand children on leaves (nothing
 beneath to fold), Collapse parent on root-level nodes and on the zoom root
-(nothing rendered above to fold). Unblock is disabled while the node has no
+(nothing rendered above to fold). Remove block is disabled while the node has no
 blockers, Start on a done task, Undo and Redo on an empty stack, Zoom in on the
 node already zoomed to and Zoom out when the view isn't zoomed. Disabled items
 don't respond to keys or clicks. The CLI
@@ -1646,7 +1650,7 @@ Every tag gets a colour with zero configuration:
 ### Assignment in the UI
 
 * Assigned tasks show a subtle icon after the text — a user icon for `"human"`, a robot icon for `"agent"` — so they scan differently from unassigned tasks. The icons match the @ dropdown's.
-* Assignment is set from the @ dropdown, `@human`/`@agent` tokens, or the palette's Assign submenu (no dedicated shortcut — Cmd+M is OS-reserved).
+* Assignment is set from the @ dropdown, `@human`/`@agent` tokens, or the palette's Assign submenu (no dedicated shortcut — Cmd+M is OS-reserved). The palette also offers Assign on a bullet; choosing Human or Agent promotes it to a task and assigns it in the same operation. Discussions never offer Assign.
 
 ---
 

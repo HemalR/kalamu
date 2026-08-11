@@ -5,6 +5,7 @@ import {
   blockerCandidates,
   blockerEntries,
   candidateLabel,
+  isAssignable,
   isBlockable,
   isStarted,
   nodeLabel,
@@ -50,6 +51,14 @@ describe("isBlockable", () => {
 
   it("does not depend on done state — a done item can still record what it waited on", () => {
     expect(isBlockable(node({ id: "a", doneAt: DONE }))).toBe(true);
+  });
+});
+
+describe("isAssignable", () => {
+  it("covers tasks and promotable bullets, but not discussions", () => {
+    expect(isAssignable(node({ id: "a" }))).toBe(true);
+    expect(isAssignable(node({ id: "b", kind: "bullet" }))).toBe(true);
+    expect(isAssignable(node({ id: "c", kind: "discussion" }))).toBe(false);
   });
 });
 

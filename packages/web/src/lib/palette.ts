@@ -2,11 +2,19 @@
  * Pure key logic for the leader-key command palette (no Svelte imports,
  * unit-tested). Dynamic submenus (labels, block candidates, blockers, CLI
  * commands) get their trigger keys auto-assigned from a fixed sequence;
- * fixed levels (root, priority, assign, view) carry hand-picked keys.
+ * fixed levels (root, priority, assign, blocking, view, zoom) carry hand-picked
+ * keys.
  */
 
 /** `1`-`9`, then letters in home-row order (SPEC "Command palette"). */
 const KEY_SEQUENCE = [..."123456789", ..."asdfghjkl", ..."qwertyuiop", ..."zxcvbnm"];
+
+/** Stable leader sequences whose hierarchy is part of the product contract. */
+export const LEADER_KEYS = {
+  root: { block: "b", redo: "r", undo: "u", zoom: "z" },
+  block: { add: "a", remove: "r" },
+  zoom: { in: "i", out: "o" },
+} as const;
 
 /** Keys held as their `event.key` name print as the glyph they are. */
 const KEY_BADGES: Readonly<Record<string, string>> = {
