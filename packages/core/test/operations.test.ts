@@ -187,6 +187,28 @@ describe("moveNode", () => {
   it("rejects --after that is not a sibling under the target parent", () => {
     expect(() => moveNode(forest(), "n_004", { parentId: "n_001", afterId: "n_003" })).toThrow(OperationError);
   });
+
+  it("drops a blockedBy edge that would become an ancestor after the move", () => {
+    const nodes = [
+      task("n_001", { text: "webhook" }),
+      task("n_002", { text: "e2e", blockedBy: ["n_001"] }),
+    ];
+    const { node, nodes: after } = moveNode(nodes, "n_002", { parentId: "n_001" });
+    expect(node.parentId).toBe("n_001");
+    expect(node.blockedBy).toBeUndefined();
+    expect(after.find((n) => n.id === "n_002")?.blockedBy).toBeUndefined();
+  });
+
+  it("keeps unrelated blockers when indenting under a different node", () => {
+    const nodes = [
+      task("n_001", { text: "umbrella" }),
+      task("n_002", { text: "other" }),
+      task("n_003", { text: "waits", blockedBy: ["n_002"] }),
+    ];
+    const { node } = moveNode(nodes, "n_003", { parentId: "n_001" });
+    expect(node.parentId).toBe("n_001");
+    expect(node.blockedBy).toEqual(["n_002"]);
+  });
 });
 
 describe("deleteNode", () => {

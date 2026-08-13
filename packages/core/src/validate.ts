@@ -39,6 +39,9 @@ export function validateOutline(content: string): ValidationResult {
     for (const blockerId of node.blockedBy ?? []) {
       if (blockerId === node.id) errors.push(`${node.id} is blocked by itself`);
       else if (!byId.has(blockerId)) errors.push(`${node.id} is blocked by missing node ${blockerId}`);
+      else if (isAncestor(byId, node.id, blockerId)) {
+        errors.push(`${node.id} is blocked by ancestor ${blockerId}`);
+      }
     }
   }
 
@@ -86,6 +89,19 @@ function findBlockerCycles(nodes: readonly KalamuNode[]): string[] {
     }
   }
   return out;
+}
+
+/** Walk `parentId` rather than the tree: missing parents are already reported. */
+function isAncestor(byId: Map<string, KalamuNode>, nodeId: string, ancestorId: string): boolean {
+  const seen = new Set<string>();
+  let current = byId.get(nodeId)?.parentId ?? null;
+  while (current !== null) {
+    if (current === ancestorId) return true;
+    if (seen.has(current)) return false;
+    seen.add(current);
+    current = byId.get(current)?.parentId ?? null;
+  }
+  return false;
 }
 
 function findCycles(nodes: readonly KalamuNode[]): string[] {

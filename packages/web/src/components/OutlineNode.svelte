@@ -972,46 +972,6 @@
         {/if}
       {/if}
 
-      <!-- What the task or discussion waits on (SPEC key decision 16), and the
-           way there: blockers cross the tree freely, so the badge is also the
-           only affordance that takes the reader to one. Editing the list still
-           belongs to the palette's Block on…/Unblock. The tooltip is the
-           accessible name too, so it is announced rather than merely hovered. -->
-      {#if blockers.length > 0}
-        {@const title = blockedTitle(blockers)}
-        {@const many = blockers.length > 1}
-        {@const blockedLabel = `${title}\n${many ? "Click to pick a blocker" : "Click to go to the blocker"}`}
-        <span class="block-wrap" bind:this={blockWrap}>
-          <button
-            class="blocked"
-            aria-haspopup={many ? "menu" : undefined}
-            aria-expanded={many ? blockOpen : undefined}
-            aria-label={blockedLabel}
-            {title}
-            tabindex="-1"
-            onclick={onBlockedClick}
-          >
-            <!-- Lucide lock, restroked to match the row's other icons. -->
-            <svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true">
-              <rect x="3" y="11" width="18" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="2.25" />
-              <path d="M7 11V7a5 5 0 0 1 10 0v4" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" />
-            </svg>
-            <span>{many ? `Blocked ×${blockers.length}` : "Blocked"}</span>
-          </button>
-          <!-- `many` as well as blockOpen: a blocker completed elsewhere can drop
-               the count to one under an open menu, and one blocker is no choice. -->
-          {#if blockOpen && many}
-            <BlockerMenu
-              {blockers}
-              onpick={(picked) => {
-                blockOpen = false;
-                store.revealNode(picked.id);
-              }}
-            />
-          {/if}
-        </span>
-      {/if}
-
       <!-- Absolute in the row's right gutter and mounted even while editing, so
            entering/leaving edit mode never shifts the row; CSS reveals it on
            row hover/focus. Clicking mid-edit blurs the editable, which commits
@@ -1038,12 +998,55 @@
        state of the outline: furniture that appeared on hover would shove the
        hovered row out from under the pointer and oscillate. Only the bar and
        the caption come and go, and the row's fixed height keeps even that free
-       of reflow. All but the assignment badge is presentational, and that badge
-       keeps tabindex="-1" like the row's other furniture, so click-to-edit and
-       caret navigation still step straight past this row. -->
+       of reflow. Assignment and blocked are the interactive items; both keep
+       tabindex="-1" like the row's other furniture, so click-to-edit and caret
+       navigation still step straight past this row. -->
   <div class={["meta-row", { done: isDone }]}>
     {#if showBar}
       <ProgressBar done={progress.done} active={progress.active} total={progress.total} caption={showCaption} />
+    {/if}
+
+    <!-- What the task or discussion waits on (SPEC key decision 16), and the
+         way there: blockers cross the tree freely, so the badge is also the
+         only affordance that takes the reader to one. Editing the list still
+         belongs to the palette's Block on…/Unblock. After the text it wrapped
+         onto a line of its own the moment the prose filled the row — the same
+         failure that moved assignment down. Progress stays first so sibling
+         bars still line up; blocked before assignment because "cannot proceed"
+         outranks who it is for; the age stays last, ambient. -->
+    {#if blockers.length > 0}
+      {@const title = blockedTitle(blockers)}
+      {@const many = blockers.length > 1}
+      {@const blockedLabel = `${title}\n${many ? "Click to pick a blocker" : "Click to go to the blocker"}`}
+      <span class="block-wrap" bind:this={blockWrap}>
+        <button
+          class="blocked"
+          aria-haspopup={many ? "menu" : undefined}
+          aria-expanded={many ? blockOpen : undefined}
+          aria-label={blockedLabel}
+          {title}
+          tabindex="-1"
+          onclick={onBlockedClick}
+        >
+          <!-- Lucide lock, restroked to match the row's other icons. -->
+          <svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true">
+            <rect x="3" y="11" width="18" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="2.25" />
+            <path d="M7 11V7a5 5 0 0 1 10 0v4" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" />
+          </svg>
+          <span>{many ? `Blocked ×${blockers.length}` : "Blocked"}</span>
+        </button>
+        <!-- `many` as well as blockOpen: a blocker completed elsewhere can drop
+             the count to one under an open menu, and one blocker is no choice. -->
+        {#if blockOpen && many}
+          <BlockerMenu
+            {blockers}
+            onpick={(picked) => {
+              blockOpen = false;
+              store.revealNode(picked.id);
+            }}
+          />
+        {/if}
+      </span>
     {/if}
 
     <!-- Who owns this task, parked on the meta row rather than after the text:
@@ -1385,29 +1388,30 @@
     opacity: 0.5;
   }
 
-  /* Anchors the multi-blocker menu, and carries the flow placement the badge
-     itself used to (the button below is laid out inside it). */
+  /* Anchors the multi-blocker menu. Same box as .assign-wrap: centred so the
+     meta-row divider generated inside it sits on the row's midline. */
   .block-wrap {
     position: relative;
     flex: none;
     align-self: center;
     display: flex;
+    align-items: center;
   }
 
-  /* Same footprint as a tag chip, so the row's right-hand furniture lines up;
-     the count only appears when more than one blocker is open. It is a button
-     (it jumps to the blocker), so the UA's border/background/font are reset
-     back to what the badge rendered as a span — at rest it must read as a
-     status badge, not a control. */
+  /* Built for the meta row's fixed 14px, same recipe as .assignee.human — both
+     are scan-distance signals, only the hue differs. It is a button (it jumps
+     to the blocker), so the UA's border/background/font are reset; at rest it
+     must read as a status badge, not a control. The count only appears when
+     more than one blocker is open. */
   .blocked {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    padding: 2px 7px;
+    padding: 1px 6px;
     border: none;
     border-radius: 999px;
     font: inherit;
-    font-size: 11.5px;
+    font-size: 11px;
     font-weight: 500;
     line-height: 1;
     color: var(--blocked);
@@ -1415,14 +1419,19 @@
     user-select: none;
     cursor: pointer;
   }
+  .blocked svg {
+    width: 12px;
+    height: 12px;
+  }
   /* Same deepen-on-approach as .assignee, in the badge's own colour. */
   .blocked:hover,
   .blocked:focus-visible,
   .blocked[aria-expanded="true"] {
     background: color-mix(in srgb, var(--blocked) 26%, transparent);
   }
-  /* A done task's badge is history, not a warning. */
-  .row.done .blocked {
+  /* A done task's badge is history, not a warning. Keyed off the meta row:
+     the badge lives down there now, outside anything .row can reach. */
+  .meta-row.done .blocked {
     opacity: 0.6;
   }
 
@@ -1463,12 +1472,11 @@
     color: var(--fg);
   }
 
-  /* The human badge borrows .blocked's pill — same weight, radius and
+  /* The human badge shares .blocked's pill — same weight, radius and
      deepen-on-approach — because both are signals the reader hunts for at a
-     scan distance; only the hue differs. It runs a half-point tighter than the
-     inline badges so it clears 14px, which also sets it with the 11px timestamp
-     it now sits beside. Agent keeps the quiet icon dot above: it is the
-     default, and defaults should not compete. */
+     scan distance; only the hue differs. Sized to clear 14px and sit with the
+     11px timestamp. Agent keeps the quiet icon dot above: it is the default,
+     and defaults should not compete. */
   .assignee.human {
     gap: 4px;
     padding: 1px 6px;
@@ -1581,7 +1589,11 @@
   /* Starts exactly where THIS row's text starts — the meta reads as a footer to
      its own row, not as the first of its children. Height is fixed rather than
      intrinsic, and one constant for every node: the bar comes and goes with the
-     subtree, and neither it nor the caption may move anything when it does. */
+     subtree, and neither it nor the caption may move anything when it does.
+     Margin, not padding: height is 14px and the app is border-box. Below is
+     the gap between nodes — without it the age sits as close to the next
+     checkbox as to its own text, and could belong to either. Above is a
+     breath so a tag chip on the last line of text does not kiss this row. */
   .meta-row {
     --meta-gap: 10px;
     --meta-dot: 3px;
@@ -1589,6 +1601,8 @@
     align-items: center;
     gap: var(--meta-gap);
     height: 14px;
+    margin-top: 3px;
+    margin-bottom: 8px;
     padding-left: var(--text-col);
     user-select: none;
   }
@@ -1611,17 +1625,30 @@
     background: color-mix(in srgb, var(--muted) 50%, transparent);
   }
 
-  /* The assignment badge is the one item here that is itself a flex container,
-     so its divider is generated *inside* it — widening the very box the assign
-     menu anchors to, which would drop the menu off the badge by a dot. Out of
-     flow it draws in exactly the same place; the margin gives the row back the
-     width the dot no longer holds. */
+  /* A 3px square after a strip of dashes reads as one more dash. Keep every
+     other divider — including after the bar once its caption is showing,
+     because that is text, not a dash. */
+  .meta-row > :global(.bar.bare + *)::before {
+    content: none;
+  }
+
+  /* Flex-container items (badges that wrap a menu) generate the divider
+     inside themselves, which would widen the menu-anchor box and drop the
+     menu off the badge by a dot. Out of flow it draws in exactly the same
+     place; the margin gives the row back the width the dot no longer holds. */
+  .meta-row > .block-wrap:not(:first-child),
   .meta-row > .assign-wrap:not(:first-child) {
     margin-left: calc(var(--meta-dot) + var(--meta-gap));
   }
+  .meta-row > .block-wrap::before,
   .meta-row > .assign-wrap::before {
     position: absolute;
     right: 100%;
+  }
+  /* The reserved-dot margin would leave a hole once the divider is suppressed. */
+  .meta-row > :global(.bar.bare + .block-wrap),
+  .meta-row > :global(.bar.bare + .assign-wrap) {
+    margin-left: 0;
   }
 
   /* Same weight as the bar's caption — this is ambient provenance, and the

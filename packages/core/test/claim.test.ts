@@ -97,6 +97,21 @@ describe("addBlocker / removeBlocker", () => {
     );
   });
 
+  it("rejects a blocker that is an ancestor of the blocked node", () => {
+    const parent = task("n_001");
+    const child = task("n_002", { parentId: "n_001" });
+    const grandchild = task("n_003", { parentId: "n_002" });
+    expect(() => addBlocker([parent, child], "n_002", "n_001")).toThrow(/ancestor n_001/);
+    expect(() => addBlocker([parent, child, grandchild], "n_003", "n_001")).toThrow(/ancestor n_001/);
+  });
+
+  it("still allows a parent to wait on its child", () => {
+    const parent = task("n_001");
+    const child = task("n_002", { parentId: "n_001" });
+    const { node } = addBlocker([parent, child], "n_001", "n_002");
+    expect(node.blockedBy).toEqual(["n_002"]);
+  });
+
   // Key decision 16, amended 2026-08-10: a conversation can wait on work.
   it("blocks a discussion, by a task or by another discussion", () => {
     const byTask = addBlocker([discussion("n_001"), task("n_002")], "n_001", "n_002");
@@ -310,5 +325,28 @@ describe("validate", () => {
   it("accepts blockedBy on a discussion", () => {
     const result = validateOutline(`${line("n_001", ["n_002"], "discussion")}\n${line("n_002")}\n`);
     expect(result.valid).toBe(true);
+  });
+
+  it("reports a blocker that is an ancestor", () => {
+    const parent = JSON.stringify({
+      id: "n_001",
+      parentId: null,
+      kind: "task",
+      text: "parent",
+      createdAt: NOW,
+      doneAt: null,
+    });
+    const child = JSON.stringify({
+      id: "n_002",
+      parentId: "n_001",
+      kind: "task",
+      text: "child",
+      createdAt: NOW,
+      doneAt: null,
+      blockedBy: ["n_001"],
+    });
+    const result = validateOutline(`${parent}\n${child}\n`);
+    expect(result.valid).toBe(false);
+    expect(result.errors).toEqual(["n_002 is blocked by ancestor n_001"]);
   });
 });

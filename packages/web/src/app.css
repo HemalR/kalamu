@@ -38,9 +38,9 @@
      badge text at 11.5px. Lightened in dark mode, where the light-mode blue
      sinks into the ground. */
   --assigned-human: light-dark(#2f6fd0, #8ab4f8);
-  /* Segmented progress dashes. Done reads at full saturation — at 7×4px a muted
-     green disappeared into the row it was meant to report on. Lifted in dark
-     mode, where the same hue sits duller against the ground. Active stays
+  /* Segmented progress dashes. Done reads at full saturation — at this size a
+     muted green disappeared into the row it was meant to report on. Lifted in
+     dark mode, where the same hue sits duller against the ground. Active stays
      quieter: it is the transient state, and two loud colours in one strip read
      as an alarm. Unfilled dashes reuse --ring. */
   --progress-done: light-dark(#00bd7d, #12ce8c);

@@ -268,9 +268,21 @@
         {
           id: "remove-block",
           key: K.block.remove,
-          label: "Remove block…",
+          // One blocker is a destination, not a choice — same as the badge.
+          // The ellipsis stays only when a submenu will open.
+          label: (target?.blockedBy ?? []).length > 1 ? "Remove block…" : "Remove block",
           disabled: !target || (target.blockedBy ?? []).length === 0,
-          run: () => enter("unblock"),
+          run: () => {
+            if (!target) return;
+            const entries = blockerEntries(store.tree, target);
+            const only = entries.length === 1 ? entries[0] : undefined;
+            if (only !== undefined) {
+              store.removeBlocker(target.id, only.id);
+              close();
+            } else {
+              enter("unblock");
+            }
+          },
         },
       ]);
     }

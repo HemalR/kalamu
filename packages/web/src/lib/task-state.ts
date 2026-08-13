@@ -2,7 +2,7 @@
  * Pure helpers for work-item state and actions: assignment, claims and
  * blockers. No Svelte imports; unit-tested.
  */
-import type { KalamuNode, Tree } from "@kalamu/core";
+import { ancestors, buildTree, type KalamuNode, type Tree } from "@kalamu/core";
 import { summarize } from "./summary";
 
 /** In progress: a claimed task that is still open (`▶` where the CLI prints `☐`). */
@@ -57,10 +57,12 @@ function candidateRank(node: KalamuNode): number {
 
 /**
  * What the palette's "Block on…" submenu offers for a blockable target (a task
- * or a discussion): every other node, minus the ones already recorded. Any kind
- * may block, and blockers cross the tree freely (key decision 16), so nothing
- * else is excluded here — a pick that would close a cycle is rejected by
- * core/the server, and the message says why.
+ * or a discussion): every other node, minus the ones already recorded and the
+ * target's ancestors. A child cannot wait on an ancestor — finishing that
+ * ancestor would close the umbrella (SPEC key decisions 4 and 16) — so those
+ * picks are withheld here rather than offered and then refused. Any other kind
+ * may block, and blockers still cross the rest of the tree, so a pick that
+ * would close a cycle is rejected by core/the server, and the message says why.
  *
  * Ordered open tasks → open other kinds → done nodes, outline order within
  * each group (Array#sort is stable), so the likely picks are the first rows
@@ -68,8 +70,9 @@ function candidateRank(node: KalamuNode): number {
  */
 export function blockerCandidates(nodes: readonly KalamuNode[], target: KalamuNode): KalamuNode[] {
   const already = new Set(target.blockedBy ?? []);
+  const above = new Set(ancestors(buildTree(nodes), target).map((node) => node.id));
   return nodes
-    .filter((node) => node.id !== target.id && !already.has(node.id))
+    .filter((node) => node.id !== target.id && !already.has(node.id) && !above.has(node.id))
     .sort((a, b) => candidateRank(a) - candidateRank(b));
 }
 

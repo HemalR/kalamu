@@ -47,7 +47,10 @@
 </script>
 
 {#if total > 0}
-  <span class="bar" role="img" aria-label={label}>
+  <!-- `bare` is for the parent meta row: a separator dot after a dash strip
+       reads as one more dash, so OutlineNode suppresses the next item's
+       divider only while the caption (real text) is away. -->
+  <span class={["bar", { bare: !showCaption }]} role="img" aria-label={label}>
     <span class="dashes" aria-hidden="true">
       <!-- Keyed by position: a dash has no identity beyond where it sits, and
            the kinds repeat, so nothing else could key this. -->
@@ -76,7 +79,7 @@
   }
 
   .dash {
-    width: 7px;
+    width: 10px;
     height: 5px;
     border-radius: 2px;
     background: var(--ring);

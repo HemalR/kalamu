@@ -89,6 +89,12 @@ describe("kalamu block / unblock", () => {
     expect(() => commands.block(cwd, a, { by: [] })).toThrow(/--by/);
   });
 
+  it("rejects blocking a child on its ancestor", () => {
+    const parent = addTask("umbrella");
+    const child = addTask("nested", { parent: parent });
+    expect(() => commands.block(cwd, child, { by: [parent] })).toThrow(/ancestor/);
+  });
+
   it("rejects blocking a node that does not exist", () => {
     expect(() => commands.block(cwd, "n_404", { by: [addTask("real")] })).toThrow(/no node with id/);
   });

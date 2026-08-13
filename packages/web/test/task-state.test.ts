@@ -124,6 +124,13 @@ describe("blockerCandidates", () => {
     expect(blockerCandidates(nodes, api).map((n) => n.id)).toEqual(["target", "c", "b"]);
   });
 
+  it("never offers an ancestor — a child cannot wait on one", () => {
+    const parent = node({ id: "parent", text: "Webhook work" });
+    const child = node({ id: "child", parentId: "parent", text: "Then validate" });
+    const cousin = node({ id: "cousin", text: "Unrelated" });
+    expect(blockerCandidates([parent, child, cousin], child).map((n) => n.id)).toEqual(["cousin"]);
+  });
+
   it("leads with open tasks, then open other kinds, then done nodes", () => {
     const doneBullet = node({ id: "done-bullet", kind: "bullet", text: "Old note", doneAt: DONE });
     const discussion = node({ id: "discussion", kind: "discussion", text: "Talk it through" });

@@ -50,7 +50,7 @@ These were deliberated and are settled. Do not relitigate them during implementa
 13. **One hub, many projects.** (Added 2026-07-12.) `kalamu hub` runs a single machine-global server (default port 4400, still `127.0.0.1`-only) that mounts every registered project behind one UI with a project sidebar — no per-project server spin-up, no per-project ports. Projects are identified in hub URLs by a human-readable slug derived from `package.json` `name` (scope stripped) or the directory name, deduplicated with numeric suffixes and **stable once assigned**. The registry lives at `~/.kalamu/projects.json` — machine-global plumbing, never canonical outline data. The hub is human UI convenience only; agents and the CLI contract never depend on it. See [Hub](#hub-multi-project-dashboard).
 14. **Update checks: default-on, opt-out, human-only.** (Added 2026-07-13.) Every install path (`npx` caches, global installs and the launchd hub never self-update) can silently run a stale binary, so Kalamu tells the human when a newer version is on npm. This is the one deliberate outbound network call in an otherwise `127.0.0.1`-only tool — a single throttled GET to `registry.npmjs.org`, never analytics, never a phone-home of outline data. It is **on by default with a first-run notice** and opts out via `KALAMU_NO_UPDATE_CHECK`, `CI`, or `~/.kalamu/config.json` (`kalamu config update-check off`). The check is best-effort and non-blocking: the latest version is cached in `~/.kalamu/update-check.json` for ~24h, and offline/slow/opted-out all degrade to silence, never an error or a delay. It surfaces two ways — a CLI banner on **stderr** shown only to a human at a TTY (so agents and `--format json` never see it), and a dismissible chip in the web UI/hub (`/api/project` reports `version`/`latestVersion`/`updateAvailable`). Purely advisory: Kalamu never self-updates. See [Update checks](#update-checks).
 15. **Provenance is recorded, and never asked for.** (Added 2026-08-08.) `createdBy` records who authored a node — `"human"` or `"agent"`, omitted meaning human. `assignee` cannot express this: a task the developer wrote and pointed at an agent and a task the agent invented for itself both carry `assignee: "agent"`, but only the second one clutters the developer's thinking space. Recording provenance is what lets Kalamu be an agent's durable task store without polluting the human's outline, and what makes "hide agent-created nodes" a view the human can switch on. It is set automatically and never depends on agent cooperation — an agent that must remember a flag will forget it, and a provenance field that is wrong half the time is worse than none. Resolution order: an explicit `--by` flag, then the web UI (always `human`), then the TTY heuristic already established for update banners (decision 14) — a non-interactive CLI invocation is an agent or a script, an interactive TTY is the developer typing.
-16. **Blockers point one way: `blockedBy`.** (Added 2026-08-08.) A task records what blocks it (`blockedBy: string[]` of node IDs). There is deliberately no reverse `blocks` array. Two directions must be kept in sync, and they drift: dex stores both (`blocker.blocks[]` ↔ `blocked.blockedBy[]`) and its own cycle check reads both "for robustness against data inconsistencies" — a bug class Kalamu declines to buy. One direction cannot disagree with itself. `blockedBy` is also the direction the hot path needs: `next` asks "is this task blocked?", answerable from the node alone, while "what does finishing this unblock?" is a cold UI query derived by scanning. It matches the existing `parentId` shape — the dependent points at its dependency, and there is no `children[]` array either. Blockers may cross the tree freely; a blocker cycle is a validation error exactly as a parent cycle is. (Amended 2026-08-10: discussions are blockable too. A discussion whose conversation cannot usefully happen until other work lands — the grilling/prototype ticket that waits on a research task — is a real dependency of exactly the same shape, and recording it in the data is the whole point of decision 16. `blockedBy` on a discussion carries full semantics: `next --discussion` skips it, cycles and dangling references are the same validation errors, and deletes strip it the same way. Bullets remain unblockable — they are structure, not work.)
+16. **Blockers point one way: `blockedBy`.** (Added 2026-08-08.) A task records what blocks it (`blockedBy: string[]` of node IDs). There is deliberately no reverse `blocks` array. Two directions must be kept in sync, and they drift: dex stores both (`blocker.blocks[]` ↔ `blocked.blockedBy[]`) and its own cycle check reads both "for robustness against data inconsistencies" — a bug class Kalamu declines to buy. One direction cannot disagree with itself. `blockedBy` is also the direction the hot path needs: `next` asks "is this task blocked?", answerable from the node alone, while "what does finishing this unblock?" is a cold UI query derived by scanning. It matches the existing `parentId` shape — the dependent points at its dependency, and there is no `children[]` array either. Blockers may cross the tree freely; a blocker cycle is a validation error exactly as a parent cycle is. (Amended 2026-08-10: discussions are blockable too. A discussion whose conversation cannot usefully happen until other work lands — the grilling/prototype ticket that waits on a research task — is a real dependency of exactly the same shape, and recording it in the data is the whole point of decision 16. `blockedBy` on a discussion carries full semantics: `next --discussion` skips it, cycles and dangling references are the same validation errors, and deletes strip it the same way. Bullets remain unblockable — they are structure, not work.) (Amended 2026-08-13: a node cannot be blocked by an ancestor. Nesting already says the child lives under that work, and a done ancestor task closes its umbrella — key decision 4 — so the child could never become eligible after the blocker finished. Cross-tree and sibling blockers stay legal; indenting under a recorded blocker drops that edge rather than refusing the move.)
 17. **In-progress is a timestamp, not a status.** (Added 2026-08-08.) `startedAt` marks a task an agent has claimed, for the same reason SPEC declines a `done` boolean (see [`doneAt`](#doneat)): timestamps carry when as well as whether, and never accumulate into a status enum. Without it, two agent sessions both call `kalamu next`, both receive the same task, and both do the work. `next` skips claimed tasks; `kalamu start <id> --force` re-claims one whose owner died. State in Kalamu is exactly three timestamps — `createdAt`, `startedAt`, `doneAt` — and never a workflow.
 18. **`handoff` is removed; promoting a task means deleting it.** (Added 2026-08-08.) A task that outgrows Kalamu is created in the external tracker and then deleted here. Recording *where it went* was a mandatory nullable field on every line of every outline, and in ten months of dogfooding not one node ever carried a non-null value — the forwarding address turned out to be a thing nobody looked up. The `handoff` field, the `Handoff` type, `kalamu handoff`/`unhandoff`, `next --include-handed-off`, `list --handoff`, and `POST /api/nodes/:id/handoff` are all gone. The consequence is deliberate: Kalamu keeps no record of promoted work, so an agent that creates a GitHub issue from a task **must** delete the task, or the next agent will do it again. Readers still accept a legacy `handoff` and fold a non-null one into the node's text as the same `→ target:ref` suffix the CLI used to render, so upgrading never silently discards a reference; a null one carried no information and is dropped.
 
@@ -466,9 +466,13 @@ every listed node is done. Omit the field when empty — never write
 ```
 
 Blockers are independent of the tree: a blocker may be any node anywhere in the
-outline, including one in an unrelated subtree. That is the point — dependency
-order and outline order are different things, and forcing dependencies into
-parent/child would corrupt the outline as a thinking tool.
+outline except an ancestor of the blocked node, including one in an unrelated
+subtree. That is the point — dependency order and outline order are different
+things, and forcing dependencies into parent/child would corrupt the outline as
+a thinking tool. An ancestor blocker is the one overlap that does not work:
+finishing that ancestor closes the umbrella (key decision 4), so the child
+could never become eligible afterwards. `kalamu block` and `--blocked-by`
+refuse it; indenting under a recorded blocker drops that edge.
 
 Direction is one-way by decision (key decision 16). A node never records what it
 blocks; that view is derived by scanning for nodes whose `blockedBy` contains
@@ -477,7 +481,9 @@ this ID.
 Rules:
 
 * A blocker reference to a missing node is a validation error, reported by `kalamu validate`
+* A blocker that is an ancestor of the blocked node is a validation error
 * Deleting a node removes it from every `blockedBy` array that mentions it
+* Indenting (or otherwise moving) a node under a recorded blocker drops that edge
 * Blocker cycles are a validation error, exactly as parent cycles are
 * A blocked task is never returned by `kalamu next`, and a blocked discussion is never returned by `kalamu next --discussion` (see [Deterministic next-task logic](#deterministic-next-task-logic))
 * Done blockers do not block — only open ones do
@@ -1310,7 +1316,7 @@ Check:
 * `assignee`, if present, is `"human"` or `"agent"` and the node is not a discussion (setting one is rejected at the operation level; a stale value inherited from a past life as a task is inert).
 * `createdBy`, if present, is `"agent"` — `"human"` is the default and is never written.
 * `startedAt`, if present, is a valid ISO timestamp.
-* `blockedBy`, if present, is a non-empty array of unique IDs that all point to existing nodes, never containing the node's own ID.
+* `blockedBy`, if present, is a non-empty array of unique IDs that all point to existing nodes, never containing the node's own ID, never containing an ancestor of the node
 * No blocker cycles.
 
 Unknown node fields are NOT an error: readers must preserve fields they don't recognize through parse → operate → write, so an older build can never erase what a newer one wrote. Writers emit unknown fields after the known keys, sorted by name.
@@ -1405,8 +1411,8 @@ The UI should feel like Workflowy:
 * Discussions marked with a speech-bubble glyph in place of the checkbox (clicking it toggles done, like a task's checkbox)
 * Every unfocused node shows a subtle copy affordance at the end of its text. A normal click copies the same agent-context block as Cmd/Ctrl+C; Mod-click copies only the raw node text, like Cmd/Ctrl+Shift+C. Both actions are uniform across node kinds
 * Modifier chords make the whole row a mouse target for the two operations whose own affordance is small or absent: **Mod+click** toggles collapse (the chevron alone is a 10px target), **Alt+click** zooms in. One modifier each, so neither is a two-hand stretch; holding both is a slip, not a third gesture, and does nothing. Shift is left to the browser throughout, so Shift+click still extends a native text selection. The chords are claimed in the capture phase, so the chevron, glyph, priority badge, tag chips and inline links never fire their own action as well — the copy affordance is the one exemption, since Mod+click there is already its own action
-* A blocked node carries a **Blocked** badge, and the badge is the way to what it waits on: with one open blocker it jumps straight there, with several it opens a menu of them first. The jump is the app's one reveal primitive — it drops a zoom the target sits outside of, unfolds the ancestors hiding it, and reprieves it from the active filters (`hideDone` included) until those filters next change. Nothing is restored afterwards: the zoom change is a history entry, so the way back is browser Back
-* Every node carries its creation time in a meta row beneath it, as a relative age that keeps aging in a window left open (one shared clock, not a timer per row), with the exact local timestamp on hover. It shares that row with the progress bar, and the row is a fixed height whether or not either is showing, so nothing ever reflows
+* A blocked node carries a **Blocked** badge on the meta row, and the badge is the way to what it waits on: with one open blocker it jumps straight there, with several it opens a menu of them first. The jump is the app's one reveal primitive — it drops a zoom the target sits outside of, unfolds the ancestors hiding it, and reprieves it from the active filters (`hideDone` included) until those filters next change. Nothing is restored afterwards: the zoom change is a history entry, so the way back is browser Back
+* Every node carries its creation time in a meta row beneath it, as a relative age that keeps aging in a window left open (one shared clock, not a timer per row), with the exact local timestamp on hover. It shares that row with the progress bar, the Blocked badge, and the assignment badge; the row is a fixed height whether or not any of them are showing, so nothing ever reflows
 * Zoom (Workflowy-style): any node can become the temporary root — only its subtree is displayed, with a sticky breadcrumb trail above the outline (project name › ancestors › current node) whose crumbs are clickable to change the zoom level. The zoom target lives in the URL hash (`#z=<id>`), so reload restores it and browser Back unwinds it; zoom is per-tab view state, never in `ui-state.json` or the outline file. Operations that would move a node outside the zoomed subtree (indent/outdent/move on the zoom root, outdenting its direct children) are inert; Enter on the zoom root creates a child rather than an invisible sibling; deleting the zoom root lands the zoom on its parent; Escape (when not editing, once no tag filter is active) zooms fully out
 * Minimal visual clutter
 * Light/dark theme follows the system by default; an explicit switcher (navbar button, or the palette's "Activate dark/light mode") overrides it, persisted in the browser's localStorage — per-browser view state, never in the repo
@@ -1459,7 +1465,7 @@ Tagged task (chip renders in place, mid-sentence when the token sits mid-sentenc
 ☐ Build a new [feature] to do xyz
 ```
 
-Assigned task (blue Human badge, robot icon for agent, rendered after the text):
+Assigned task (blue Human badge, robot icon for agent, on the meta row with the age):
 
 ```text
 ☐ Write launch blog post  [user icon Human]
@@ -1556,9 +1562,10 @@ a    Assign ->            submenu: a Agent / h Human / u Unassigned, current
                           bullet converts it to a task and assigns it; closes
 b    Block ->             submenu: a Add block -> candidate nodes to record in
                           `blockedBy`, selecting adds the blocker, closes ·
-                          r Remove block -> the node's current blockers, plus
-                          "Remove all blockers" (on key `a`) when there is more
-                          than one; selecting removes that entry, closes
+                          r Remove block -> with one blocker, removes it and
+                          closes (no choice to make); with several, a submenu
+                          of those blockers plus "Remove all blockers" (on key
+                          `a`); selecting removes that entry, closes
 c    Copy ->              submenu: c CLI command -> (one level deeper:
                           ready-to-run CLI commands for this node with its real
                           (server) id filled in — show --children always; done
@@ -1756,7 +1763,7 @@ Every tag gets a colour with zero configuration:
 
 ### Assignment in the UI
 
-* Assigned tasks show a badge after the text so they scan differently from unassigned tasks. `"human"` gets a blue pill — user icon plus the word **Human** — sized and shaped like the Blocked badge, because it must be findable at a glance down a long outline. `"agent"` stays a subtle icon-only marker: it is the default audience, and the default should not compete. Both icons match the @ dropdown's.
+* Assigned tasks show a badge on the meta row so they scan differently from unassigned tasks. `"human"` gets a blue pill — user icon plus the word **Human** — sized and shaped like the Blocked badge, because it must be findable at a glance down a long outline. `"agent"` stays a subtle icon-only marker: it is the default audience, and the default should not compete. Both icons match the @ dropdown's.
 * Assignment is set from the @ dropdown, `@human`/`@agent` tokens, or the palette's Assign submenu (no dedicated shortcut — Cmd+M is OS-reserved). The palette also offers Assign on a bullet; choosing Human or Agent promotes it to a task and assigns it in the same operation. Discussions never offer Assign.
 
 ---
@@ -2124,6 +2131,7 @@ Add tests for:
 * `start` refuses an already-started task without `--force`, succeeds with it
 * `blockedBy` cleanup when a referenced node is deleted
 * Blocker cycle detection (direct, and transitive through a chain)
+* A node cannot be blocked by an ancestor; indenting under a recorded blocker drops that edge
 * Blocker referencing a missing node fails validation
 * `blockedBy` omitted rather than written as `[]` when the last blocker is removed
 * `next` selection

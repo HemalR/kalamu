@@ -189,7 +189,11 @@ export function moveNode(nodes: readonly KalamuNode[], id: string, input: MoveIn
   tree.byId.set(id, moved);
   const newSiblings = tree.children.get(targetParentId) ?? [];
   tree.children.set(targetParentId, insertAmongSiblings(newSiblings, moved, input));
-  return { nodes: emit(tree), node: moved };
+  // Nesting under a recorded blocker would make that blocker an ancestor, which
+  // addBlocker refuses — drop those edges rather than reject the indent.
+  const relocated = subtreeIds(tree, id);
+  const next = stripAncestorBlockers(tree, relocated);
+  return { nodes: next, node: next.find((n) => n.id === id)! };
 }
 
 export function deleteNode(nodes: readonly KalamuNode[], id: string, options: { recursive?: boolean | undefined } = {}): { nodes: KalamuNode[]; deletedCount: number } {
@@ -214,6 +218,19 @@ function stripBlockers(nodes: readonly KalamuNode[], removed: ReadonlySet<string
   return nodes.map((n) => {
     if (!n.blockedBy?.some((b) => removed.has(b))) return n;
     return withBlockers(n, n.blockedBy.filter((b) => !removed.has(b)));
+  });
+}
+
+/**
+ * After a move, drop `blockedBy` entries that now name an ancestor of the
+ * relocated subtree. Untouched nodes keep their object identity.
+ */
+function stripAncestorBlockers(tree: Tree, relocated: ReadonlySet<string>): KalamuNode[] {
+  return emit(tree).map((n) => {
+    if (!relocated.has(n.id) || !n.blockedBy?.length) return n;
+    const above = new Set(ancestors(tree, n).map((a) => a.id));
+    const kept = n.blockedBy.filter((b) => !above.has(b));
+    return kept.length === n.blockedBy.length ? n : withBlockers(n, kept);
   });
 }
 
@@ -267,8 +284,9 @@ export function endTask(nodes: readonly KalamuNode[], id: string): { nodes: Kala
 
 /**
  * Does `fromId` wait — directly or transitively — on `targetId`? Walks
- * `blockedBy` edges only; the parent tree is unrelated (blockers may cross it
- * freely). Used to reject blocker cycles before they are written.
+ * `blockedBy` edges only; the parent tree is a separate graph (blockers may
+ * cross it, but not point at an ancestor). Used to reject blocker cycles
+ * before they are written.
  */
 export function dependsOn(nodes: readonly KalamuNode[], fromId: string, targetId: string): boolean {
   const byId = new Map(nodes.map((n) => [n.id, n]));
@@ -300,6 +318,9 @@ export function addBlocker(
   requireNode(tree, blockerId);
   if (node.kind === "bullet") throw new OperationError(`${id} is a bullet; only tasks and discussions can be blocked`);
   if (id === blockerId) throw new OperationError(`${id} cannot block itself`);
+  if (isDescendant(tree, id, blockerId)) {
+    throw new OperationError(`${id} cannot be blocked by its ancestor ${blockerId}`);
+  }
   const existing = node.blockedBy ?? [];
   if (existing.includes(blockerId)) return { nodes: preorder(tree), node };
   if (dependsOn(nodes, blockerId, id)) {
