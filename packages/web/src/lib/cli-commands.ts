@@ -33,7 +33,7 @@ export interface NodeCommandInput {
  * covers it with a picker.
  */
 export function nodeCommands({ serverId, done, hasChildren, isTask, started }: NodeCommandInput): string[] {
-  const commands = [`kalamu show ${serverId} --children`];
+  const commands = [`kalamu show ${serverId} --children`, `kalamu ls ${serverId}`, `kalamu link ${serverId}`];
   commands.push(done ? `kalamu reopen ${serverId}` : `kalamu done ${serverId}`);
   // A claim can be released even after the task is done; claiming a done task
   // is refused (reopen it first), so that line is simply not offered.
@@ -49,7 +49,9 @@ export const CLI_COMMANDS: readonly CliCommand[] = [
   { name: "init", does: "Initialise Kalamu in the current directory" },
   { name: "open", does: "Start the local server and open the browser UI" },
   { name: "list", does: "List outline nodes" },
+  { name: "ls", does: "List one level of the outline — walk the tree without reading it all" },
   { name: "show", does: "Show a node" },
+  { name: "link", does: "Print a human-readable deep link to a node" },
   { name: "add", does: "Add a node" },
   { name: "update", does: "Update a node" },
   { name: "move", does: "Move a node — subtree moves with it" },

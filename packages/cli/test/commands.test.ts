@@ -502,7 +502,100 @@ describe("next context and scoping", () => {
     expect((commands.next(cwd, { under: areaId }).json as { id: string }).id).toBe(scopedId);
     expect(() => commands.next(cwd, { under: "n_404" })).toThrow(/n_404/);
   });
+});
 
+describe("placement: ls, paths, and add location", () => {
+  function tree(): { auth: string; sso: string; task: string; login: string } {
+    const auth = (commands.add(cwd, { text: "Auth improvements", kind: "bullet", by: "human" }).json as { id: string })
+      .id;
+    const sso = (commands.add(cwd, { text: "SSO", kind: "bullet", parent: auth, by: "human" }).json as { id: string }).id;
+    const task = addTask("Investigate WorkOS", { parent: sso });
+    const login = addTask("Fix password reset", { parent: auth, p: "1" });
+    return { auth, sso, task, login };
+  }
+
+  it("ls at the root lists one level with child counts", () => {
+    const { auth } = tree();
+    addTask("Top-level leftover");
+    const result = commands.ls(cwd);
+    expect(result.text).toContain(`• Auth improvements  (2)`);
+    expect(result.text).toContain("☐ p2 Top-level leftover");
+    expect(result.text).not.toContain("SSO");
+    expect(result.text).not.toContain("Investigate");
+    const json = result.json as { id: null; children: { id: string; childCount: number }[] };
+    expect(json.id).toBeNull();
+    expect(json.children.find((c) => c.id === auth)?.childCount).toBe(2);
+  });
+
+  it("ls <id> lists that node's children and the path to here", () => {
+    const { auth, sso, login } = tree();
+    const result = commands.ls(cwd, auth);
+    expect(result.text).toContain("Path: Auth improvements");
+    expect(result.text).toContain("• SSO  (1)");
+    expect(result.text).toContain("☐ p1 Fix password reset");
+    expect(result.text).not.toContain("Investigate");
+    const json = result.json as { id: string; path: string[]; children: { id: string }[] };
+    expect(json.id).toBe(auth);
+    expect(json.path).toEqual(["Auth improvements"]);
+    expect(json.children.map((c) => c.id)).toEqual([sso, login]);
+  });
+
+  it("ls of a leaf says so, still printing the path", () => {
+    const { task } = tree();
+    const result = commands.ls(cwd, task);
+    expect(result.text).toBe("Path: Auth improvements > SSO > Investigate WorkOS\n(no children)");
+    expect((result.json as { children: unknown[] }).children).toEqual([]);
+  });
+
+  it("ls rejects a missing id", () => {
+    expect(() => commands.ls(cwd, "n_404")).toThrow(/n_404/);
+  });
+
+  it("list --under scopes to a subtree; --depth is relative to it", () => {
+    const { auth, sso, task, login } = tree();
+    addTask("elsewhere");
+    const under = commands.list(cwd, { under: auth }).json as { id: string }[];
+    expect(under.map((n) => n.id)).toEqual([auth, sso, task, login]);
+
+    const one = commands.list(cwd, { under: auth, depth: "1" }).json as { id: string }[];
+    expect(one.map((n) => n.id)).toEqual([auth]);
+
+    const two = commands.list(cwd, { under: auth, depth: "2" }).json as { id: string }[];
+    expect(two.map((n) => n.id)).toEqual([auth, sso, login]);
+
+    expect(() => commands.list(cwd, { under: "n_404" })).toThrow(/n_404/);
+  });
+
+  it("search and list --open print Path when the parent is omitted", () => {
+    tree();
+    const found = commands.search(cwd, "WorkOS");
+    expect(found.text).toContain("Investigate WorkOS");
+    expect(found.text).toContain("Path: Auth improvements > SSO");
+    expect((found.json as { path: string[] }[])[0]?.path).toEqual(["Auth improvements", "SSO"]);
+
+    const open = commands.list(cwd, { open: true });
+    expect(open.text).toContain("Path: Auth improvements > SSO");
+    expect(open.text).toContain("Path: Auth improvements");
+    // Unfiltered list still shows the real tree, so Path would be redundant.
+    expect(commands.list(cwd, {}).text).not.toContain("Path:");
+  });
+
+  it("add echoes where the node landed; agents are warned when they omit --parent", () => {
+    const { auth } = tree();
+    const nested = commands.add(cwd, { text: "Follow-up", kind: "task", parent: auth });
+    expect(nested.text).toBe(`Created ${(nested.json as { id: string }).id} under Auth improvements`);
+    expect(nested.json).toMatchObject({ parentId: auth, path: ["Auth improvements"] });
+    expect(nested.text).not.toContain("Note:");
+
+    const top = commands.add(cwd, { text: "Orphan", kind: "task" });
+    expect(top.text).toContain("(top-level)");
+    expect(top.text).toContain("kalamu ls");
+    expect(top.json).toMatchObject({ parentId: null, path: [], warning: expect.stringContaining("kalamu ls") });
+
+    const human = commands.add(cwd, { text: "New area", kind: "bullet", by: "human" });
+    expect(human.text).toMatch(/^Created \S+ \(top-level\)$/);
+    expect(human.json).not.toHaveProperty("warning");
+  });
 });
 
 describe("init --tour", () => {

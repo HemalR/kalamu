@@ -6,9 +6,11 @@ function input(overrides: Partial<NodeCommandInput> = {}): NodeCommandInput {
 }
 
 describe("nodeCommands", () => {
-  it("offers show, done, start, add-child and delete on an open task", () => {
+  it("offers show, link, done, start, add-child and delete on an open task", () => {
     expect(nodeCommands(input())).toEqual([
       "kalamu show n_1 --children",
+      "kalamu ls n_1",
+      "kalamu link n_1",
       "kalamu done n_1",
       "kalamu start n_1",
       'kalamu add --parent n_1 --kind task --text ""',
@@ -50,8 +52,8 @@ describe("nodeCommands", () => {
 });
 
 describe("CLI_COMMANDS", () => {
-  it("lists the claim and blocker commands the CLI ships", () => {
+  it("lists the claim, blocker, and ls commands the CLI ships", () => {
     const names = CLI_COMMANDS.map((command) => command.name);
-    expect(names).toEqual(expect.arrayContaining(["start", "end", "block", "unblock"]));
+    expect(names).toEqual(expect.arrayContaining(["start", "end", "block", "unblock", "ls"]));
   });
 });

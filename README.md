@@ -45,7 +45,7 @@ In the UI, everything is a keystroke away:
 
 - **Enter / Tab / Shift+Tab** — new item, indent, outdent
 - **⌘K** — command palette: a leader-key menu with every action on a printed key — done, priority, assign, labels, kind, start/block, copy, fold, zoom, undo
-- **⌘Enter** — done/reopen · **⌘⇧Enter** — cycle bullet/task/discussion · **⌘.** — collapse · **⌘⇧C** — copy only the item's text
+- **⌘Enter** — done/reopen · **⌥Enter** — cycle bullet/task/discussion · **⌘.** — collapse · **⌘⇧C** — copy only the item's text
 - **?** — the full cheat sheet
 - Inline tokens as you type: `p1`…`p3` set priority, `#tag` becomes a coloured chip, `@human` keeps a task for yourself, `@agent` marks it as agent work
 - Mouse shortcuts: **⌘-click** a row to collapse it, **⌥-click** to zoom into it — the whole row is the target, not just the chevron
@@ -106,7 +106,7 @@ kalamu block <id> --by <id2>   # <id> waits on <id2>; next skips it until <id2> 
 kalamu unblock <id>            # clear one blocker, or all of them
 ```
 
-Blockers cross the tree freely — dependency order and outline order are different things — and a blocker cycle is a validation error, exactly like a parent cycle. Discussions can be blocked as well as tasks, so a conversation that can't usefully happen until other work lands stays out of `kalamu next --discussion` until it can. In the UI, a claimed task shows a play glyph in its checkbox, and ⌘K offers **Start**, **Block on…**, and **Unblock**. A blocked row carries a **Blocked** badge: click it to jump to what the row is waiting on — the target is revealed wherever it's hiding, whether it's folded away, filtered out, or outside the zoom you're in.
+Blockers cross the tree freely — dependency order and outline order are different things — and a blocker cycle is a validation error, exactly like a parent cycle. Discussions can be blocked as well as tasks, so a conversation that can't usefully happen until other work lands stays out of `kalamu next --discussion` until it can. In the UI, a claimed task shows a pulsing amber dot in its checkbox, and ⌘K offers **Start**, **Block on…**, and **Unblock**. A blocked row carries a **Blocked** badge: click it to jump to what the row is waiting on — the target is revealed wherever it's hiding, whether it's folded away, filtered out, or outside the zoom you're in.
 
 Kalamu also records *who wrote* each node, without anyone having to remember a flag: anything created from the web UI is yours, anything an agent creates from a non-interactive shell is marked `createdBy: "agent"`. That's what makes it safe for an agent to keep its own forward work in your outline — filter agent-created items out while you're thinking.
 
@@ -135,9 +135,15 @@ kalamu next --format json      # the single most urgent task, with its ancestor
                                # chain and subtree for full context (exit 2 = nothing to do)
 kalamu next --all              # the whole queue in priority order
 kalamu next --under <id>       # scope to one branch of the outline
+kalamu ls                      # one level at the root; (N) = children
+kalamu ls <id>                 # one level under that node
 kalamu list --open             # everything still open
 kalamu show <id> --children    # a node with its subtree
+kalamu link <id>               # named Markdown deep link for a human
 ```
+
+Node links use the registered hub slug and default to `http://localhost:4400`.
+Set a different machine-local address with `kalamu config base-url <url>`.
 
 **Recording work:**
 
@@ -158,7 +164,8 @@ kalamu validate                # before finishing
 4. Priority runs p1 (high) to p3 (low); a missing priority means p2 (medium).
 5. Before starting, run `kalamu next` or inspect the relevant task nodes, and claim the task with `kalamu start <id>` — an unclaimed task can be picked up twice.
 6. If you promote a task into another system (a GitHub issue, Linear, a plan file), move it there and delete it here — Kalamu keeps no forwarding record.
-7. After completing Kalamu-originated work, mark the originating task done and
+7. Never refer to a node to the human by ID alone; name it, and use `kalamu link <id>` when a clickable reference helps.
+8. After completing Kalamu-originated work, mark the originating task done and
    run `kalamu validate`. Do not run `kalamu done` for ordinary direct requests.
 
 ## Kalamu as your issue tracker

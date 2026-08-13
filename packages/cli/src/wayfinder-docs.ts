@@ -33,6 +33,7 @@ export const TRACKER_DOC_BODY = [
   "- **Apply / remove labels**: labels are inline `#tags` in node text — `kalamu update <id> --add-tag <tag>` / `--remove-tag <tag>`.",
   "- **Close**: `kalamu done <id>`. Reopen with `kalamu reopen <id>`.",
   "- **Search**: `kalamu search <query>`.",
+  "- **Place a node**: `kalamu ls` then `kalamu ls <id>` to walk to the parent without reading the whole outline; then `kalamu add --parent <id>`.",
   "",
   "Discussions (`--kind discussion`) are conversations with the human, never coding work: an agent discusses, records the outcome as child bullets, and marks the discussion done.",
   "",
@@ -58,7 +59,7 @@ export const TRACKER_DOC_BODY = [
   "- **Frontier query**: `kalamu next --all --under <map-id>` lists the AFK frontier (open, unblocked, unclaimed, not human-assigned, queue order); `kalamu next --discussion --all --under <map-id>` lists the HITL frontier. First in queue order wins (priority, then outline order).",
   "- **Claim**: `kalamu start <id>` — the session's first write, before any work. Tasks only: discussions cannot be claimed; they are HITL, so the human driving the session is the claim. `kalamu start <id> --force` re-claims a ticket whose session died; `kalamu end <id>` releases a claim without resolving.",
   "- **Resolve**: record the answer as child bullets of the ticket (one bullet per point), then `kalamu done <id>`, then append a context pointer under the map's `Decisions so far` section bullet: `kalamu add --parent <decisions-section-id> --text \"<ticket name> — <one-line answer gist> (<ticket-id>)\"`.",
-  "- **Refer by name**: a ticket's name is the first line of its text; give the node id in parentheses after it. With the server running (`kalamu open`), a node deep-links as `http://localhost:<port>/#z=<id>`.",
+  "- **Refer by name**: a ticket's name is the first line of its text; never give the human a bare node id. Use `kalamu link <id>` for a named, copy-ready hub deep link.",
   "",
 ].join("\n");
 

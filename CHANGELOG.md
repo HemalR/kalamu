@@ -18,6 +18,7 @@ under `Added` / `Changed` / `Fixed` / `Removed`.
 
 ### Added
 
+- **`kalamu ls [id]` walks the outline one level at a time.** Root items first; `ls <id>` lists that node's children. A trailing `(N)` is the child count, so an agent can descend only into a promising branch instead of dumping the whole tree. `list --under <id>` is the other branch view (full subtree, filters still apply; `--depth` is relative to it).
 - **Every row shows when it was created**, as a relative age that keeps ticking
   in a window you left open, with the exact local timestamp on hover. It sits
   in the same fixed-height strip as the progress bar, so nothing on the page
@@ -39,9 +40,19 @@ under `Added` / `Changed` / `Fixed` / `Removed`.
   registers it again.
 - The row you're editing is now tinted, so the caret's line stands out in a
   dense outline.
+- **`kalamu link <id>`** prints a copy-ready, human-readable Markdown deep
+  link to a node — the label plus its id, pointing at the node's real
+  location in the hub — resolving the project's actual registered slug, so
+  agents never guess a slug or port. `kalamu config base-url <url>` sets the
+  machine-local hub address it links against (`default` to clear it), for
+  anyone not running the hub on `http://localhost:4400`.
+- **Human-assigned tasks (`@human`) carry a blue badge**, so a glance at the
+  outline shows what's yours to do versus an agent's.
 
 ### Changed
 
+- **`kalamu add` says where the node landed.** Nested creates print `Created n_xyz under Auth > Login`; a top-level add prints `(top-level)`. JSON includes `parentId` and `path`. A non-interactive add that omits `--parent` also warns, pointing at `kalamu ls` — humans adding a new top-level area are not nagged.
+- **Search and filtered list print `Path:` when a parent is omitted**, so `list --open` and `search` no longer look like a fake tree. Unfiltered `list` is unchanged: indent is the path.
 - **The command palette is a leader-key menu.** Cmd/Ctrl+K opens a panel with
   every action listed beside the single key that runs it — `⌘K d` toggles done,
   `⌘K p 1` sets p1, `⌘K v h` hides completed — so actions become short
@@ -62,6 +73,18 @@ under `Added` / `Changed` / `Fixed` / `Removed`.
   appear for any actionable descendant at any depth rather than only for direct
   children — so an umbrella several levels above the real tasks finally shows
   its progress.
+- **Kind cycling moved from Cmd/Ctrl+Shift+Enter to Alt/Option+Enter** — the
+  only shortcut that uses Alt, and it frees Shift+Enter. A claimed task's
+  checkbox now shows a slowly pulsing amber dot in place of the old play glyph.
+- **Assigning a bullet to Human or Agent in the command palette promotes it to
+  a task in the same action**, instead of requiring a separate kind change first.
+- Assignment badges moved into the same metadata row as priority and tags,
+  instead of sitting apart from the rest of a row's metadata.
+
+### Fixed
+
+- Converting a node to a bullet now clears its assignee — previously a bullet
+  could carry a stale `@human`/`@agent` badge left over from when it was a task.
 
 ### Removed
 

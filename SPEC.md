@@ -617,7 +617,9 @@ The JSONL file is the shared source of truth.
 kalamu init
 kalamu open
 kalamu list
+kalamu ls [id]
 kalamu show <id>
+kalamu link <id>
 kalamu add
 kalamu update <id>
 kalamu move <id>
@@ -676,7 +678,9 @@ marked block telling agents that work requiring the human (a decision, a
 credential, a manual step) must be recorded as a task via
 `kalamu add ... --assign human`, not just mentioned in chat. The block is
 appended to every `CLAUDE.md`/`AGENTS.md` that exists at the root, or a new
-`AGENTS.md` is created when neither does. Idempotent (the `<!-- kalamu:agents -->`
+`AGENTS.md` is created when neither does. It also tells agents never to cite a
+bare node ID to the human and to use `kalamu link <id>` for a named deep link.
+Idempotent (the `<!-- kalamu:agents -->`
 marker is the already-installed check), so it also runs on re-init — existing
 projects adopt it by re-running `kalamu init`. `--no-agent-docs` skips it.
 
@@ -781,11 +785,23 @@ kalamu list --assignee <human|agent>
 kalamu list --created-by <human|agent>
 kalamu list --discussions
 kalamu list --depth 2
+kalamu list --under <id>
 kalamu list --format json
 ```
 
 `--blocked` lists everything carrying at least one blocker — tasks and
 discussions alike (key decision 16, amended 2026-08-10).
+
+`--under <id>` lists that node's subtree (the node itself plus descendants).
+`--depth` is relative to `--under` when both are set, so `--under n_001 --depth 2`
+is the node plus one level of children.
+
+When a filter omits a node's parent (`--open`, `--tag`, `search`, …), the row
+is not indented under whichever neighbour printed above it. A `Path:` line
+gives the real ancestor chain instead, the same shape `kalamu next` already
+prints. An unfiltered list still uses indent alone — the tree *is* the path.
+
+JSON rows include a `path` array of ancestor texts (root first).
 
 MVP options:
 
@@ -835,6 +851,60 @@ n_011      ✓ Settled: auth stays cookie-based
 
 ---
 
+### `kalamu ls [id]`
+
+Lists **one level** of the outline. This is how an agent walks to a parent
+without reading the whole tree: start at the root, descend only into a
+promising branch, stop when the parent is obvious.
+
+```bash
+kalamu ls
+kalamu ls n_001
+kalamu ls n_001 --format json
+```
+
+Omit `id` for top-level items. Pass an id for that node's direct children.
+A trailing `(N)` is the number of children — descend with another `ls`; a
+row with no count is a leaf. A `Path:` header (root → here, inclusive) says
+which node you are listing.
+
+```text
+$ kalamu ls
+n_001  • Auth improvements  (2)
+n_007  ☐ Write launch blog post #publishing @human
+
+$ kalamu ls n_001
+Path: Auth improvements
+n_002  • SSO  (2)
+n_005  • Login UX  (1)
+```
+
+A leaf:
+
+```text
+Path: Auth improvements > Login UX > Fix password reset redirect
+(no children)
+```
+
+JSON:
+
+```json
+{
+  "id": "n_001",
+  "text": "Auth improvements",
+  "path": ["Auth improvements"],
+  "children": [
+    { "id": "n_002", "text": "SSO", "childCount": 2 }
+  ]
+}
+```
+
+At the root, `id` and `text` are `null` and `path` is `[]`. `list --under` is
+the other branch view: the full subtree, with the usual list filters. `ls` is
+always one unfiltered level.
+
+---
+
 ### `kalamu show <id>`
 
 Shows a node.
@@ -853,6 +923,40 @@ Later:
 kalamu show <id> --depth 3
 kalamu show <id> --format markdown
 ```
+
+---
+
+### `kalamu link <id>`
+
+Prints a copy-ready, human-readable deep link to a node. Markdown is the
+default because the primary consumer is an agent referring to Kalamu work in a
+chat:
+
+```bash
+kalamu link n_009
+kalamu link n_009 --format markdown
+kalamu link n_009 --format url
+kalamu link n_009 --format json
+```
+
+```md
+[Fix duplicate task creation](http://localhost:4400/p/kalamu#z=n_009) (`n_009`)
+```
+
+The label is the trimmed first line of the node text (or `Untitled node` when
+blank), with Markdown link delimiters escaped. The URL uses the project's actual
+stable slug from the machine-global hub registry and percent-encodes the slug
+and node ID; it never guesses a slug. A registry failure is therefore a command
+error, not a plausible-looking broken link. JSON returns `id`, `text`, `url`,
+and `markdown`.
+
+The hub base address is machine-local configuration in
+`~/.kalamu/config.json`, set with `kalamu config base-url <http(s)-url>` and
+cleared with `kalamu config base-url default`. Missing or invalid configuration
+falls back to `http://localhost:4400`, so existing projects require no migration.
+Credentials, query parameters, and hashes are rejected because generated links
+append their own `/p/<slug>#z=<id>`. The base URL never lives in committed
+`.kalamu/meta.json`.
 
 ---
 
@@ -896,18 +1000,18 @@ If neither `--after` nor `--before` is given, append as last sibling.
 
 If priority is omitted for a task, do not write priority; treat it as default `2`.
 
-Return the created ID.
+Text output says where the node landed (`Created n_009 under Auth improvements > Login UX`, or `Created n_009 (top-level)`). JSON includes `id`, `parentId`, and `path` (ancestor texts, root first). A non-interactive `add` that omits `--parent` also prints a `Note:` (and a `warning` field in JSON) pointing at `kalamu ls` — that is the failure mode the placement rule exists to stop. An interactive human adding a new top-level area is not warned.
 
 Example text output:
 
 ```text
-Created n_009
+Created n_009 under Auth improvements
 ```
 
 Example JSON output:
 
 ```json
-{"id":"n_009"}
+{"id":"n_009","parentId":"n_001","path":["Auth improvements"]}
 ```
 
 ---
@@ -1061,7 +1165,8 @@ doneAt = null
 
 ### `kalamu search <query>`
 
-Searches node text.
+Searches node text. Each hit includes its ancestor `Path` (text and JSON), so
+a match can be used as `--parent` without a second lookup.
 
 MVP:
 
@@ -1812,7 +1917,7 @@ Rules:
 
 * Every CLI command that resolves a project (`init`, `open`, `add`, `next`, …) upserts that project's entry — registration is a side effect of use, never a setup step. Existing entry: touch `lastSeenAt` only.
 * Entries whose `path` no longer contains `.kalamu/outline.jsonl` are pruned silently on read. The outline file — not the bare directory — is the project test everywhere (`findRoot` included), so the machine-global `~/.kalamu` (registry, hub log) can never make the home directory masquerade as a project.
-* Writes use the same temp-file + atomic-rename pattern as everything else. Registry failures must never break the command that triggered them — a broken registry degrades the hub, not the CLI.
+* Writes use the same temp-file + atomic-rename pattern as everything else. Registry failures must never break an unrelated command that triggered registration — a broken registry degrades the hub, not ordinary CLI work. `kalamu link` is the deliberate exception because its result depends on the registered slug; it fails clearly rather than inventing a broken URL.
 * The registry is plumbing, not data: deleting it loses nothing except the sidebar list (plus slug assignments, name/colour overrides, and the manual sidebar order), which repopulates on use.
 
 ### Slugs
@@ -1867,6 +1972,12 @@ Behaviour:
 ### `kalamu open` integration
 
 When a hub is already listening on the hub port, `kalamu open` opens `http://localhost:4400/p/<slug>` instead of starting a standalone server. When no hub answers but the launchd agent is installed (macOS, plist present), `open` wakes it (`launchctl kickstart`, falling back to `bootstrap`) and routes there once it responds — an installed hub is always the destination, never a standalone server. Only when neither applies (or the wake fails, or `--port` opts out) does `open` start a standalone server. Agents are unaffected — the hub exists for the human at the keyboard, and no agent-facing command needs it.
+
+Node deep links use the existing zoom hash:
+`<base-url>/p/<slug>#z=<node-id>`. `kalamu link <id>` is the agent-facing way to
+construct one: it resolves the registered slug and uses the optional global
+`baseUrl` configuration, defaulting to `http://localhost:4400`. This URL setting
+is machine plumbing alongside the registry, never project metadata.
 
 ### Discovery
 
@@ -1957,6 +2068,7 @@ An agent should be able to:
 ```bash
 kalamu next --format json
 kalamu show <id> --children --format json
+kalamu link <id>
 kalamu done <id>
 kalamu validate
 ```

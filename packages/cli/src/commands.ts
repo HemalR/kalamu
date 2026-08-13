@@ -9,6 +9,7 @@ import {
   buildTree,
   cleanDone,
   deleteNode,
+  depthOf,
   deriveTags,
   endTask,
   effectivePriority,
@@ -16,10 +17,12 @@ import {
   markDone,
   moveNode,
   nextTask,
+  pathOf,
   preorder,
   removeBlocker,
   reopen as reopenOp,
   searchNodes,
+  serializeMarkdown,
   startTask,
   subtreeIds,
   updateNode,
@@ -28,18 +31,20 @@ import {
   type KalamuNode,
   type NextOptions,
   type NodeKind,
+  type Tree,
 } from "@kalamu/core";
 import { initKalamu, readOutline, withOutline } from "@kalamu/core/store";
 import { readFileSync } from "node:fs";
 import { parseActor, resolveActor } from "./actor.js";
 import { ensureAgentDocs } from "./agent-docs.js";
-import { ensureWayfinderDocs } from "./wayfinder-docs.js";
+import { hubBaseUrl } from "./config.js";
 import { CliError, looksLikeRepo, resolvePaths, type CommandResult } from "./context.js";
 import { ensureGitignore, IGNORE_ENTRIES } from "./gitignore.js";
-import { registerProject } from "./registry.js";
-import { glyphFor, prefixFor, renderOutline } from "./render.js";
+import { createNodeLink } from "./link.js";
+import { readRegistry, registerProject } from "./registry.js";
+import { glyphFor, prefixFor, renderOutline, suffixFor } from "./render.js";
 import { seedTour } from "./tour.js";
-import { depthOf, serializeMarkdown } from "@kalamu/core";
+import { ensureWayfinderDocs } from "./wayfinder-docs.js";
 
 export type Priority = 1 | 2 | 3;
 
@@ -125,7 +130,7 @@ export interface AddOptions {
 
 export function add(cwd: string, options: AddOptions): CommandResult {
   const paths = resolvePaths(cwd);
-  const node = withOutline(paths.outline, (nodes) => {
+  const created = withOutline(paths.outline, (nodes) => {
     const result = addNode(nodes, {
       parentId: options.parent,
       kind: options.kind !== undefined ? parseKind(options.kind) : undefined,
@@ -138,9 +143,26 @@ export function add(cwd: string, options: AddOptions): CommandResult {
       beforeId: options.before,
     });
     const blocked = applyBlockers(result.nodes, result.node, options.blockedBy ?? []);
-    return { nodes: blocked.nodes, result: blocked.node };
+    const tree = buildTree(blocked.nodes);
+    return {
+      nodes: blocked.nodes,
+      result: { node: blocked.node, path: pathOf(tree, blocked.node) },
+    };
   });
-  return { text: `Created ${node.id}`, json: { id: node.id } };
+  const { node, path } = created;
+  const location = path.length ? ` under ${path.join(" > ")}` : " (top-level)";
+  // Agents (and non-TTY scripts) get a nudge when they omit --parent: that is
+  // the failure mode the placement rule exists to stop. Humans adding a new
+  // top-level area are doing the right thing and are not warned.
+  const warning =
+    node.parentId === null && node.createdBy === "agent"
+      ? "pass --parent <id> to nest; `kalamu ls` walks the tree one level at a time"
+      : undefined;
+  const text = warning ? `Created ${node.id}${location}\nNote: ${warning}` : `Created ${node.id}${location}`;
+  return {
+    text,
+    json: { id: node.id, parentId: node.parentId, path, ...(warning !== undefined ? { warning } : {}) },
+  };
 }
 
 /**
@@ -291,6 +313,7 @@ export interface ListOptions {
   createdBy?: string;
   tag?: string;
   depth?: string;
+  under?: string;
 }
 
 function parsePositiveInt(value: string): number {
@@ -323,12 +346,24 @@ export function list(cwd: string, options: ListOptions): CommandResult {
   const paths = resolvePaths(cwd);
   const { nodes } = readOutline(paths.outline);
   const tree = buildTree(nodes);
+  const origin = options.under !== undefined ? tree.byId.get(options.under) : undefined;
+  if (options.under !== undefined && origin === undefined) {
+    throw new CliError(`no node with id ${options.under}`);
+  }
+  const scope = origin !== undefined ? subtreeIds(tree, origin.id) : null;
+  const originDepth = origin !== undefined ? depthOf(tree, origin) : 0;
   const base = listFilter(options);
   const maxDepth = options.depth !== undefined ? parsePositiveInt(options.depth) : undefined;
   const filter = (node: KalamuNode): boolean =>
-    base(node) && (maxDepth === undefined || depthOf(tree, node) < maxDepth);
+    (scope === null || scope.has(node.id)) &&
+    base(node) &&
+    (maxDepth === undefined || depthOf(tree, node) - originDepth < maxDepth);
   const ordered = preorder(tree).filter(filter);
-  return { text: renderOutline(nodes, filter), json: ordered };
+  return { text: renderOutline(nodes, filter), json: ordered.map((n) => withPath(tree, n)) };
+}
+
+function withPath(tree: Tree, node: KalamuNode): KalamuNode & { path: string[] } {
+  return { ...node, path: pathOf(tree, node) };
 }
 
 export interface ShowOptions {
@@ -349,28 +384,91 @@ export function show(cwd: string, id: string, options: ShowOptions): CommandResu
   const withChildren = options.children || maxDepth !== undefined;
 
   if (options.format === "markdown") {
-    return { text: serializeMarkdown(tree, [node], withChildren ? maxDepth : 0), json: node };
+    return { text: serializeMarkdown(tree, [node], withChildren ? maxDepth : 0), json: withPath(tree, node) };
   }
   if (!withChildren) {
-    return { text: renderOutline(nodes, (n) => n.id === id), json: node };
+    return { text: renderOutline(nodes, (n) => n.id === id), json: withPath(tree, node) };
   }
   const rootDepth = depthOf(tree, node);
   const ids = subtreeIds(tree, id);
   const inView = (n: KalamuNode): boolean =>
     ids.has(n.id) && (maxDepth === undefined || depthOf(tree, n) - rootDepth <= maxDepth);
   const children = preorder(tree).filter((n) => inView(n) && n.id !== id);
-  return { text: renderOutline(nodes, inView), json: { ...node, children } };
+  return { text: renderOutline(nodes, inView), json: { ...withPath(tree, node), children } };
+}
+
+export interface LinkOptions {
+  format?: string;
+}
+
+/** A copy-ready human reference to a node, backed by its stable hub URL. */
+export function link(cwd: string, id: string, options: LinkOptions = {}): CommandResult {
+  if (options.format !== undefined && !["markdown", "url", "json"].includes(options.format)) {
+    throw new CliError(`invalid format "${options.format}" — use markdown, url or json`);
+  }
+  const paths = resolvePaths(cwd);
+  const { nodes } = readOutline(paths.outline);
+  const node = nodes.find((candidate) => candidate.id === id);
+  if (!node) throw new CliError(`no node with id ${id}`);
+  const slug = readRegistry().projects.find((project) => project.path === paths.root)?.slug;
+  if (slug === undefined) {
+    throw new CliError("could not resolve this project's hub slug — check that ~/.kalamu is writable");
+  }
+  const result = createNodeLink(node, slug, hubBaseUrl());
+  return { text: options.format === "url" ? result.url : result.markdown, json: result };
 }
 
 export function search(cwd: string, query: string): CommandResult {
   const paths = resolvePaths(cwd);
   const { nodes } = readOutline(paths.outline);
+  const tree = buildTree(nodes);
   const matches = searchNodes(nodes, query);
   const matchIds = new Set(matches.map((n) => n.id));
   return {
     text: matches.length ? renderOutline(nodes, (n) => matchIds.has(n.id)) : "No matches.",
-    json: matches,
+    json: matches.map((n) => withPath(tree, n)),
   };
+}
+
+/**
+ * One level of the outline — the directory listing an agent uses to walk to a
+ * parent without dumping the whole tree. Omit `id` for top-level items;
+ * pass an id for that node's direct children. `(N)` is the child count, so a
+ * promising branch can be descended with another `ls` and a leaf is obvious.
+ */
+export function ls(cwd: string, id?: string): CommandResult {
+  const paths = resolvePaths(cwd);
+  const { nodes } = readOutline(paths.outline);
+  const tree = buildTree(nodes);
+  const parent = id !== undefined ? tree.byId.get(id) : undefined;
+  if (id !== undefined && parent === undefined) throw new CliError(`no node with id ${id}`);
+
+  const children = tree.children.get(parent?.id ?? null) ?? [];
+  const json = {
+    id: parent?.id ?? null,
+    text: parent?.text ?? null,
+    // Root-to-here inclusive: this is the location whose children are listed.
+    path: parent !== undefined ? [...pathOf(tree, parent), parent.text] : [],
+    children: children.map((child) => ({
+      ...child,
+      childCount: (tree.children.get(child.id) ?? []).length,
+    })),
+  };
+
+  if (children.length === 0) {
+    const empty = parent !== undefined ? "(no children)" : "(empty)";
+    const header = parent !== undefined ? `Path: ${json.path.join(" > ")}\n` : "";
+    return { text: `${header}${empty}`, json };
+  }
+
+  const idWidth = Math.max(...children.map((n) => n.id.length));
+  const lines = children.map((child) => {
+    const count = (tree.children.get(child.id) ?? []).length;
+    const tally = count > 0 ? `  (${count})` : "";
+    return `${child.id.padEnd(idWidth)}  ${glyphFor(child)} ${prefixFor(child)}${child.text}${suffixFor(child)}${tally}`;
+  });
+  const header = parent !== undefined ? [`Path: ${json.path.join(" > ")}`] : [];
+  return { text: [...header, ...lines].join("\n"), json };
 }
 
 export interface NextCommandOptions {

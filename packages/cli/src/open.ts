@@ -1,7 +1,8 @@
 import { findRoot, initKalamu, pathsFor } from "@kalamu/core/store";
 import { serve } from "@hono/node-server";
 import { join } from "node:path";
-import { detectHub, HUB_PORT, wakeInstalledHub } from "./hub.js";
+import { detectHub, wakeInstalledHub } from "./hub.js";
+import { HUB_PORT } from "./hub-url.js";
 import { openBrowser, pickPort, webAssetsDir } from "./launch.js";
 import { removeLock, writeLock } from "./lock.js";
 import { readRegistry, registerProject } from "./registry.js";

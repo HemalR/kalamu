@@ -22,6 +22,7 @@ import {
   webAssetsDir,
 } from "./launch.js";
 import { removeLock, writeLock } from "./lock.js";
+import { HUB_PORT } from "./hub-url.js";
 import {
   isHexColor,
   projectColor,
@@ -34,7 +35,6 @@ import {
 } from "./registry.js";
 import { createServer, projectName, webAppHandler, type KalamuServer } from "./server.js";
 
-export const HUB_PORT = 4400;
 const IDLE_MS = 5 * 60 * 1000;
 
 interface Instance {

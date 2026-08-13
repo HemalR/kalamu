@@ -2,10 +2,11 @@ import { OperationError } from "@kalamu/core";
 import { ConflictError, findRoot, StoreError } from "@kalamu/core/store";
 import { Command } from "commander";
 import * as commands from "./commands.js";
-import { readConfig, updateCheckEnabled, writeConfig } from "./config.js";
+import { normalizeBaseUrl, readConfig, updateCheckEnabled, writeConfig } from "./config.js";
 import { CliError, isInteractive, looksLikeRepo, type CommandResult } from "./context.js";
 import { installHubAgent, restartHub, runHub, uninstallHubAgent } from "./hub.js";
 import { forgetHubProject, listHubProjects } from "./hub-commands.js";
+import { DEFAULT_HUB_BASE_URL } from "./hub-url.js";
 import { open } from "./open.js";
 import { askYesNo, installSkill, offerSkillInstall } from "./skill.js";
 import { stopKalamu } from "./stop.js";
@@ -21,6 +22,12 @@ program
 
 function collect(value: string, previous: string[]): string[] {
   return [...previous, value];
+}
+
+function baseUrlStatus(): string {
+  const configured = readConfig().baseUrl;
+  const normalized = typeof configured === "string" ? normalizeBaseUrl(configured) : null;
+  return `base-url ${normalized ?? DEFAULT_HUB_BASE_URL}${normalized === null ? " (default)" : ""}`;
 }
 
 /** Print a CommandResult honouring --format json and the result's exit code. */
@@ -204,15 +211,38 @@ program
 
 program
   .command("config [key] [value]")
-  .description("view or change machine-global settings (key: update-check <on|off>)")
+  .description("view or change machine-global settings (update-check or base-url)")
   .action((key: string | undefined, value: string | undefined) => {
     if (key === undefined) {
       const enabled = updateCheckEnabled();
       console.log(`update-check ${enabled ? "on" : "off"}${enabled ? "" : " (KALAMU_NO_UPDATE_CHECK, CI, or config)"}`);
+      console.log(baseUrlStatus());
+      return;
+    }
+    if (key === "base-url") {
+      if (value === undefined) {
+        console.log(baseUrlStatus());
+        return;
+      }
+      const config = readConfig();
+      if (value === "default") {
+        delete config.baseUrl;
+        writeConfig(config);
+        console.log(baseUrlStatus());
+        return;
+      }
+      const normalized = normalizeBaseUrl(value);
+      if (normalized === null) {
+        console.error("kalamu: base-url must be an http(s) URL without credentials, query parameters, or a hash");
+        process.exitCode = 1;
+        return;
+      }
+      writeConfig({ ...config, baseUrl: normalized });
+      console.log(`base-url ${normalized}`);
       return;
     }
     if (key !== "update-check") {
-      console.error(`kalamu: unknown config key "${key}" (expected update-check)`);
+      console.error(`kalamu: unknown config key "${key}" (expected update-check or base-url)`);
       process.exitCode = 1;
       return;
     }
@@ -237,10 +267,19 @@ program
   .option("--assignee <who>", "tasks assigned to human or agent")
   .option("--created-by <who>", "nodes authored by human or agent")
   .option("--tag <tag>", "nodes carrying a tag")
-  .option("--depth <n>", "limit to the first n levels")
+  .option("--under <id>", "only this node's subtree")
+  .option("--depth <n>", "limit to the first n levels (relative to --under when set)")
   .option("--format <format>", "output format (text|json)")
   .action((opts: commands.ListOptions & { format?: string }) => {
     run(() => commands.list(process.cwd(), opts), opts);
+  });
+
+program
+  .command("ls [id]")
+  .description("list one level of the outline (walk the tree without reading it all)")
+  .option("--format <format>", "output format (text|json)")
+  .action((id: string | undefined, opts: { format?: string }) => {
+    run(() => commands.ls(process.cwd(), id), opts);
   });
 
 program
@@ -254,10 +293,18 @@ program
   });
 
 program
+  .command("link <id>")
+  .description("print a human-readable deep link to a node")
+  .option("--format <format>", "output format (markdown|url|json; default markdown)")
+  .action((id: string, opts: commands.LinkOptions) => {
+    run(() => commands.link(process.cwd(), id, opts), opts);
+  });
+
+program
   .command("add")
   .description("add a node")
   .requiredOption("--text <text>", "node text")
-  .option("--parent <id>", "parent node (omit for top-level)")
+  .option("--parent <id>", "parent node (omit for top-level; agents should pass --parent)")
   .option("--kind <kind>", "bullet|task|discussion (default bullet)")
   .option("--p <priority>", "priority 1 (high) to 3 (low); omit for default 2 (medium)")
   .option("--tag <tag>", "tag (repeatable)", collect, [])

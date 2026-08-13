@@ -2,6 +2,7 @@ import {
   buildTree,
   depthOf,
   effectivePriority,
+  pathOf,
   preorder,
   type KalamuNode,
   type Tree,
@@ -29,17 +30,46 @@ export function suffixFor(node: KalamuNode): string {
   return out;
 }
 
-export function renderLine(tree: Tree, node: KalamuNode, idWidth: number): string {
-  const indent = "  ".repeat(depthOf(tree, node));
+/** Ancestor texts, root first, joined the way `next` prints Path. */
+export function formatPath(tree: Tree, node: KalamuNode): string {
+  return pathOf(tree, node).join(" > ");
+}
+
+export function renderLine(tree: Tree, node: KalamuNode, idWidth: number, indentLevels?: number): string {
+  const indent = "  ".repeat(indentLevels ?? depthOf(tree, node));
   return `${node.id.padEnd(idWidth)}  ${indent}${glyphFor(node)} ${prefixFor(node)}${node.text}${suffixFor(node)}`;
 }
 
-/** Outline listing: pre-order, indentation from real depth even when filtered. */
+/**
+ * Indent follows the displayed tree, not the real one: a filtered view that
+ * omits a parent would otherwise look nested under whichever row happened to
+ * print above it. When the immediate parent is missing, the real ancestor
+ * chain is printed as a Path line instead (same shape as `kalamu next`).
+ */
 export function renderOutline(nodes: readonly KalamuNode[], filter?: (node: KalamuNode) => boolean): string {
   const tree = buildTree(nodes);
   const ordered = preorder(tree).filter(filter ?? (() => true));
   if (!ordered.length) return "(empty)";
+  const shown = new Set(ordered.map((n) => n.id));
   const idWidth = Math.max(...ordered.map((n) => n.id.length));
-  return ordered.map((n) => renderLine(tree, n, idWidth)).join("\n");
+  return ordered
+    .map((n) => {
+      const line = renderLine(tree, n, idWidth, displayDepth(tree, n, shown));
+      if (n.parentId === null || shown.has(n.parentId)) return line;
+      const path = formatPath(tree, n);
+      if (!path) return line;
+      return `${line}\n${" ".repeat(idWidth + 2)}Path: ${path}`;
+    })
+    .join("\n");
 }
 
+/** How many shown ancestors sit above this node — 0 when the parent is omitted. */
+function displayDepth(tree: Tree, node: KalamuNode, shown: Set<string>): number {
+  let depth = 0;
+  let current = node.parentId;
+  while (current !== null) {
+    if (shown.has(current)) depth++;
+    current = tree.byId.get(current)?.parentId ?? null;
+  }
+  return depth;
+}

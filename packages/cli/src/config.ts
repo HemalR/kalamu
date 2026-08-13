@@ -1,11 +1,12 @@
 /**
  * Machine-global CLI settings at ~/.kalamu/config.json — plumbing, never
- * canonical outline data (like the hub registry). Today it holds only the
- * update-check opt-out; a corrupt or missing file always reads as defaults.
+ * canonical outline data (like the hub registry). A corrupt or missing file
+ * always reads as defaults.
  */
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { DEFAULT_HUB_BASE_URL } from "./hub-url.js";
 
 /** ~/.kalamu — machine-global state dir. KALAMU_HOME overrides it for tests. */
 export function kalamuHome(): string {
@@ -17,6 +18,8 @@ export interface Config {
   updateCheck?: boolean;
   /** true once the one-time "we check npm" notice has been shown. */
   updateNoticeSeen?: boolean;
+  /** Machine-local base address used for shareable hub node links. */
+  baseUrl?: string;
 }
 
 function configFile(): string {
@@ -39,6 +42,28 @@ export function writeConfig(config: Config): void {
   const temp = `${file}.${process.pid}.tmp`;
   writeFileSync(temp, `${JSON.stringify(config, null, 2)}\n`, "utf8");
   renameSync(temp, file);
+}
+
+/**
+ * Normalize a configured hub base URL. Only ordinary HTTP(S) addresses are
+ * accepted: credentials could leak through a pasted link, while query/hash
+ * components would conflict with Kalamu's own project path and zoom hash.
+ */
+export function normalizeBaseUrl(value: string): string | null {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    if (url.username !== "" || url.password !== "" || url.search !== "" || url.hash !== "") return null;
+    return url.toString().replace(/\/+$/, "");
+  } catch {
+    return null;
+  }
+}
+
+/** Configured link base, or the default hub address for old/unconfigured installs. */
+export function hubBaseUrl(): string {
+  const configured = readConfig().baseUrl;
+  return typeof configured === "string" ? (normalizeBaseUrl(configured) ?? DEFAULT_HUB_BASE_URL) : DEFAULT_HUB_BASE_URL;
 }
 
 /**
