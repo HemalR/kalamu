@@ -16,6 +16,8 @@ under `Added` / `Changed` / `Fixed` / `Removed`.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-08-13
+
 ### Added
 
 - **`kalamu ls [id]` walks the outline one level at a time.** Root items first; `ls <id>` lists that node's children. A trailing `(N)` is the child count, so an agent can descend only into a promising branch instead of dumping the whole tree. `list --under <id>` is the other branch view (full subtree, filters still apply; `--depth` is relative to it).
