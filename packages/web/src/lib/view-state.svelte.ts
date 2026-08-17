@@ -1,10 +1,10 @@
 /**
  * The view-state layer of the outline store (see outline.svelte.ts): what the
  * reader is looking at, never what the document says. Filters, hideDone,
- * compact mode, collapse, zoom, where attention is, and the focus registry.
+ * overview mode, collapse, zoom, where attention is, and the focus registry.
  *
  * None of it is document content — collapse is view state by SPEC key decision
- * 10 and the rest follows the same rule: collapse, hideDone, compact and the
+ * 10 and the rest follows the same rule: collapse, hideDone, overview and the
  * author/assignee filters live in ui-state.json, the tag filter and zoom are
  * session-only, and nothing here ever reaches the JSONL.
  */
@@ -47,12 +47,12 @@ export class OutlineViewState extends OutlineDocument {
   /** Hide completed nodes — persisted in ui-state.json like collapse state (view state, never document content); a hidden done node hides its whole subtree. */
   hideDone = $state(false);
   /**
-   * Compact mode: rows render a short derived label (lib/summary.ts) instead of
+   * Overview mode: rows render a short derived label (lib/summary.ts) instead of
    * their full text, so a deep tree can be scanned. Persisted alongside
    * hideDone, and render-time ONLY — the text on disk, copy-as-markdown, the
    * CLI and every filter keep seeing the full text.
    */
-  compact = $state(false);
+  overview = $state(false);
   /**
    * Author/assignee filters, driven by the header's filter menu and persisted
    * in ui-state.json (SPEC key decision 15). An absent axis shows everything.
@@ -372,8 +372,8 @@ export class OutlineViewState extends OutlineDocument {
   }
 
   /** Swap every row between its full text and its derived label (view state only). */
-  toggleCompact(): void {
-    this.compact = !this.compact;
+  toggleOverview(): void {
+    this.overview = !this.overview;
     this.persistUiStateSoon();
   }
 
@@ -389,7 +389,7 @@ export class OutlineViewState extends OutlineDocument {
         .putUiState({
           collapsed,
           ...(this.hideDone ? { hideDone: true } : {}),
-          ...(this.compact ? { compact: true } : {}),
+          ...(this.overview ? { overview: true } : {}),
           ...(filters === null ? {} : { filters }),
         })
         .catch(() => {

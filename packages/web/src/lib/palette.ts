@@ -11,7 +11,7 @@ const KEY_SEQUENCE = [..."123456789", ..."asdfghjkl", ..."qwertyuiop", ..."zxcvb
 
 /** Stable leader sequences whose hierarchy is part of the product contract. */
 export const LEADER_KEYS = {
-  root: { block: "b", redo: "r", undo: "u", zoom: "z" },
+  root: { block: "b", find: "f", overview: "o", redo: "r", undo: "u", zoom: "z" },
   block: { add: "a", remove: "r" },
   zoom: { in: "i", out: "o" },
 } as const;

@@ -22,9 +22,10 @@
     /** Swap the palette for a view sheet — the caller closes the palette. */
     onshowshortcuts: () => void;
     onshowcli: () => void;
+    onshowfind: () => void;
   }
 
-  let { store, onclose, onshowshortcuts, onshowcli }: Props = $props();
+  let { store, onclose, onshowshortcuts, onshowcli, onshowfind }: Props = $props();
 
   type Level =
     | "root"
@@ -356,15 +357,6 @@
           },
         },
         {
-          id: "compact",
-          key: "m",
-          label: store.compact ? "Leave compact mode" : "Enter compact mode",
-          run: () => {
-            store.toggleCompact();
-            close();
-          },
-        },
-        {
           id: "theme",
           key: "t",
           label: theme.mode === "dark" ? "Activate light mode" : "Activate dark mode",
@@ -475,6 +467,12 @@
       // Copying works on bullets too — only a target is required.
       { id: "copy", key: "c", label: "Copy…", disabled: !target, run: () => enter("copy") },
       {
+        id: "find",
+        key: K.root.find,
+        label: "Find…",
+        run: onshowfind,
+      },
+      {
         // Document-wide, so no target is needed; the stacks say when there is
         // nothing left to walk back (or forward) through.
         id: "undo",
@@ -493,6 +491,17 @@
         disabled: !store.canRedo,
         run: () => {
           store.redo();
+          close();
+        },
+      },
+      {
+        // View-wide, so no target is needed. The label is the action: enable
+        // when off, disable when on.
+        id: "overview",
+        key: K.root.overview,
+        label: store.overview ? "Overview disabled" : "Overview enabled",
+        run: () => {
+          store.toggleOverview();
           close();
         },
       },
@@ -648,7 +657,7 @@
     {/if}
 
     {#if !node && level === "root"}
-      <p class="hint">Focus an item to use the item actions — view, undo and zoom out work anywhere.</p>
+      <p class="hint">Focus an item to use the item actions — find, view, undo and zoom out work anywhere.</p>
     {/if}
     {#if level === "labels" && store.allTags.length === 0}
       <p class="hint">No tags yet — type <code>#tag</code> inline in an item's text.</p>

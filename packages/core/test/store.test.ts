@@ -89,4 +89,10 @@ describe("ui state", () => {
     writeUiState(paths.uiState, { collapsed: ["n_001"] });
     expect(readUiState(paths.uiState)).toEqual({ collapsed: ["n_001"] });
   });
+
+  it("reads a legacy compact key as overview", () => {
+    const paths = initKalamu(root).paths;
+    writeFileSync(paths.uiState, JSON.stringify({ collapsed: [], compact: true }) + "\n");
+    expect(readUiState(paths.uiState)).toEqual({ collapsed: [], overview: true });
+  });
 });

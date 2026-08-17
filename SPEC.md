@@ -205,7 +205,7 @@ Shape:
 {"collapsed": ["n_002", "n_014"], "hideDone": true}
 ```
 
-`ui-state.json` is written by the server (debounced, atomic) and is never canonical: missing or corrupt means every node renders expanded. `kalamu validate` ignores it. IDs of since-deleted nodes are harmless and may be pruned opportunistically. `hideDone` (the UI's "hide completed items" eye toggle) is omitted when false, per the omit-defaults convention.
+`ui-state.json` is written by the server (debounced, atomic) and is never canonical: missing or corrupt means every node renders expanded. `kalamu validate` ignores it. IDs of since-deleted nodes are harmless and may be pruned opportunistically. `hideDone` (the UI's "hide completed items" eye toggle) and `overview` are omitted when false, per the omit-defaults convention. A legacy `compact: true` still reads as overview on.
 
 Optional runtime cache, if needed later:
 
@@ -1412,8 +1412,11 @@ The UI should feel like Workflowy:
 * Every unfocused node shows a subtle copy affordance at the end of its text. A normal click copies the same agent-context block as Cmd/Ctrl+C; Mod-click copies only the raw node text, like Cmd/Ctrl+Shift+C. Both actions are uniform across node kinds
 * Modifier chords make the whole row a mouse target for the two operations whose own affordance is small or absent: **Mod+click** toggles collapse (the chevron alone is a 10px target), **Alt+click** zooms in. One modifier each, so neither is a two-hand stretch; holding both is a slip, not a third gesture, and does nothing. Shift is left to the browser throughout, so Shift+click still extends a native text selection. The chords are claimed in the capture phase, so the chevron, glyph, priority badge, tag chips and inline links never fire their own action as well — the copy affordance is the one exemption, since Mod+click there is already its own action
 * A blocked node carries a **Blocked** badge on the meta row, and the badge is the way to what it waits on: with one open blocker it jumps straight there, with several it opens a menu of them first. The jump is the app's one reveal primitive — it drops a zoom the target sits outside of, unfolds the ancestors hiding it, and reprieves it from the active filters (`hideDone` included) until those filters next change. Nothing is restored afterwards: the zoom change is a history entry, so the way back is browser Back
+* Find (header magnifying glass, or Cmd/Ctrl+K then `f`) opens a text box that classifies the query rather than offering a mode switch: a whole-query node id (`n_…`, optionally wrapped in quotes/backticks/parens) or a kalamu link (`#z=<id>`, including inside a URL or markdown) jumps by zooming to that node — the same as opening the link — and pasting such a query jumps immediately; anything else is a live substring search over node text, and choosing a hit reveals it in place (unfolds ancestors, does not zoom). An id that matches the shape but is not in the tree says "No item with that id" rather than searching the letters. Collapsed / filtered-out nodes are reachable this way; they are not reachable via the browser's own find-in-page
+* Each rendered row includes its node id as visually hidden, `aria-hidden` text so the browser's find-in-page (Cmd/Ctrl+F) can land on a currently visible row when an id is pasted. The id is never shown and is excluded from the accessibility tree. Collapsed, filtered-out, and hide-done nodes are not in the DOM, so they are not found this way — use Find
 * Every node carries its creation time in a meta row beneath it, as a relative age that keeps aging in a window left open (one shared clock, not a timer per row), with the exact local timestamp on hover. It shares that row with the progress bar, the Blocked badge, and the assignment badge; the row is a fixed height whether or not any of them are showing, so nothing ever reflows
 * Zoom (Workflowy-style): any node can become the temporary root — only its subtree is displayed, with a sticky breadcrumb trail above the outline (project name › ancestors › current node) whose crumbs are clickable to change the zoom level. The zoom target lives in the URL hash (`#z=<id>`), so reload restores it and browser Back unwinds it; zoom is per-tab view state, never in `ui-state.json` or the outline file. Operations that would move a node outside the zoomed subtree (indent/outdent/move on the zoom root, outdenting its direct children) are inert; Enter on the zoom root creates a child rather than an invisible sibling; deleting the zoom root lands the zoom on its parent; Escape (when not editing, once no tag filter is active) zooms fully out
+* Overview mode shortens every row to a derived one-glance label so a long outline stays scannable — nothing is stored, and the full text comes back the moment you edit. Toggled from the header or ⌘K then `o`; persisted in `ui-state.json` as `overview` (a legacy `compact` key still reads as on)
 * Minimal visual clutter
 * Light/dark theme follows the system by default; an explicit switcher (navbar button, or the palette's "Activate dark/light mode") overrides it, persisted in the browser's localStorage — per-browser view state, never in the repo
 
@@ -1576,12 +1579,23 @@ c    Copy ->              submenu: c CLI command -> (one level deeper:
                           alone (same as Mod+Shift+C). Each copies to the
                           clipboard, toasts, and closes with focus restore.
 d    Toggle done          marks the task done / reopens it, closes
+f    Find                 opens the find panel (same as the header
+                          magnifying glass): a text box, not a leader
+                          submenu. A whole-query node id or kalamu link
+                          zooms to that node (paste jumps immediately);
+                          anything else searches node text live and
+                          Enter / a click reveals the match in place.
+                          Needs no focused node. Closes.
 i    CLI reference        opens the CLI commands sheet
 k    Keyboard cheat sheet opens the keyboard cheat sheet
 l    Labels ->            submenu: every #tag in the outline, checkmark if the
                           node has it; selecting toggles the #token in the
                           node's text (tags stay inline — key decision 7);
                           stays open for multi-toggle
+o    Overview             toggle whose label is the action: "Overview enabled"
+                          when the mode is off, "Overview disabled" when it is
+                          on (short derived labels on every row; nothing is
+                          stored). Needs no focused node; closes
 p    Priority ->          submenu: 1-3 set the priority (2 = back to default),
                           current level marked
 r    Redo                 replays the last undone change (same as Mod+Shift+Z);
@@ -1594,8 +1608,8 @@ t    Kind ->              submenu: b Bullet / d Discussion / t Task, current
 u    Undo                 walks the document back one change (same as Mod+Z);
                           disabled with nothing to undo
 v    View ->              submenu of toggles whose labels reflect the current
-                          state: h Hide/show done · m Enter/leave compact
-                          mode · t Activate dark/light mode; each closes
+                          state: h Hide/show done · t Activate dark/light
+                          mode; each closes
 x    Clean up             deletes every done task with its subtree, plus done
                           bullets and blank nodes (same as `kalamu clean`),
                           applied through the UI's undo stack so it is undoable
@@ -1623,9 +1637,9 @@ and in key order — digits, then the letters alphabetically, then the
 punctuation and arrow rows. Only the project digit rows vary, with the hub
 registry. Items that don't apply are greyed out and disabled rather than
 hidden — with no node focused, every node-targeting action (`c d p a l t s b
-← → ↑`) is disabled (the view, clean, undo/redo, zoom and sheet items
-need no target and are always enabled — Clean up with nothing to clean just
-toasts "Nothing to clean."). On a bullet, Start/End and Block are disabled
+← → ↑`) is disabled (the overview, view, find, clean, undo/redo, zoom and
+sheet items need no target and are always enabled — Clean up with nothing to
+clean just toasts "Nothing to clean."). On a bullet, Start/End and Block are disabled
 (bullets are structure, not work — key decision 16), while Assign is enabled:
 choosing Human or Agent converts the bullet to a task and assigns it atomically;
 choosing Unassigned leaves the bullet unchanged. Priority also applies (picking

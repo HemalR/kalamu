@@ -25,6 +25,7 @@
 <script lang="ts">
   import { tagColor } from "@kalamu/core";
   import CommandPalette from "./components/CommandPalette.svelte";
+  import Find from "./components/Find.svelte";
   import OutlineNode from "./components/OutlineNode.svelte";
   import Toast from "./components/Toast.svelte";
   import { setBackend } from "./lib/api";
@@ -48,6 +49,7 @@
   void store.init();
 
   let paletteOpen = $state(false);
+  let findOpen = $state(false);
 
   const visibleRoots = $derived(store.visibleChildren(null));
 
@@ -64,7 +66,7 @@
     if (event.isComposing) return;
     // The palette owns the keyboard while open (it stops propagation of the
     // keys it handles, and Overlay intercepts Escape at the capture phase).
-    if (paletteOpen) return;
+    if (paletteOpen || findOpen) return;
     // Mod+K opens the palette from anywhere in the embed, including while editing.
     if (matches(event, S.palette)) {
       event.preventDefault();
@@ -131,12 +133,18 @@
   </div>
 </div>
 
-{#if paletteOpen}
+{#if findOpen}
+  <Find {store} onclose={() => (findOpen = false)} />
+{:else if paletteOpen}
   <CommandPalette
     {store}
     onclose={() => (paletteOpen = false)}
     onshowshortcuts={sheetUnavailable}
     onshowcli={sheetUnavailable}
+    onshowfind={() => {
+      paletteOpen = false;
+      findOpen = true;
+    }}
   />
 {/if}
 

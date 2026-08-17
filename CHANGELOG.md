@@ -16,6 +16,13 @@ under `Added` / `Changed` / `Fixed` / `Removed`.
 
 ## [Unreleased]
 
+### Changed
+
+- **Overview mode** replaces compact mode. Toggle it from the command palette
+  with `o` at the root (`⌘K` then `o`) — the row reads "Overview enabled" or
+  "Overview disabled" depending on the current state — instead of the old
+  View → compact sequence.
+
 ## [0.12.0] - 2026-08-13
 
 ### Added

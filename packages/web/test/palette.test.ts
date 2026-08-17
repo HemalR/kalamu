@@ -3,7 +3,14 @@ import { assignKeys, keyBadge, LEADER_KEYS, sortByKey } from "../src/lib/palette
 
 describe("leader keys", () => {
   it("groups zoom and blocking while keeping undo one key away", () => {
-    expect(LEADER_KEYS.root).toEqual({ block: "b", redo: "r", undo: "u", zoom: "z" });
+    expect(LEADER_KEYS.root).toEqual({
+      block: "b",
+      find: "f",
+      overview: "o",
+      redo: "r",
+      undo: "u",
+      zoom: "z",
+    });
     expect(LEADER_KEYS.block).toEqual({ add: "a", remove: "r" });
     expect(LEADER_KEYS.zoom).toEqual({ in: "i", out: "o" });
   });

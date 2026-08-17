@@ -133,8 +133,9 @@ to the human (`--assign human`) when you need something from them.
 
 1. Only work on nodes where `kind` is `"task"`. Plain bullets are context, never work items.
 2. Nodes with `kind: "discussion"` are conversations the developer wants to have with an agent, never coding work. `kalamu next` never returns them, and you never create them — discussions are authored by the human. When the human brings one to a session (usually by pasting a discussion prompt), discuss only — make no code changes, record the agreed outcome as child bullets under the discussion node (`kalamu add --parent <id> --text "..."`), then `kalamu done <id>`. Query them with `kalamu next --discussion` (most urgent first) or `kalamu list --discussions`.
-3. Never work on tasks with `"assignee": "human"` (rendered as `@human`; legacy files may write `"self": true`): they belong to the human. `kalamu next` already excludes them — but they may appear as descendants of a returned task; leave those to the human. Tasks with `"assignee": "agent"` or no assignee are yours.
-4. Priority runs p1 (high) to p3 (low); a missing priority means p2 (medium). Set priority with `--p`; never write `"priority": 2` explicitly.
+3. When creating or editing a task try and get the first line of the text to be short and descriptive so that in the compact overview view, it's easy for the human to scan and get a summary of the detail hidden from view.
+4. Never work on tasks with `"assignee": "human"` (rendered as `@human`; legacy files may write `"self": true`): they belong to the human. `kalamu next` already excludes them — but they may appear as descendants of a returned task; leave those to the human. Tasks with `"assignee": "agent"` or no assignee are yours.
+5. Priority runs p1 (high) to p3 (low); a missing priority means p2 (medium). Set priority with `--p`; never write `"priority": 2` explicitly.
 5. Tags live inline in task text as `#tokens` (`#web`, `#bug`) — there is no separate tags field. Keep them when editing text.
 6. If you promote a task into another tracker (GitHub issue, Linear, a plan file), create it there and then delete the Kalamu task — Kalamu keeps no forwarding record, so leaving it would let another agent duplicate the work.
 7. When your work completes a task, mark it done and run `kalamu validate` before finishing.

@@ -19,3 +19,14 @@ export function newId(existing?: ReadonlySet<string>): string {
     if (!existing?.has(id)) return id;
   }
 }
+
+/**
+ * Shape of a Kalamu node id as a query: `n_` plus one or more ASCII
+ * alphanumeric characters. Generation uses Crockford base32 (see `newId`),
+ * but lookup is looser so short hand-written ids (`n_001`) still parse.
+ */
+const NODE_ID_TOKEN = /^n_[0-9A-Za-z]+$/;
+
+export function isNodeIdToken(value: string): boolean {
+  return NODE_ID_TOKEN.test(value);
+}

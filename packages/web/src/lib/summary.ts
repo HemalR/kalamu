@@ -1,5 +1,5 @@
 /**
- * The derived one-glance label behind Compact mode.
+ * The derived one-glance label behind Overview mode.
  *
  * Nothing is stored: a node has one text field and this reads it (SPEC
  * discussion n_0J27PC6VYW — no second field, the label is derived). That

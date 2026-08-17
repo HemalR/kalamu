@@ -5,6 +5,7 @@
   import CliSheet from "./components/CliSheet.svelte";
   import CommandPalette from "./components/CommandPalette.svelte";
   import FilterMenu from "./components/FilterMenu.svelte";
+  import Find from "./components/Find.svelte";
   import HubHint from "./components/HubHint.svelte";
   import OutlineNode from "./components/OutlineNode.svelte";
   import Sidebar from "./components/Sidebar.svelte";
@@ -51,7 +52,7 @@
     .catch(() => {});
 
   /** At most one overlay at a time; Overlay.svelte owns Escape while one is open. */
-  let overlay = $state<"palette" | "help" | "cli" | null>(null);
+  let overlay = $state<"palette" | "help" | "cli" | "find" | null>(null);
 
   /** Active project's colour (hub only), reported by the Sidebar; null falls
       back to the bronze brand. Tints the wordmark and the favicon. */
@@ -66,7 +67,7 @@
     // The palette owns the keyboard while open: it stops propagation of the
     // keys it handles, and Overlay intercepts Escape at the capture phase
     // (sublevels step back, so Escape must never be interpreted here too).
-    if (overlay === "palette") return;
+    if (overlay === "palette" || overlay === "find") return;
     // Mod+/ toggles the cheat sheet from anywhere, including while editing.
     if (matches(event, S.help)) {
       event.preventDefault();
@@ -128,25 +129,37 @@
   <header>
     <span class="brandline"><Wordmark />{#if project !== null}<span class="project">| {project.name}</span>{/if}</span>
     <div class="actions">
+      <button
+        class="find-toggle"
+        aria-label="Find"
+        title="Find — search text or jump to a node id"
+        onclick={() => (overlay = "find")}
+      >
+        <!-- lucide search -->
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="8" />
+          <path d="m21 21-4.3-4.3" />
+        </svg>
+      </button>
       <FilterMenu {store} />
       <button class="clean-up" title="Delete completed tasks and their subtrees" onclick={() => store.clean()}>
         Clean up
       </button>
-      <!-- Compact mode: rows show a short derived label instead of their full
+      <!-- Overview mode: rows show a short derived label instead of their full
            text. Purely a view toggle, so aria-pressed carries the state and the
            accessible name stays put; the icon and tooltip say what a click does. -->
       <button
-        class={["compact-toggle", { on: store.compact }]}
-        aria-label="Compact mode"
-        aria-pressed={store.compact}
-        title={store.compact ? "Show the full text of every item" : "Compact mode — show short labels"}
-        onclick={() => store.toggleCompact()}
+        class={["overview-toggle", { on: store.overview }]}
+        aria-label="Overview mode"
+        aria-pressed={store.overview}
+        title={store.overview ? "Show the full text of every item" : "Overview mode — show short labels"}
+        onclick={() => store.toggleOverview()}
       >
         <!-- fold-vertical / unfold-vertical: same dashed midline, the two
              chevrons flip to point at it (fold) or away from it (unfold). -->
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M12 22v-6m0-8V2M4 12H2m8 0H8m8 0h-2m8 0h-2" />
-          <path d={store.compact ? "m15 19-3 3-3-3m6-14-3-3-3 3" : "m15 19-3-3-3 3m6-14-3 3-3-3"} />
+          <path d={store.overview ? "m15 19-3 3-3-3m6-14-3-3-3 3" : "m15 19-3-3-3 3m6-14-3 3-3-3"} />
         </svg>
       </button>
       <button
@@ -218,12 +231,15 @@
   <CheatSheet onclose={() => (overlay = null)} />
 {:else if overlay === "cli"}
   <CliSheet onclose={() => (overlay = null)} />
+{:else if overlay === "find"}
+  <Find {store} onclose={() => (overlay = null)} />
 {:else if overlay === "palette"}
   <CommandPalette
     {store}
     onclose={() => (overlay = null)}
     onshowshortcuts={() => (overlay = "help")}
     onshowcli={() => (overlay = "cli")}
+    onshowfind={() => (overlay = "find")}
   />
 {/if}
 
@@ -322,7 +338,7 @@
 
   /* Toggled on: the same soft fill the palette uses for an active row, so the
      button reads as pressed and not merely hovered. */
-  button.compact-toggle.on {
+  button.overview-toggle.on {
     color: var(--fg);
     background: color-mix(in srgb, var(--fg) 9%, transparent);
   }

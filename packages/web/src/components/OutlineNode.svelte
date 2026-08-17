@@ -97,13 +97,13 @@
       : undefined,
   );
 
-  // ---- compact mode ----------------------------------------------------------
+  // ---- overview mode ----------------------------------------------------------
   // Display-only. The editable below always binds the raw node.text — nobody
   // ever edits a summary — and the store, copy, filters and the CLI never see
   // any of this.
 
   /** The shortened label, or null when the row shows its text in full (see lib/summary.ts). */
-  const label = $derived(store.compact ? summarize(node.text) : null);
+  const label = $derived(store.overview ? summarize(node.text) : null);
   const segments = $derived(segmentText(label ?? node.text));
   /**
    * Tags the summary cut off. They sit at the end of long text more often than
@@ -761,6 +761,11 @@
     onpointerenter={() => store.setHover(node.id)}
     onpointerleave={() => store.clearHover(node.id)}
   >
+    <!-- Browser find-in-page (Cmd/Ctrl+F) matches this; it is not for reading.
+         aria-hidden keeps it out of the accessibility tree; transparent text
+         plus no pointer events keep it off the layout. Collapsed / filtered
+         rows are not in the DOM, so they are not found this way. -->
+    <span class="find-id" aria-hidden="true">{store.serverId(node.id)}</span>
     {#if hasChildren}
       <button
         class={["chevron", { closed: isCollapsed }]}
@@ -912,7 +917,7 @@
         {/if}
       {:else}
         <div
-          class={["text", "display", { clamped: store.compact }]}
+          class={["text", "display", { clamped: store.overview }]}
           role="textbox"
           tabindex="0"
           aria-multiline="false"
@@ -1123,6 +1128,23 @@
     background: var(--caret-row);
   }
 
+  /* Present for find-in-page, not for reading. Transparent glyphs still
+     receive the browser's find highlight, which paints over the row's text
+     column so a pasted id lands on a visible target. */
+  .find-id {
+    position: absolute;
+    left: var(--text-col);
+    top: 5px;
+    max-width: calc(100% - var(--text-col) - 8px);
+    overflow: hidden;
+    color: transparent;
+    font-size: 12px;
+    line-height: 1;
+    white-space: nowrap;
+    pointer-events: none;
+    user-select: none;
+  }
+
   .chevron {
     position: absolute;
     left: -17px;
@@ -1283,10 +1305,10 @@
     white-space: pre-wrap;
   }
 
-  /* Compact mode. The summary shortens 96 rows in 118 (see lib/summary.ts) but
+  /* Overview mode. The summary shortens 96 rows in 118 (see lib/summary.ts) but
      some of what survives is still 265 characters, and a row that is already
      its own summary can be long too — so the two-line clamp is what actually
-     bounds the height, and it applies to every row while compact is on. Only
+     bounds the height, and it applies to every row while overview is on. Only
      the display rendering: the editable is never clamped. */
   .text.clamped {
     display: -webkit-box;

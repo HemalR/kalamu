@@ -2,12 +2,12 @@
  * All outline state and mutations, shared by every component.
  *
  * The store is one flat object to its consumers (`store.nodes`,
- * `store.compact`, `store.indent(id)`), assembled from three layers so no one
+ * `store.overview`, `store.indent(id)`), assembled from three layers so no one
  * file carries the whole thing:
  *
  * - document.svelte.ts — the nodes, the derived tree, and the server plumbing
  *   that keeps them canonical: SSE, the write queue, mutate, undo/redo.
- * - view-state.svelte.ts — filters, collapse, zoom, compact, where attention
+ * - view-state.svelte.ts — filters, collapse, zoom, overview, where attention
  *   is, and the focus registry. Never document content.
  * - this file — the editing vocabulary the components call, expressed with the
  *   same pure operations the server uses (@kalamu/core).
@@ -48,7 +48,7 @@ export class OutlineStore extends OutlineViewState {
       this.meta = meta;
       for (const id of uiState.collapsed) this.collapsed.add(id);
       this.hideDone = uiState.hideDone ?? false;
-      this.compact = uiState.compact ?? false;
+      this.overview = uiState.overview ?? false;
       this.filters = uiState.filters ?? {};
       this.loaded = true;
     } catch (err) {

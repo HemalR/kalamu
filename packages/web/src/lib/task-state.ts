@@ -80,7 +80,7 @@ export function blockerCandidates(nodes: readonly KalamuNode[], target: KalamuNo
 const LABEL_LIMIT = 80;
 
 /**
- * How a node reads as one row of the "Block on…" list: its compact-mode
+ * How a node reads as one row of the "Block on…" list: its overview-mode
  * summary (lib/summary.ts) where there is one, hard-capped so a 400-character
  * node cannot push the real choices off the row. Display only — the pick still
  * records the node's id.

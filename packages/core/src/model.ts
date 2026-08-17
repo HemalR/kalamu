@@ -106,8 +106,8 @@ export interface UiState {
   collapsed: string[];
   /** Hide completed nodes in the UI; omitted means false. */
   hideDone?: boolean;
-  /** Compact mode: rows show a derived one-glance label; omitted means false. */
-  compact?: boolean;
+  /** Overview mode: rows show a derived one-glance label; omitted means false. */
+  overview?: boolean;
   /** Author/assignee filters; omitted means unfiltered (SPEC key decision 15). */
   filters?: OutlineFilters;
 }
@@ -117,12 +117,24 @@ export const outlineFiltersSchema = z.object({
   assignee: z.array(z.enum(["human", "agent", "unassigned"])).optional(),
 }) satisfies z.ZodType<OutlineFilters>;
 
-export const uiStateSchema = z.object({
-  collapsed: z.array(z.string()),
-  hideDone: z.boolean().optional(),
-  compact: z.boolean().optional(),
-  filters: outlineFiltersSchema.optional(),
-}) satisfies z.ZodType<UiState>;
+/** Fold a legacy `compact` key into `overview`. Both true means overview is on. */
+function foldOverview(overview?: boolean, compact?: boolean): Pick<UiState, "overview"> {
+  return overview ?? compact ? { overview: true } : {};
+}
+
+export const uiStateSchema = z
+  .object({
+    collapsed: z.array(z.string()),
+    hideDone: z.boolean().optional(),
+    overview: z.boolean().optional(),
+    /** Legacy name for overview; still accepted so existing ui-state.json keeps working. */
+    compact: z.boolean().optional(),
+    filters: outlineFiltersSchema.optional(),
+  })
+  .transform(({ compact, overview, ...rest }): UiState => ({
+    ...rest,
+    ...foldOverview(overview, compact),
+  }));
 
 export function effectivePriority(node: KalamuNode): number {
   return node.priority ?? DEFAULT_PRIORITY;
