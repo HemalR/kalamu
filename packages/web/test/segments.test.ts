@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assetUrl, segmentText, tagSpans } from "../src/lib/segments";
+import { assetUrl, docUrl, segmentText, tagSpans } from "../src/lib/segments";
 
 describe("segmentText", () => {
   it("renders a mid-sentence token as a chip in place", () => {
@@ -140,11 +140,85 @@ describe("segmentText", () => {
     expect(segmentText("type https:// to link")).toEqual([{ kind: "text", text: "type https:// to link", start: 0 }]);
     expect(segmentText("https://.")).toEqual([{ kind: "text", text: "https://.", start: 0 }]);
   });
+
+  it("renders a mid-text .md path as a doc segment in place", () => {
+    expect(segmentText("Spec: plans/refresh.md Phase 2")).toEqual([
+      { kind: "text", text: "Spec: ", start: 0 },
+      { kind: "doc", path: "plans/refresh.md", start: 6, length: 16 },
+      { kind: "text", text: " Phase 2", start: 22 },
+    ]);
+  });
+
+  it("chips a bare filename and a path at the start or end of the text", () => {
+    expect(segmentText("SPEC.md is canonical")[0]).toEqual({ kind: "doc", path: "SPEC.md", start: 0, length: 7 });
+    expect(segmentText("see docs/agents/issue-tracker.md").at(-1)).toEqual({
+      kind: "doc",
+      path: "docs/agents/issue-tracker.md",
+      start: 4,
+      length: 28,
+    });
+  });
+
+  it("sheds sentence punctuation after the path", () => {
+    for (const text of ["read plans/a.md.", "read plans/a.md, then", "(read plans/a.md)", "read plans/a.md; ok"]) {
+      expect(segmentText(text).find((s) => s.kind === "doc")?.path).toBe("plans/a.md");
+    }
+  });
+
+  it("never chips inside longer words, other extensions, or URLs", () => {
+    expect(segmentText("backup foo.md.bak file").filter((s) => s.kind === "doc")).toEqual([]);
+    expect(segmentText("uses foo.mdx today").filter((s) => s.kind === "doc")).toEqual([]);
+    const segs = segmentText("read https://a.io/notes.md now");
+    expect(segs.filter((s) => s.kind === "doc")).toEqual([]);
+    expect(segs.filter((s) => s.kind === "link").map((s) => s.href)).toEqual(["https://a.io/notes.md"]);
+  });
+
+  it("renders an @path as a file segment, keeping the @ in the token length", () => {
+    expect(segmentText("touch @src/lib/caret.ts today")).toEqual([
+      { kind: "text", text: "touch ", start: 0 },
+      { kind: "file", path: "src/lib/caret.ts", start: 6, length: 17 },
+      { kind: "text", text: " today", start: 23 },
+    ]);
+  });
+
+  it("leaves @human and @agent alone — they are assignment tokens, not paths", () => {
+    for (const text of ["ship it @human", "ship it @agent", "ping @someone about it"]) {
+      expect(segmentText(text).filter((s) => s.kind === "file")).toEqual([]);
+    }
+  });
+
+  it("chips a bare @filename and sheds trailing sentence punctuation", () => {
+    expect(segmentText("@package.json")[0]).toEqual({ kind: "file", path: "package.json", start: 0, length: 13 });
+    expect(segmentText("see @src/app.ts.").find((s) => s.kind === "file")?.path).toBe("src/app.ts");
+  });
+
+  it("never treats an email address or an @ inside a URL as a file", () => {
+    expect(segmentText("mail me@example.com now").filter((s) => s.kind === "file")).toEqual([]);
+    expect(segmentText("see https://a.io/@scope/pkg.ts now").filter((s) => s.kind === "file")).toEqual([]);
+  });
+
+  it("prefers the file token over the doc token for @plans/foo.md", () => {
+    const segs = segmentText("read @plans/foo.md now");
+    expect(segs.filter((s) => s.kind === "file").map((s) => s.path)).toEqual(["plans/foo.md"]);
+    expect(segs.filter((s) => s.kind === "doc")).toEqual([]);
+  });
+
+  it("mixes doc paths with #tags", () => {
+    const segs = segmentText("Spec: plans/refresh.md #admin");
+    expect(segs.filter((s) => s.kind === "doc").map((s) => s.path)).toEqual(["plans/refresh.md"]);
+    expect(segs.filter((s) => s.kind === "tag").map((s) => s.name)).toEqual(["admin"]);
+  });
 });
 
 describe("assetUrl", () => {
   it("rewrites the stored path to the served URL", () => {
     expect(assetUrl(".kalamu/assets/img-abc.png")).toBe("/assets/img-abc.png");
+  });
+});
+
+describe("docUrl", () => {
+  it("serves the repo-relative path under /docs/ with encoded segments", () => {
+    expect(docUrl("plans/admin console.md")).toBe("/docs/plans/admin%20console.md");
   });
 });
 

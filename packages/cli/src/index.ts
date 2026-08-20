@@ -3,6 +3,7 @@ import { ConflictError, findRoot, StoreError } from "@kalamu/core/store";
 import { Command } from "commander";
 import * as commands from "./commands.js";
 import { normalizeBaseUrl, readConfig, updateCheckEnabled, writeConfig } from "./config.js";
+import { askEditorPreset, EDITOR_PRESETS, resolveEditorTemplate } from "./editor.js";
 import { CliError, isInteractive, looksLikeRepo, type CommandResult } from "./context.js";
 import { installHubAgent, restartHub, runHub, uninstallHubAgent } from "./hub.js";
 import { forgetHubProject, listHubProjects } from "./hub-commands.js";
@@ -28,6 +29,13 @@ function baseUrlStatus(): string {
   const configured = readConfig().baseUrl;
   const normalized = typeof configured === "string" ? normalizeBaseUrl(configured) : null;
   return `base-url ${normalized ?? DEFAULT_HUB_BASE_URL}${normalized === null ? " (default)" : ""}`;
+}
+
+function editorStatus(): string {
+  const configured = readConfig().editor;
+  if (typeof configured !== "string") return "editor none (@file chips are not clickable)";
+  const template = resolveEditorTemplate(configured);
+  return template === null ? `editor ${configured} (unrecognised — treated as none)` : `editor ${configured} → ${template}`;
 }
 
 /** Print a CommandResult honouring --format json and the result's exit code. */
@@ -60,6 +68,7 @@ function run(fn: () => CommandResult, options: { format?: string }): CommandResu
 interface InitOptions {
   tour?: boolean;
   skill?: boolean;
+  editor?: string | boolean;
   agentDocs?: boolean;
   gitignore?: boolean;
   wayfinder?: boolean;
@@ -67,7 +76,37 @@ interface InitOptions {
 }
 
 /**
- * `init` plus its interactive offers (tour, agent skill) — shared by the init
+ * Which editor `@file` chips open in. `--editor <name>` sets it outright (the
+ * scriptable path); otherwise an interactive init asks — but only once per
+ * machine, because the setting is machine-global (~/.kalamu/config.json), and
+ * re-asking in every repo would be noise for a value already chosen.
+ */
+async function settleEditor(opts: InitOptions, interactive: boolean): Promise<void> {
+  if (typeof opts.editor === "string") {
+    if (resolveEditorTemplate(opts.editor) === null) {
+      console.error(
+        `kalamu: editor must be a preset (${Object.keys(EDITOR_PRESETS).join(", ")}) or a URL template containing {path}`,
+      );
+      process.exitCode = 1;
+      return;
+    }
+    writeConfig({ ...readConfig(), editor: opts.editor.trim() });
+    console.log(editorStatus());
+    return;
+  }
+  if (opts.editor === false || !interactive) return;
+  if (typeof readConfig().editor === "string") return; // already chosen on this machine
+  const preset = await askEditorPreset();
+  if (preset === null) {
+    console.log("Skipped. Later: kalamu config editor <name>");
+    return;
+  }
+  writeConfig({ ...readConfig(), editor: preset });
+  console.log(editorStatus());
+}
+
+/**
+ * `init` plus its interactive offers (tour, editor, agent skill) — shared by the init
  * command and `open`'s fresh-directory bootstrap. Returns false when init
  * itself failed or the repo guard declined. Humans get offers; agents and
  * scripts (no TTY, JSON mode, or --no-*) never block.
@@ -107,6 +146,7 @@ async function initWithOffers(opts: InitOptions, guard: { skipRepoGuard?: boolea
   } else if (opts.tour === undefined && !interactive && fresh && opts.format !== "json") {
     console.log("\nNew to Kalamu? `kalamu init --tour` seeds a two-minute tour, then `kalamu open`.");
   }
+  await settleEditor(opts, interactive);
   if (opts.skill === true) installSkill();
   else if (opts.skill !== false && interactive) await offerSkillInstall();
   return true;
@@ -117,6 +157,8 @@ program
   .description("initialise Kalamu in the current directory")
   .option("--tour", "seed a self-guided onboarding outline (fresh outlines only)")
   .option("--no-tour", "never offer the tour")
+  .option("--editor <name>", "editor for @file references (preset name or {path} URL template)")
+  .option("--no-editor", "never ask which editor to open @file references in")
   .option("--skill", "install the Kalamu agent skill via skills.sh (asks which agents)")
   .option("--no-skill", "never offer the agent-skill install")
   .option("--no-agent-docs", "do not add the standing instruction to CLAUDE.md/AGENTS.md")
@@ -211,12 +253,36 @@ program
 
 program
   .command("config [key] [value]")
-  .description("view or change machine-global settings (update-check or base-url)")
+  .description("view or change machine-global settings (update-check, base-url, or editor)")
   .action((key: string | undefined, value: string | undefined) => {
     if (key === undefined) {
       const enabled = updateCheckEnabled();
       console.log(`update-check ${enabled ? "on" : "off"}${enabled ? "" : " (KALAMU_NO_UPDATE_CHECK, CI, or config)"}`);
       console.log(baseUrlStatus());
+      console.log(editorStatus());
+      return;
+    }
+    if (key === "editor") {
+      if (value === undefined) {
+        console.log(editorStatus());
+        return;
+      }
+      const config = readConfig();
+      if (value === "none") {
+        delete config.editor;
+        writeConfig(config);
+        console.log(editorStatus());
+        return;
+      }
+      if (resolveEditorTemplate(value) === null) {
+        console.error(
+          `kalamu: editor must be a preset (${Object.keys(EDITOR_PRESETS).join(", ")}) or a URL template containing {path}`,
+        );
+        process.exitCode = 1;
+        return;
+      }
+      writeConfig({ ...config, editor: value.trim() });
+      console.log(editorStatus());
       return;
     }
     if (key === "base-url") {
@@ -242,7 +308,7 @@ program
       return;
     }
     if (key !== "update-check") {
-      console.error(`kalamu: unknown config key "${key}" (expected update-check or base-url)`);
+      console.error(`kalamu: unknown config key "${key}" (expected update-check, base-url, or editor)`);
       process.exitCode = 1;
       return;
     }

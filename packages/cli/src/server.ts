@@ -36,10 +36,12 @@ import {
 } from "@kalamu/core/store";
 import { Hono, type Context } from "hono";
 import { streamSSE } from "hono/streaming";
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, watch, writeFileSync, type FSWatcher } from "node:fs";
-import { basename, dirname, extname, join, normalize } from "node:path";
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, watch, writeFileSync, type FSWatcher } from "node:fs";
+import { basename, dirname, extname, join, normalize, sep } from "node:path";
 import { z } from "zod";
+import { editorTemplate } from "./config.js";
 import { hubAgentInstalled } from "./launch.js";
 import { cachedUpdate, refreshUpdate } from "./update-check.js";
 import { CURRENT_VERSION } from "./version.js";
@@ -52,6 +54,30 @@ const IMAGE_TYPES: Record<string, string> = {
   "image/svg+xml": ".svg",
 };
 const MAX_ASSET_BYTES = 20 * 1024 * 1024;
+/** Ceiling on the `@file` completion list — a huge repo degrades, never hangs. */
+const MAX_REPO_FILES = 20_000;
+
+/**
+ * Repo-relative paths for the `@file` completion menu. `git ls-files` is the
+ * source of truth: it already honours .gitignore, so node_modules and build
+ * output never reach the menu. A non-git directory falls back to nothing —
+ * the picker degrades to plain typing rather than walking an unbounded tree.
+ */
+function repoFiles(repoRoot: string): { files: string[]; truncated: boolean } {
+  let out: string;
+  try {
+    out = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+  } catch {
+    return { files: [], truncated: false };
+  }
+  const all = out.split("\0").filter((line) => line !== "");
+  return { files: all.slice(0, MAX_REPO_FILES), truncated: all.length > MAX_REPO_FILES };
+}
 
 const priorityValue = z.union([z.literal(1), z.literal(2), z.literal(3)]);
 const kindValue = z.enum(["bullet", "task", "discussion"]);
@@ -363,6 +389,23 @@ export function createServer(
     return c.json({ path: `.kalamu/assets/${filename}`, url: `/assets/${filename}` }, 201);
   });
 
+  // Doc references: repo-relative `.md` paths in node text (SPEC key decision
+  // 19) open here as plain text. Repo files only, `.md` only — this is a doc
+  // viewer, never a general file server.
+  app.get("/docs/*", (c) => {
+    let raw: string;
+    try {
+      raw = decodeURIComponent(c.req.path.slice("/docs/".length));
+    } catch {
+      return c.text("not found", 404);
+    }
+    const repoRoot = dirname(paths.dir);
+    const full = normalize(join(repoRoot, raw));
+    if (!full.startsWith(repoRoot + sep) || extname(full) !== ".md") return c.text("not found", 404);
+    if (!existsSync(full) || !statSync(full).isFile()) return c.text("not found", 404);
+    return c.body(readFileSync(full), 200, { "Content-Type": "text/plain; charset=utf-8" });
+  });
+
   app.get("/assets/:file", (c) => {
     const file = basename(c.req.param("file")); // basename defeats traversal
     const full = join(paths.dir, "assets", file);
@@ -370,6 +413,10 @@ export function createServer(
     const type = Object.entries(IMAGE_TYPES).find(([, e]) => e === extname(file))?.[0];
     return c.body(readFileSync(full), 200, { "Content-Type": type ?? "application/octet-stream" });
   });
+
+  // Completion source for `@file` references (SPEC key decision 19). Paths
+  // only — the outline never stores repo file contents.
+  app.get("/api/files", (c) => c.json(repoFiles(dirname(paths.dir))));
 
   // platform + hubInstalled drive the UI's hub-discovery hints: install advice
   // is only shown where `hub install` exists and hasn't already been run.
@@ -386,6 +433,9 @@ export function createServer(
       version: CURRENT_VERSION,
       latestVersion: update.latest,
       updateAvailable: update.updateAvailable,
+      // `@file` chips become editor deep links built from these two.
+      repoRoot: dirname(paths.dir),
+      editorTemplate: editorTemplate(),
     });
   });
 

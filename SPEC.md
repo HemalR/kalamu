@@ -53,6 +53,7 @@ These were deliberated and are settled. Do not relitigate them during implementa
 16. **Blockers point one way: `blockedBy`.** (Added 2026-08-08.) A task records what blocks it (`blockedBy: string[]` of node IDs). There is deliberately no reverse `blocks` array. Two directions must be kept in sync, and they drift: dex stores both (`blocker.blocks[]` ↔ `blocked.blockedBy[]`) and its own cycle check reads both "for robustness against data inconsistencies" — a bug class Kalamu declines to buy. One direction cannot disagree with itself. `blockedBy` is also the direction the hot path needs: `next` asks "is this task blocked?", answerable from the node alone, while "what does finishing this unblock?" is a cold UI query derived by scanning. It matches the existing `parentId` shape — the dependent points at its dependency, and there is no `children[]` array either. Blockers may cross the tree freely; a blocker cycle is a validation error exactly as a parent cycle is. (Amended 2026-08-10: discussions are blockable too. A discussion whose conversation cannot usefully happen until other work lands — the grilling/prototype ticket that waits on a research task — is a real dependency of exactly the same shape, and recording it in the data is the whole point of decision 16. `blockedBy` on a discussion carries full semantics: `next --discussion` skips it, cycles and dangling references are the same validation errors, and deletes strip it the same way. Bullets remain unblockable — they are structure, not work.) (Amended 2026-08-13: a node cannot be blocked by an ancestor. Nesting already says the child lives under that work, and a done ancestor task closes its umbrella — key decision 4 — so the child could never become eligible after the blocker finished. Cross-tree and sibling blockers stay legal; indenting under a recorded blocker drops that edge rather than refusing the move.)
 17. **In-progress is a timestamp, not a status.** (Added 2026-08-08.) `startedAt` marks a task an agent has claimed, for the same reason SPEC declines a `done` boolean (see [`doneAt`](#doneat)): timestamps carry when as well as whether, and never accumulate into a status enum. Without it, two agent sessions both call `kalamu next`, both receive the same task, and both do the work. `next` skips claimed tasks; `kalamu start <id> --force` re-claims one whose owner died. State in Kalamu is exactly three timestamps — `createdAt`, `startedAt`, `doneAt` — and never a workflow.
 18. **`handoff` is removed; promoting a task means deleting it.** (Added 2026-08-08.) A task that outgrows Kalamu is created in the external tracker and then deleted here. Recording *where it went* was a mandatory nullable field on every line of every outline, and in ten months of dogfooding not one node ever carried a non-null value — the forwarding address turned out to be a thing nobody looked up. The `handoff` field, the `Handoff` type, `kalamu handoff`/`unhandoff`, `next --include-handed-off`, `list --handoff`, and `POST /api/nodes/:id/handoff` are all gone. The consequence is deliberate: Kalamu keeps no record of promoted work, so an agent that creates a GitHub issue from a task **must** delete the task, or the next agent will do it again. Readers still accept a legacy `handoff` and fold a non-null one into the node's text as the same `→ target:ref` suffix the CLI used to render, so upgrading never silently discards a reference; a null one carried no information and is dropped.
+19. **Doc references are plain repo-relative `.md` paths in text.** (Added 2026-08-17.) Kalamu holds state and structure; prose (specs, decision logs, plans) lives in ordinary repo Markdown, and a node points at it by writing the path in its text — `Spec: plans/admin-console-refresh.md Phase 2`. The two never duplicate the same fact, so there is nothing to keep in sync: the doc doesn't record done-ness, the node doesn't carry the prose. Same rendering model as tags and images: a whole-word token ending in `.md` renders as a quiet chip in unfocused nodes (click opens the file, served read-only by the local server under `/docs/*` — repo files only, `.md` only), the focused node shows raw text, and agents see an ordinary greppable path. Recognition is UI-only — no new node field, no core parsing, no CLI command, and the path is not validated to exist (a chip to a missing file 404s on click; a doctor-style existence check is possible future work, as are `#heading` anchors and inline peek rendering). A node body/description field was considered and rejected: it would fork prose away from the canonical doc and recreate the sync problem inside the data model. (Amended 2026-08-19: the same idea extends to any repo file via an explicit `@path` token — `@src/lib/caret.ts` — inserted by the editor's `@` picker and rendered as a chip that opens the file in the human's configured editor. Bare `.md` paths keep chipping without the `@` because prose references them in passing; every other file needs the marker, since arbitrary path-shaped text is too easy to match by accident. Requiring a `/` or `.` in the token is what keeps `@human`/`@agent` — still assignment tokens, still stripped by core — and ordinary `@mentions` out. Which editor is a per-developer preference, so it lives in machine-global `~/.kalamu/config.json` (`kalamu config editor <preset|template>`), never in the repo. The completion list comes from `git ls-files`, so ignored files never appear; Kalamu stores paths only, never file contents.)
 
 ---
 
@@ -694,6 +695,17 @@ In the same spirit, `init` maintains the repo's `.gitignore`: when the
 directory carries a repo marker it appends the missing `.kalamu` view-state and
 cache entries (see ".gitignore entries" above); `--no-gitignore` skips it.
 
+Interactively (TTY, not JSON mode), `init` also asks which **editor** `@file`
+references should open in, listing the five most common (VS Code, Cursor, Zed,
+Windsurf, Sublime Text) with `s` to skip; Enter takes VS Code. The remaining
+presets and custom `{path}` templates stay reachable through `kalamu config
+editor <name>`. Because the setting is machine-global (`~/.kalamu/config.json`,
+not repo state), the question is asked **only when no editor is configured
+yet** — a second project on the same machine inherits the answer instead of
+re-asking. `--editor <name>` sets it outright and works non-interactively (the
+scriptable path, validated exactly like `kalamu config editor`); `--no-editor`
+never asks. Agents and scripts are never prompted.
+
 When run interactively (TTY), `init` then offers to install the **Kalamu agent
 skill** by delegating to `npx skills add <owner/repo>` — the skills.sh CLI asks
 which agents to install for and owns every agent's skills directory. `--skill`
@@ -963,6 +975,17 @@ falls back to `http://localhost:4400`, so existing projects require no migration
 Credentials, query parameters, and hashes are rejected because generated links
 append their own `/p/<slug>#z=<id>`. The base URL never lives in committed
 `.kalamu/meta.json`.
+
+The editor for `@path` file references lives in the same file, set with
+`kalamu config editor <preset|template>` and cleared with `kalamu config editor
+none`. Presets cover the common editors (`vscode`, `cursor`, `windsurf`, `zed`,
+`sublime`, `textmate`, `idea`, `webstorm`); anything else is a URL template
+containing `{path}`, which is filled with the file's absolute path. Templates
+must carry an ordinary scheme — `javascript:`/`data:` are rejected, since the
+value becomes an href in the web UI. Like the base URL, it is per-developer
+machine state and never lives in committed `.kalamu/meta.json`: two people
+sharing a repo rarely share an editor. Unset, `@path` chips still render and
+still say what they point at; clicking one explains how to configure it.
 
 ---
 
@@ -1399,6 +1422,7 @@ The UI should feel like Workflowy:
 * Easy indent/outdent
 * Easy move up/down
 * Fast creation of sibling and child nodes
+* Pasting a multi-line clipboard into an empty node splits it: each non-empty line becomes its own sibling, inheriting the target's kind (an empty task stays a list of tasks, an empty discussion a list of discussions). A non-empty node pastes as ordinary text, including newlines. Paste on the zoom root creates children rather than invisible siblings, matching Enter
 * Collapsible parents — collapsed state persists across sessions (via `ui-state.json`) but never touches the outline file; a collapsed node shows a visual hint that it has hidden children (e.g. ringed bullet, Workflowy-style)
 * Fast deletion (backspace on an empty node deletes it, Workflowy-style)
 * Undo/redo for all structural operations (in-session undo stack is sufficient for MVP)
@@ -1415,7 +1439,7 @@ The UI should feel like Workflowy:
 * Find (header magnifying glass, or Cmd/Ctrl+K then `f`) opens a text box that classifies the query rather than offering a mode switch: a whole-query node id (`n_…`, optionally wrapped in quotes/backticks/parens) or a kalamu link (`#z=<id>`, including inside a URL or markdown) jumps by zooming to that node — the same as opening the link — and pasting such a query jumps immediately; anything else is a live substring search over node text, and choosing a hit reveals it in place (unfolds ancestors, does not zoom). An id that matches the shape but is not in the tree says "No item with that id" rather than searching the letters. Collapsed / filtered-out nodes are reachable this way; they are not reachable via the browser's own find-in-page
 * Each rendered row includes its node id as visually hidden, `aria-hidden` text so the browser's find-in-page (Cmd/Ctrl+F) can land on a currently visible row when an id is pasted. The id is never shown and is excluded from the accessibility tree. Collapsed, filtered-out, and hide-done nodes are not in the DOM, so they are not found this way — use Find
 * Every node carries its creation time in a meta row beneath it, as a relative age that keeps aging in a window left open (one shared clock, not a timer per row), with the exact local timestamp on hover. It shares that row with the progress bar, the Blocked badge, and the assignment badge; the row is a fixed height whether or not any of them are showing, so nothing ever reflows
-* Zoom (Workflowy-style): any node can become the temporary root — only its subtree is displayed, with a sticky breadcrumb trail above the outline (project name › ancestors › current node) whose crumbs are clickable to change the zoom level. The zoom target lives in the URL hash (`#z=<id>`), so reload restores it and browser Back unwinds it; zoom is per-tab view state, never in `ui-state.json` or the outline file. Operations that would move a node outside the zoomed subtree (indent/outdent/move on the zoom root, outdenting its direct children) are inert; Enter on the zoom root creates a child rather than an invisible sibling; deleting the zoom root lands the zoom on its parent; Escape (when not editing, once no tag filter is active) zooms fully out
+* Zoom (Workflowy-style): any node can become the temporary root — only its subtree is displayed, with a sticky breadcrumb trail above the outline (project name › ancestors › current node) whose crumbs are clickable to change the zoom level. The zoom target lives in the URL hash (`#z=<id>`), so reload restores it and browser Back unwinds it; zoom is per-tab view state, never in `ui-state.json` or the outline file. Operations that would move a node outside the zoomed subtree (indent/outdent/move on the zoom root, outdenting its direct children) are inert; Enter on the zoom root creates a child rather than an invisible sibling, and a multi-line paste into an empty zoom root does the same with the extra lines; deleting the zoom root lands the zoom on its parent; Escape (when not editing, once no tag filter is active) zooms fully out
 * Overview mode shortens every row to a derived one-glance label so a long outline stays scannable — nothing is stored, and the full text comes back the moment you edit. Toggled from the header or ⌘K then `o`; persisted in `ui-state.json` as `overview` (a legacy `compact` key still reads as on)
 * Minimal visual clutter
 * Light/dark theme follows the system by default; an explicit switcher (navbar button, or the palette's "Activate dark/light mode") overrides it, persisted in the browser's localStorage — per-browser view state, never in the repo
@@ -1769,7 +1793,8 @@ Every tag gets a colour with zero configuration:
   /(?:^|\s)@(human|agent)(?=\s|$)/i
   ```
 
-* Typing a bare `@` in the editor opens a small assign dropdown at the caret — the same interaction shape as a slash-command menu. It offers **Human** (user icon) and **Agent** (robot icon); continuing to type filters the two, Enter/click assigns (removing the typed `@…` from the text), Esc or a non-matching word dismisses it and the text stays as typed.
+* Typing a bare `/` in the editor opens a small assign dropdown at the caret. It offers **Human** (user icon) and **Agent** (robot icon); continuing to type filters the two, Enter/click assigns (removing the typed `/…` from the text), Esc or a non-matching word dismisses it and the text stays as typed. (Amended 2026-08-19: this menu was on `@` until `@` became the file-reference trigger, matching the convention every coding-agent harness uses. `@human`/`@agent` typed in full still assign — the extraction regex above is unchanged — so existing outlines and CLI usage are unaffected.)
+* Typing `@` opens the repo-file picker at the caret, filtered as you type over `git ls-files` output (`/api/files`). Enter/click inserts an `@path` token — a pure text edit like the `#tag` completion, not metadata — which chips on blur and opens in the configured editor (key decision 19).
 * Typing `#` in the editor likewise opens a tag combobox at the caret listing the outline's existing tags (each with its chip colour), filtered as you type. Enter/click completes the `#token` in the text — a pure text edit; the token stays, becoming a chip on blur (key decision 7). Esc dismisses it, and typing a tag that matches nothing simply continues as typed — new tags need no ceremony, they exist by being mentioned. No existing tags, no combobox.
 
 * Clicking a chip (in an unfocused node) opens a small popover showing the ~12 palette swatches plus a "default" option. Picking a swatch writes the override to `meta.json` via the server; "default" clears it, reverting to the hash-derived colour. Clicking non-chip text focuses the node with the caret mapped to the equivalent source position.
@@ -1777,8 +1802,8 @@ Every tag gets a colour with zero configuration:
 
 ### Assignment in the UI
 
-* Assigned tasks show a badge on the meta row so they scan differently from unassigned tasks. `"human"` gets a blue pill — user icon plus the word **Human** — sized and shaped like the Blocked badge, because it must be findable at a glance down a long outline. `"agent"` stays a subtle icon-only marker: it is the default audience, and the default should not compete. Both icons match the @ dropdown's.
-* Assignment is set from the @ dropdown, `@human`/`@agent` tokens, or the palette's Assign submenu (no dedicated shortcut — Cmd+M is OS-reserved). The palette also offers Assign on a bullet; choosing Human or Agent promotes it to a task and assigns it in the same operation. Discussions never offer Assign.
+* Assigned tasks show a badge on the meta row so they scan differently from unassigned tasks. `"human"` gets a blue pill — user icon plus the word **Human** — sized and shaped like the Blocked badge, because it must be findable at a glance down a long outline. `"agent"` stays a subtle icon-only marker: it is the default audience, and the default should not compete. Both icons match the assign dropdown's.
+* Assignment is set from the `/` dropdown, `@human`/`@agent` tokens, or the palette's Assign submenu (no dedicated shortcut — Cmd+M is OS-reserved). The palette also offers Assign on a bullet; choosing Human or Agent promotes it to a task and assigns it in the same operation. Discussions never offer Assign.
 
 ---
 
@@ -1873,6 +1898,8 @@ GET    /api/next
 GET    /api/validate
 POST   /api/assets        (raw image body; writes content-hashed file to .kalamu/assets/; returns {path, url})
 GET    /assets/:file      (serves .kalamu/assets/ files)
+GET    /docs/*            (serves repo-relative .md files as plain text — doc references, key decision 19; anything else is 404)
+GET    /api/files         (repo-relative paths from `git ls-files` for the @ file picker; {files, truncated})
 GET    /api/meta          (meta.json: version + tag colour overrides)
 PUT    /api/tags/:tag     (set or clear a colour override; body: {"color": "#hex" | null})
 GET    /api/ui-state

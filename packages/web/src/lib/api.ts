@@ -49,6 +49,11 @@ export interface ProjectInfo {
   version: string;
   latestVersion: string | null;
   updateAvailable: boolean;
+  /** Absolute path to the repo root — the prefix for `@path` file references. */
+  repoRoot: string;
+  /** Editor deep-link template with a `{path}` placeholder (e.g.
+      "vscode://file/{path}"); null until `kalamu config editor <name>` runs. */
+  editorTemplate: string | null;
 }
 
 export class ApiError extends Error {
@@ -119,6 +124,8 @@ export interface Backend {
   /** Remove one blocker, or every blocker when `blockerId` is omitted. */
   removeBlocker(id: string, blockerId?: string): Promise<KalamuNode>;
   getProject(): Promise<ProjectInfo>;
+  /** Repo-relative tracked paths for the `@` file picker; `truncated` when capped. */
+  getFiles(): Promise<{ files: string[]; truncated: boolean }>;
   getMeta(): Promise<KalamuMeta>;
   setTagColor(tag: string, color: string | null): Promise<KalamuMeta>;
   getUiState(): Promise<UiState>;
@@ -198,6 +205,7 @@ const httpBackend: Backend = {
       { method: "DELETE" },
     ),
   getProject: () => request<ProjectInfo>("/api/project"),
+  getFiles: () => request<{ files: string[]; truncated: boolean }>("/api/files"),
   getMeta: () => request<KalamuMeta>("/api/meta"),
   setTagColor: (tag: string, color: string | null) =>
     request<KalamuMeta>(`/api/tags/${encodeURIComponent(tag)}`, json("PUT", { color })),

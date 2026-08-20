@@ -1,5 +1,6 @@
 import { initKalamu, readUiState, type KalamuPaths } from "@kalamu/core/store";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -223,6 +224,52 @@ describe("assets API", () => {
     expect((await upload(Buffer.alloc(0), "image/png")).status).toBe(400);
     expect((await server.app.request("/assets/..%2Fmeta.json")).status).toBe(404);
     expect((await server.app.request("/assets/nope.png")).status).toBe(404);
+  });
+});
+
+describe("docs route", () => {
+  it("serves a repo-relative .md file as plain text", async () => {
+    mkdirSync(join(root, "plans"), { recursive: true });
+    writeFileSync(join(root, "plans", "refresh.md"), "# Plan\n");
+    const res = await server.app.request("/docs/plans/refresh.md");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+    expect(await res.text()).toBe("# Plan\n");
+  });
+
+  it("rejects non-md files, missing files, and traversal reads", async () => {
+    writeFileSync(join(root, "secret.txt"), "nope");
+    writeFileSync(join(tmpdir(), "kalamu-docs-outside.md"), "outside");
+    expect((await server.app.request("/docs/secret.txt")).status).toBe(404);
+    expect((await server.app.request("/docs/missing.md")).status).toBe(404);
+    // URL parsing collapses a literal ../, so the encoded form is the one that
+    // reaches the handler — it must hit the repo-root guard, not the file.
+    expect((await server.app.request("/docs/..%2Fkalamu-docs-outside.md")).status).toBe(404);
+  });
+});
+
+describe("files API", () => {
+  it("lists git-tracked and untracked-but-not-ignored paths, never ignored ones", async () => {
+    execFileSync("git", ["init", "-q"], { cwd: root });
+    writeFileSync(join(root, ".gitignore"), "ignored.txt\n");
+    writeFileSync(join(root, "tracked.ts"), "export {};");
+    writeFileSync(join(root, "untracked.ts"), "export {};");
+    writeFileSync(join(root, "ignored.txt"), "nope");
+    execFileSync("git", ["add", "tracked.ts"], { cwd: root });
+
+    const { files, truncated } = (await (await server.app.request("/api/files")).json()) as {
+      files: string[];
+      truncated: boolean;
+    };
+    expect(files).toContain("tracked.ts");
+    expect(files).toContain("untracked.ts");
+    expect(files).not.toContain("ignored.txt");
+    expect(truncated).toBe(false);
+  });
+
+  it("degrades to an empty list outside a git repo", async () => {
+    const { files } = (await (await server.app.request("/api/files")).json()) as { files: string[] };
+    expect(files).toEqual([]);
   });
 });
 

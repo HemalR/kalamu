@@ -6,6 +6,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { resolveEditorTemplate } from "./editor.js";
 import { DEFAULT_HUB_BASE_URL } from "./hub-url.js";
 
 /** ~/.kalamu — machine-global state dir. KALAMU_HOME overrides it for tests. */
@@ -20,6 +21,8 @@ export interface Config {
   updateNoticeSeen?: boolean;
   /** Machine-local base address used for shareable hub node links. */
   baseUrl?: string;
+  /** Editor preset name or `{path}` URL template for `@file` references. */
+  editor?: string;
 }
 
 function configFile(): string {
@@ -64,6 +67,16 @@ export function normalizeBaseUrl(value: string): string | null {
 export function hubBaseUrl(): string {
   const configured = readConfig().baseUrl;
   return typeof configured === "string" ? (normalizeBaseUrl(configured) ?? DEFAULT_HUB_BASE_URL) : DEFAULT_HUB_BASE_URL;
+}
+
+/**
+ * The configured editor deep-link template, or null when unset (or set to a
+ * value that no longer resolves). The web UI turns `@path` chips into links
+ * with it; without one, a chip click explains how to configure it.
+ */
+export function editorTemplate(): string | null {
+  const configured = readConfig().editor;
+  return typeof configured === "string" ? resolveEditorTemplate(configured) : null;
 }
 
 /**

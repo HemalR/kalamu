@@ -2,8 +2,8 @@
   import type { Snippet } from "svelte";
 
   /**
-   * Caret-anchored completion list shared by OutlineNode's `@` and `#`
-   * dropdowns. Purely presentational: the editor keeps focus and drives the
+   * Caret-anchored completion list shared by OutlineNode's `@` (repo files),
+   * `/` (assignees) and `#` (tags) dropdowns. Purely presentational: the editor keeps focus and drives the
    * filter/highlight (see OutlineNode's combo state machine); this renders
    * the current matches and reports clicks.
    */

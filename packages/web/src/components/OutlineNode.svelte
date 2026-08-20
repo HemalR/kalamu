@@ -15,10 +15,12 @@
   } from "../lib/caret";
   import { api } from "../lib/api";
   import { tokenBeforeCaret } from "../lib/commit";
+  import { splitPasteLines } from "../lib/paste";
   import { clearTagHighlights, updateTagHighlights } from "../lib/highlight";
   import { now } from "../lib/now.svelte";
   import type { FocusTarget, OutlineStore } from "../lib/outline.svelte";
-  import { assetUrl, segmentText } from "../lib/segments";
+  import { fileRefs } from "../lib/file-refs.svelte";
+  import { assetUrl, docUrl, segmentText } from "../lib/segments";
   import { matches, SHORTCUTS as S } from "../lib/shortcuts";
   import { summarize } from "../lib/summary";
   import { blockedTitle, isStarted, openBlockers } from "../lib/task-state";
@@ -217,12 +219,12 @@
     clearTagHighlights();
   }
 
-  // ---- caret combobox: @ assignees (tasks only) and # tag completion ---------
+  // ---- caret combobox: @ repo files, / assignees (tasks only), # tags --------
   // Opens when the trigger is typed at a word boundary; the letters typed
   // after it form a prefix filter. It never edits the text itself — the
   // characters insert natively, and only an explicit pick touches the draft.
 
-  type ComboKind = "assign" | "tag";
+  type ComboKind = "assign" | "tag" | "file";
 
   let combo = $state<ComboKind | null>(null);
   let comboFilter = $state("");
@@ -232,8 +234,14 @@
   /** Draft offset of the typed trigger — where a pick edits from. */
   let comboStart = 0;
 
+  /** Chip and menu labels show the file name; the full path lives in the title. */
+  function basename(path: string): string {
+    return path.slice(path.lastIndexOf("/") + 1);
+  }
+
   function comboOptions(kind: ComboKind, filter: string): string[] {
     if (kind === "assign") return matchAssignees(filter);
+    if (kind === "file") return fileRefs.match(filter);
     const query = filter.toLowerCase();
     return store.allTags.filter((tag) => tag.toLowerCase().startsWith(query));
   }
@@ -250,7 +258,10 @@
   /** Open on the trigger keydown when it lands at a word boundary. */
   function maybeOpenCombo(kind: ComboKind): void {
     if (kind === "assign" && node.kind !== "task") return; // bullets have tags, not assignees
-    if (comboOptions(kind, "").length === 0) return; // no existing tags: plain typing
+    // The file list loads lazily, so an empty one is "not fetched yet", not
+    // "nothing to offer": open anyway and let the menu fill in when it lands.
+    if (kind === "file") fileRefs.load();
+    else if (comboOptions(kind, "").length === 0) return; // no existing tags: plain typing
     if (!el || window.getSelection()?.isCollapsed !== true) return;
     const offset = caretOffset(el);
     if (offset !== 0 && !/\s/.test(draft.charAt(offset - 1))) return;
@@ -311,7 +322,12 @@
       return false; // the deletion happens natively either way
     }
     if (event.key.length === 1 && !mod && !event.altKey) {
-      if (event.key !== " " && comboOptions(combo, comboFilter + event.key).length > 0) {
+      // File paths are full of `.` `/` `-` `_`, so every printable key narrows
+      // here rather than reaching the trigger handler. An empty file list means
+      // the fetch is still in flight, not that nothing matches — keep narrowing.
+      const stillMatches =
+        comboOptions(combo, comboFilter + event.key).length > 0 || (combo === "file" && fileRefs.files.length === 0);
+      if (event.key !== " " && stillMatches) {
         comboFilter += event.key;
         comboIndex = 0;
         return false; // the character types natively and narrows the filter
@@ -325,9 +341,11 @@
   }
 
   /**
-   * Pick: @ removes the typed `@…` fragment and patches the assignee
-   * (metadata); # completes the fragment to the full `#tag` — a pure text
-   * edit, the token stays in the text and chips on blur (SPEC key decision 7).
+   * Pick: `/` removes the typed fragment and patches the assignee (metadata).
+   * `#` and `@` are pure text edits instead — the fragment completes to the
+   * full `#tag` / `@path` token, which stays in the text and chips on blur
+   * (SPEC key decision 7). A picked path gets one trailing space so the next
+   * word starts clean.
    */
   function pickCombo(choice: string): void {
     if (!el || combo === null) return;
@@ -335,7 +353,7 @@
     const offset = caretOffset(el);
     const start = comboStart;
     closeCombo();
-    const replacement = kind === "tag" ? `#${choice}` : "";
+    const replacement = kind === "tag" ? `#${choice}` : kind === "file" ? `@${choice} ` : "";
     draft = draft.slice(0, start) + replacement + draft.slice(offset);
     if (kind === "assign" && isAssignee(choice)) store.setAssignee(node.id, choice);
     const element = el;
@@ -501,22 +519,36 @@
     refreshHighlights(); // token positions shifted
   }
 
-  /** Pasted images upload to .kalamu/assets/ and insert their markdown token. */
+  /** Images upload to .kalamu/assets/; a multi-line paste into an empty node splits into siblings. */
   function onPaste(event: ClipboardEvent): void {
     closeCombo(); // pasted text would desync the filter
     const items = event.clipboardData?.items;
-    if (!items) return;
-    const files: File[] = [];
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      if (item && item.kind === "file" && item.type.startsWith("image/")) {
-        const file = item.getAsFile();
-        if (file) files.push(file);
+    if (items) {
+      const files: File[] = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item && item.kind === "file" && item.type.startsWith("image/")) {
+          const file = item.getAsFile();
+          if (file) files.push(file);
+        }
+      }
+      if (files.length > 0) {
+        event.preventDefault();
+        void pasteImages(files);
+        return;
       }
     }
-    if (files.length === 0) return; // ordinary paste proceeds natively
+    // Empty node + two or more lines: each line is a sibling of this kind.
+    // A non-empty node (or a single line) pastes as ordinary text.
+    if (draft !== "" || !store.connected) return;
+    const lines = splitPasteLines(event.clipboardData?.getData("text/plain") ?? "");
+    const first = lines?.[0];
+    if (lines === null || first === undefined) return;
     event.preventDefault();
-    void pasteImages(files);
+    // Set draft FIRST: focusing the last new node blurs this editable, and
+    // the blur-commit must be a no-op, not a wipe of the first line.
+    draft = first;
+    store.pasteLines(node.id, lines);
   }
 
   async function pasteImages(files: File[]): Promise<void> {
@@ -556,12 +588,12 @@
     if (event.key !== "ArrowUp" && event.key !== "ArrowDown") store.goalColumn = null;
 
     if (combo !== null && handleComboKey(event)) return;
-    // `@` (tasks only) / `#` at a word boundary opens a completion dropdown;
-    // the character itself still types — only a pick edits the text. Meta
-    // stays excluded, but Ctrl/Alt are allowed for AltGr/Option layouts where
-    // they are part of typing the symbol.
-    if (combo === null && !event.metaKey && (event.key === "@" || event.key === "#")) {
-      maybeOpenCombo(event.key === "@" ? "assign" : "tag");
+    // `@` (repo files), `/` (assignees, tasks only) and `#` (tags) at a word
+    // boundary open a completion dropdown; the character itself still types —
+    // only a pick edits the text. Meta stays excluded, but Ctrl/Alt are allowed
+    // for AltGr/Option layouts where they are part of typing the symbol.
+    if (combo === null && !event.metaKey && (event.key === "@" || event.key === "#" || event.key === "/")) {
+      maybeOpenCombo(event.key === "@" ? "file" : event.key === "#" ? "tag" : "assign");
       return;
     }
 
@@ -738,6 +770,15 @@
   }
 </script>
 
+<!-- File chip contents, shared by its link and its no-editor button form. Angle
+     brackets read as source code — deliberately distinct from the doc chip's page glyph. -->
+{#snippet fileChipBody(path: string)}
+  <svg viewBox="0 0 16 16" width="12" height="12" fill="none" aria-hidden="true">
+    <path d="M6 3.5 2.5 8 6 12.5M10 3.5 13.5 8 10 12.5" stroke="currentColor" stroke-linecap="round" />
+  </svg>
+  {basename(path)}
+{/snippet}
+
 <svelte:window
   onpointerdown={menuOpen ? closeMenusIfOutside : undefined}
   onpointerup={pointerSession ? onDisplayPointerEnd : undefined}
@@ -894,13 +935,15 @@
           }}
           {@attach registerEditable}
         ></div>
-        {#if combo !== null && comboPos !== null}
+        <!-- comboMatches gate: a file combo opens before its list has loaded,
+             and an empty menu would just be a floating empty box -->
+        {#if combo !== null && comboPos !== null && comboMatches.length > 0}
           <!-- 0×0 anchor at the caret; the menu hangs below it (relative to .row) -->
           <span class="combo-anchor" style="left: {comboPos.left}px; top: {comboPos.top}px">
             <ComboMenu
               options={comboMatches}
               highlighted={comboIndex}
-              label={combo === "assign" ? "Assign" : "Tags"}
+              label={combo === "assign" ? "Assign" : combo === "file" ? "Files" : "Tags"}
               onpick={pickCombo}
             >
               {#snippet item(option)}
@@ -908,6 +951,9 @@
                   <span class="combo-icon" aria-hidden="true">{@render assigneeIcon(option)}</span>
                   <span class="combo-label">{ASSIGNEE_LABELS[option]}</span>
                   {#if node.assignee === option}<span class="combo-tick" aria-hidden="true">✓</span>{/if}
+                {:else if combo === "file"}
+                  <span class="combo-label">{basename(option)}</span>
+                  <span class="combo-path">{option}</span>
                 {:else}
                   <span class="combo-chip" style:--tag-color={tagColor(option, store.meta.tags)}>#{option}</span>
                 {/if}
@@ -949,6 +995,41 @@
                 data-start={seg.start}
                 data-length={seg.length}>{seg.href}</a
               >
+            {:else if seg.kind === "doc"}
+              <!-- data-chip: the anchor handles its own click (opens the doc), like the image thumb -->
+              <span class="chip-slot" data-chip data-start={seg.start} data-length={seg.length}>
+                <a class="doc" href={docUrl(seg.path)} target="_blank" rel="noreferrer" title={seg.path}>
+                  <svg viewBox="0 0 16 16" width="12" height="12" fill="none" aria-hidden="true">
+                    <path
+                      d="M4 1.5h5.5L13 5v9a.5.5 0 0 1-.5.5h-8.5a.5.5 0 0 1-.5-.5v-12a.5.5 0 0 1 .5-.5Z"
+                      stroke="currentColor"
+                    />
+                    <path d="M9.5 1.5V5H13" stroke="currentColor" />
+                  </svg>
+                  {basename(seg.path)}
+                </a>
+              </span>
+            {:else if seg.kind === "file"}
+              {@const href = fileRefs.editorUrl(seg.path)}
+              <!-- data-chip: the chip handles its own click (hands the file to the
+                   configured editor, or explains how to configure one) -->
+              <span class="chip-slot" data-chip data-start={seg.start} data-length={seg.length}>
+                {#if href === null}
+                  <button
+                    type="button"
+                    class="doc file"
+                    title={seg.path}
+                    onclick={() => store.showToast("Set an editor to open files: kalamu config editor vscode")}
+                  >
+                    {@render fileChipBody(seg.path)}
+                  </button>
+                {:else}
+                  <!-- No target=_blank: a custom scheme is an OS handoff, not a page -->
+                  <a class="doc file" {href} title={seg.path}>
+                    {@render fileChipBody(seg.path)}
+                  </a>
+                {/if}
+              </span>
             {:else if seg.kind === "image"}
               <!-- data-chip: handles its own clicks (opens the asset), like tag chips -->
               <span class="chip-slot" data-chip data-start={seg.start} data-length={seg.length}>
@@ -1358,6 +1439,42 @@
   }
   .link:hover {
     text-decoration-color: currentcolor;
+  }
+
+  /* Quiet reference chip for repo docs: muted until hovered, deliberately
+     less loud than a tag chip. */
+  .doc {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 1px 6px;
+    border-radius: 5px;
+    font-size: 12px;
+    white-space: nowrap;
+    color: var(--muted);
+    background: var(--guide);
+    text-decoration: none;
+  }
+  .doc:hover {
+    color: var(--fg);
+  }
+  .doc svg {
+    flex: none;
+  }
+  /* Same chip, rendered as a <button> when no editor is configured. */
+  button.doc {
+    border: 0;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  .combo-path {
+    margin-left: 6px;
+    color: var(--muted);
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .thumb {

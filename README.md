@@ -44,10 +44,12 @@ kalamu add --kind task --text "Fix login redirect" --p 1
 In the UI, everything is a keystroke away:
 
 - **Enter / Tab / Shift+Tab** — new item, indent, outdent
-- **⌘K** — command palette: a leader-key menu with every action on a printed key — done, priority, assign, labels, kind, start/block, copy, fold, zoom, undo
+- **⌘K** — command palette: a leader-key menu with every action on a printed key — done, priority, assign, labels, kind, start/block, copy, fold, zoom, find, undo
 - **⌘Enter** — done/reopen · **⌥Enter** — cycle bullet/task/discussion · **⌘.** — collapse · **⌘⇧C** — copy only the item's text
+- **Find** (the search icon, or ⌘K then f) — full-text search, or jump straight to a node id
 - **?** — the full cheat sheet
-- Inline tokens as you type: `p1`…`p3` set priority, `#tag` becomes a coloured chip, `@human` keeps a task for yourself, `@agent` marks it as agent work
+- Inline tokens as you type: `p1`…`p3` set priority, `#tag` becomes a coloured chip, `@human` keeps a task for yourself, `@agent` marks it as agent work, and a repo-relative `.md` path becomes a doc reference chip that opens the file read-only
+- File references: `@` opens a repo-file picker (`/` opens the assign menu), and the inserted `@path` chip opens that file in your editor — `kalamu init` asks which one, or set it any time with `kalamu config editor zed` (`vscode`, `cursor`, `windsurf`, `sublime`, `textmate`, `idea`, `webstorm`, or any `{path}` URL template)
 - Mouse shortcuts: **⌘-click** a row to collapse it, **⌥-click** to zoom into it — the whole row is the target, not just the chevron
 
 Two view controls sit in the header. **Overview mode** shortens every row to a derived one-line label so a long outline stays scannable — nothing is stored, and the full text comes back the moment you edit. The **filter menu** hides items by who wrote them (you or an agent) and who they're assigned to, and holds the show/hide-completed toggle (⌘⇧H). Any item with work beneath it carries a segmented progress bar showing what's done, what's in progress, and what's left, and every row shows how long ago it was created — hover for the exact timestamp.
@@ -106,7 +108,7 @@ kalamu block <id> --by <id2>   # <id> waits on <id2>; next skips it until <id2> 
 kalamu unblock <id>            # clear one blocker, or all of them
 ```
 
-Blockers cross the tree freely — dependency order and outline order are different things — and a blocker cycle is a validation error, exactly like a parent cycle. Discussions can be blocked as well as tasks, so a conversation that can't usefully happen until other work lands stays out of `kalamu next --discussion` until it can. In the UI, a claimed task shows a pulsing amber dot in its checkbox, and ⌘K offers **Start**, **Block on…**, and **Unblock**. A blocked row carries a **Blocked** badge: click it to jump to what the row is waiting on — the target is revealed wherever it's hiding, whether it's folded away, filtered out, or outside the zoom you're in.
+Blockers cross the tree freely — dependency order and outline order are different things — and a blocker cycle is a validation error, exactly like a parent cycle. The one exception is an ancestor: a node can't be blocked by its own parent or above, since nesting already says the child lives under that work. Discussions can be blocked as well as tasks, so a conversation that can't usefully happen until other work lands stays out of `kalamu next --discussion` until it can. In the UI, a claimed task shows a pulsing amber dot in its checkbox, and ⌘K offers **Start**, **Block on…**, and **Unblock**. A blocked row carries a **Blocked** badge: click it to jump to what the row is waiting on — the target is revealed wherever it's hiding, whether it's folded away, filtered out, or outside the zoom you're in.
 
 Kalamu also records *who wrote* each node, without anyone having to remember a flag: anything created from the web UI is yours, anything an agent creates from a non-interactive shell is marked `createdBy: "agent"`. That's what makes it safe for an agent to keep its own forward work in your outline — filter agent-created items out while you're thinking.
 

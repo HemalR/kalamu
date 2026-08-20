@@ -202,7 +202,7 @@ export function createHubServer(assetsDir: string | null, options: HubOptions = 
   app.all("/p/:slug/*", async (c, next) => {
     const slug = c.req.param("slug");
     const rest = c.req.path.slice(`/p/${slug}`.length);
-    if (!rest.startsWith("/api/") && !rest.startsWith("/assets/")) return next();
+    if (!rest.startsWith("/api/") && !rest.startsWith("/assets/") && !rest.startsWith("/docs/")) return next();
     const instance = getInstance(slug);
     if (!instance) return c.json({ error: `no registered project "${slug}"` }, 404);
     if (rest === "/api/events") {

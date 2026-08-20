@@ -425,8 +425,11 @@ export class OutlineViewState extends OutlineDocument {
   }
 
   /** Fresh nodes must not vanish mid-typing under an active filter. */
-  protected revealNewNode(id: string, caret: CaretPosition = "start"): void {
-    if (this.tagMatches !== null || this.attributeMatches !== null) this.filterExtras.add(id);
+  protected revealNewNode(id: string, caret: CaretPosition = "start", hold: readonly string[] = []): void {
+    if (this.tagMatches !== null || this.attributeMatches !== null) {
+      this.filterExtras.add(id);
+      for (const extra of hold) this.filterExtras.add(extra);
+    }
     void this.focus(id, caret);
   }
 

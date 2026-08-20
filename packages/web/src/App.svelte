@@ -14,6 +14,7 @@
   import Wordmark from "./components/Wordmark.svelte";
   import { api, apiBase, type ProjectInfo } from "./lib/api";
   import { BRAND_BRONZE, setFavicon } from "./lib/favicon";
+  import { fileRefs } from "./lib/file-refs.svelte";
   import { OutlineStore } from "./lib/outline.svelte";
   import { matches, SHORTCUTS as S } from "./lib/shortcuts";
   import { theme } from "./lib/theme.svelte";
@@ -47,6 +48,7 @@
     .getProject()
     .then((info) => {
       project = info;
+      fileRefs.configure(info); // file chips need repoRoot/editorTemplate on first render
       document.title = `Kalamu | ${info.name}`;
     })
     .catch(() => {});
@@ -78,6 +80,14 @@
     if (matches(event, S.palette)) {
       event.preventDefault();
       overlay = "palette";
+      return;
+    }
+    // Mod+F opens Find from anywhere; pressing it again while Find is open falls
+    // through to the browser's native find (Find stops propagation and nothing
+    // calls preventDefault on it).
+    if (matches(event, S.find)) {
+      event.preventDefault();
+      overlay = "find";
       return;
     }
     // Mod+Shift+H toggles done visibility from anywhere, including while editing.

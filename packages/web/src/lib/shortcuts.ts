@@ -62,6 +62,7 @@ export const SHORTCUTS = {
   undo: { combo: { key: "z", mod: true }, keys: "Mod+Z", does: "Undo" },
   redo: { combo: { key: "z", mod: true, shift: true }, keys: "Mod+Shift+Z", does: "Redo" },
   palette: { combo: { key: "k", mod: true }, keys: "Mod+K", does: "Open the command palette (priority, labels, assign, done, view sheets)" },
+  find: { combo: { key: "f", mod: true }, keys: "Mod+F", does: "Open Find — press it again while Find is open for the browser's own find" },
   help: { combo: { key: "/", mod: true }, keys: "Mod+/", does: "Show this cheat sheet" },
   helpQuestion: { keys: "?", does: "Show this cheat sheet (when not editing)" },
   escape: { keys: "Esc", does: "Close this cheat sheet; clear the active tag filter, else zoom all the way out (when not editing)" },
@@ -70,7 +71,8 @@ export const SHORTCUTS = {
 export const TOKEN_HINTS: readonly { token: string; does: string }[] = [
   { token: "p1 … p3", does: "Priority in text — p1 high, p3 low; p2 is the default and shows no badge" },
   { token: "#tag", does: "Stays in the text and renders as a coloured chip in place; typing # suggests existing tags; click a chip to recolour, edit it like any other word" },
-  { token: "@", does: "Opens the assign menu — pick human or agent for the task" },
+  { token: "/", does: "Opens the assign menu — pick human or agent for the task" },
+  { token: "@path", does: "Opens the repo file picker — the picked path stays in the text as a chip that opens the file in your editor (set one with `kalamu config editor vscode`)" },
   { token: "@human / @agent", does: "Assigns the task directly — human-assigned tasks are skipped by agents and `kalamu next`" },
   { token: "![](…)", does: "Paste an image — stored in .kalamu/assets/ and shown as a thumbnail in place" },
   { token: "https://…", does: "Renders as a clickable link (opens in a new tab); edit it as plain text while the item is focused" },

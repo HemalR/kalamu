@@ -134,7 +134,12 @@ export function createMemoryBackend(seed: KalamuNode[]): Backend {
       version: "demo",
       latestVersion: null,
       updateAvailable: false,
+      repoRoot: "/demo",
+      editorTemplate: null,
     }),
+
+    // The demo has no repo behind it, so the `@` file picker stays empty.
+    getFiles: async () => ({ files: [], truncated: false }),
 
     getMeta: async () => ({ ...meta }),
 

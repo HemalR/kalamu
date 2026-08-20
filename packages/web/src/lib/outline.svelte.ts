@@ -36,6 +36,7 @@ import { api, type PatchNodeBody, type Priority } from "./api";
 import { commitPatch, tokenPatch, type CommitPatch } from "./commit";
 import { rawNodeText, serializeNodeContext, writeClipboard } from "./copy";
 import { nextNumberPrefix } from "./numbering";
+import { applyPasteLines } from "./paste";
 import { OutlineViewState } from "./view-state.svelte";
 
 export type { FocusTarget, NodeHandle } from "./view-state.svelte";
@@ -157,6 +158,41 @@ export class OutlineStore extends OutlineViewState {
       () => api.replaceNodes(this.serverize(next)),
     );
     if (applied) this.revealNewNode(localId);
+  }
+
+  /**
+   * Multi-line paste into an empty node: first line fills `id`, the rest
+   * become siblings of the same kind (children, if `id` is the zoom root).
+   * One mutate call, so one undo step. Caller has already set the editor
+   * draft to the first line so the blur-commit that follows focus-move is a
+   * no-op, matching splitNode.
+   */
+  pasteLines(id: string, lines: readonly string[]): void {
+    const node = this.tree.byId.get(id);
+    if (!node || lines.length < 2) return;
+    const asZoomRoot = this.zoomNode?.id === id;
+    const firstChildId = (this.tree.children.get(id) ?? [])[0]?.id;
+    const extra = asZoomRoot
+      ? { parentId: id, ...(firstChildId === undefined ? {} : { beforeId: firstChildId }) }
+      : { parentId: node.parentId, afterId: id };
+    let next: KalamuNode[] = [];
+    let lastId = id;
+    let createdIds: string[] = [];
+    const applied = this.mutate(
+      (nodes) => {
+        const result = applyPasteLines(nodes, id, lines, extra);
+        next = result.nodes;
+        lastId = result.lastId;
+        createdIds = result.createdIds;
+        return next;
+      },
+      // Whole-outline replace (like splitNode): the server keeps client ids,
+      // so the new nodes need no adoption.
+      () => api.replaceNodes(this.serverize(next)),
+    );
+    if (!applied) return;
+    if (asZoomRoot) this.unfold(id);
+    this.revealNewNode(lastId, "end", [id, ...createdIds]);
   }
 
   /** splitNode's zoom-root variant. One mutate call, so one undo step. */

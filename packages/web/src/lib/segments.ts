@@ -1,10 +1,13 @@
 /**
- * Split node text into plain-text, #tag, pasted-image, and link segments for
- * inline rendering (SPEC key decisions 7 and 11). The tag regex mirrors
- * core's tokens.ts: whole words only, never inside longer words like
- * `issue#42`. Image tokens are markdown pointing into `.kalamu/assets/`.
+ * Split node text into plain-text, #tag, pasted-image, link, and doc-path
+ * segments for inline rendering (SPEC key decisions 7, 11, and 19). The tag
+ * regex mirrors core's tokens.ts: whole words only, never inside longer words
+ * like `issue#42`. Image tokens are markdown pointing into `.kalamu/assets/`.
  * Links are explicit http(s):// URLs only — no bare domains, false-positive
- * safety in a note-taking tool beats coverage.
+ * safety in a note-taking tool beats coverage. Doc tokens are repo-relative
+ * `.md` paths (`plans/refresh.md`), served by the local server under /docs/;
+ * file tokens are `@`-prefixed repo paths (`@src/lib/caret.ts`) that open in
+ * the configured editor.
  */
 import { apiBase } from "./api";
 
@@ -45,11 +48,37 @@ export interface LinkSegment {
   length: number;
 }
 
-export type Segment = TextSegment | TagSegment | ImageSegment | LinkSegment;
+export interface DocSegment {
+  kind: "doc";
+  /** Repo-relative path as typed, e.g. `plans/admin-console-refresh.md`. */
+  path: string;
+  start: number;
+  /** Length of the raw path in the source text. */
+  length: number;
+}
+
+export interface FileSegment {
+  kind: "file";
+  /** Repo-relative path without the `@`, e.g. `src/lib/caret.ts`. */
+  path: string;
+  start: number;
+  /** Length of the raw `@path` token in the source text. */
+  length: number;
+}
+
+export type Segment = TextSegment | TagSegment | ImageSegment | LinkSegment | DocSegment | FileSegment;
 
 const TAG_TOKEN = /(?:^|\s)#([a-zA-Z0-9][a-zA-Z0-9-]*)(?=\s|$)/g;
 const IMAGE_TOKEN = /!\[([^\]]*)\]\((\.kalamu\/assets\/[^)\s]+)\)/g;
 const LINK_TOKEN = /https?:\/\/\S+/g;
+// A whole-word repo-relative path ending in `.md`. A trailing `.` counts as
+// sentence punctuation only when followed by space/end, so `plans/foo.md.`
+// chips `plans/foo.md` but `foo.md.bak` never chips at all.
+const DOC_TOKEN = /(?<=^|[\s("'[])(?:[\w.-]+\/)*[\w.-]+\.md(?=$|[\s)"'\],;:!?]|\.(?=$|\s))/g;
+// `@`-prefixed repo path. Requiring a `/` or a `.` is what keeps `@human`,
+// `@agent` (assignment tokens, stripped by core) and ordinary `@mentions` out
+// — they carry neither.
+const FILE_TOKEN = /(?<=^|[\s("'[])@((?:[\w.-]+\/)*[\w.-]+)/g;
 
 /** Trailing punctuation that's almost never part of a pasted URL. */
 const LINK_TRAILING = new Set([".", ",", ";", ":", "!", "?", "'", '"', "›", "»"]);
@@ -81,6 +110,11 @@ function trimUrl(url: string): string {
 /** The browser-visible URL for an asset path stored in node text. */
 export function assetUrl(path: string): string {
   return path.replace(/^\.kalamu\/assets\//, `${apiBase}/assets/`);
+}
+
+/** The browser-visible URL for a repo-relative doc path stored in node text. */
+export function docUrl(path: string): string {
+  return `${apiBase}/docs/${path.split("/").map(encodeURIComponent).join("/")}`;
 }
 
 /**
@@ -122,7 +156,30 @@ export function segmentText(text: string): Segment[] {
   const insideLink = (index: number): boolean =>
     links.some((t) => index >= t.start && index < t.start + t.length);
 
-  const tokens: (TagSegment | ImageSegment | LinkSegment)[] = [...images, ...links];
+  // Docs parse after links: `https://x.com/notes.md` is a link, not a doc.
+  const docs: DocSegment[] = [];
+  for (const match of text.matchAll(DOC_TOKEN)) {
+    if (insideImage(match.index) || insideLink(match.index)) continue;
+    docs.push({ kind: "doc", path: match[0], start: match.index, length: match[0].length });
+  }
+
+  // Files parse after links so an `@` inside a URL never starts a reference.
+  const files: FileSegment[] = [];
+  for (const match of text.matchAll(FILE_TOKEN)) {
+    if (insideImage(match.index) || insideLink(match.index)) continue;
+    const raw = match[1];
+    if (raw === undefined) continue;
+    const path = raw.replace(/[.]+$/, ""); // sentence punctuation, never part of the path
+    if (path === "" || !/[/.]/.test(path)) continue; // @human / @agent / plain @mention
+    files.push({ kind: "file", path, start: match.index, length: path.length + 1 });
+  }
+
+  const tokens: (TagSegment | ImageSegment | LinkSegment | DocSegment | FileSegment)[] = [
+    ...images,
+    ...links,
+    ...docs,
+    ...files,
+  ];
   for (const match of text.matchAll(TAG_TOKEN)) {
     const label = match[1];
     if (label === undefined) continue;
