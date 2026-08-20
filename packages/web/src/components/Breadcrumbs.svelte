@@ -39,7 +39,7 @@
 <style>
   .crumbs {
     position: sticky;
-    top: 0;
+    top: var(--header-height, 0px); /* stack below the sticky header (App.svelte) */
     z-index: 10; /* above the outline rows (combo menus sit at the row level) */
     display: flex;
     flex-wrap: wrap;

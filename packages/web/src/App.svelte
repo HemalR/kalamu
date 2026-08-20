@@ -295,18 +295,29 @@
   main {
     max-width: 760px;
     margin: 0 auto;
-    padding: 28px 32px 0;
+    padding: 0 32px; /* top padding lives on the sticky header */
     min-height: 100vh;
     display: flex;
     flex-direction: column;
+    /* The stuck header's full height (28px + 23px action row + 20px), so the
+       sticky .crumbs in Breadcrumbs.svelte can stack right beneath it. */
+    --header-height: 71px;
   }
 
   header {
+    /* Sticks while the outline scrolls. main's old 28px top padding and the
+       old 20px margin below both live here as padding, so the opaque
+       background reaches the viewport edge with no see-through strips.
+       z-index 10 matches .crumbs: above outline rows, below every overlay. */
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--bg);
+    padding: 28px 0 20px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     user-select: none;
-    margin-bottom: 20px;
   }
 
   .brandline {
