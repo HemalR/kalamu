@@ -11,3 +11,4 @@ export * from "./tags.js";
 export * from "./datetime.js";
 export * from "./markdown.js";
 export * from "./icon.js";
+export * from "./numbering.js";

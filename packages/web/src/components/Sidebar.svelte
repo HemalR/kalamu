@@ -17,6 +17,8 @@
     color: string;
     openTasks: number | null;
     lastSeenAt: string;
+    /** The outline file is gone from `path` — kept listed so the path stays findable. */
+    missing: boolean;
   }
 
   /** onrename: effective name after the ACTIVE project is renamed.
@@ -341,8 +343,9 @@
               href={`/p/${project.slug}`}
               draggable="false"
               class:active={project.slug === activeSlug}
+              class:missing={project.missing}
               aria-current={project.slug === activeSlug ? "page" : undefined}
-              title={project.path}
+              title={project.missing ? `Outline file missing — expected at ${project.path}/.kalamu/outline.jsonl` : project.path}
             >
               <span class="name">{project.name}</span>
               {#if project.openTasks !== null && project.openTasks > 0}
@@ -487,6 +490,14 @@
   }
   li:hover a.active {
     background: color-mix(in srgb, var(--project-color, var(--fg)) 22%, transparent);
+  }
+
+  /* Outline file gone: the row stays (its path is the lead for recovery —
+     see the tooltip) but reads as a ghost rather than a project to open. */
+  a.missing .name {
+    opacity: 0.45;
+    text-decoration: line-through;
+    text-decoration-color: color-mix(in srgb, currentColor 50%, transparent);
   }
 
   /* Per-row colour, always visible; a quiet halo marks it as clickable. */

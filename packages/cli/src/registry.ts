@@ -6,7 +6,6 @@
  * triggered it.
  */
 import { tagColor } from "@kalamu/core";
-import { KALAMU_DIR, OUTLINE_FILE } from "@kalamu/core/store";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -57,7 +56,13 @@ export function projectColor(entry: Pick<RegistryEntry, "slug" | "color">): stri
   return entry.color ?? tagColor(entry.slug);
 }
 
-/** Read the registry, dropping entries whose project no longer has a .kalamu/ dir. */
+/**
+ * Read the registry. Entries are kept even when the project's outline file is
+ * gone: a missing file is a data-loss signal the hub must surface with its
+ * path (see `missing` in the hub's /api/projects), never quietly forget — the
+ * registry is the only record of where the outline lived. `kalamu hub forget`
+ * is the explicit way out.
+ */
 export function readRegistry(file = defaultRegistryFile()): Registry {
   let parsed: unknown;
   try {
@@ -71,8 +76,6 @@ export function readRegistry(file = defaultRegistryFile()): Registry {
     if (entry === null || typeof entry !== "object") continue;
     const e = entry as Record<string, unknown>;
     if (typeof e.slug !== "string" || typeof e.path !== "string") continue;
-    // Same project test as findRoot: the outline file, not just the directory.
-    if (!existsSync(join(e.path, KALAMU_DIR, OUTLINE_FILE))) continue;
     projects.push({
       slug: e.slug,
       path: e.path,

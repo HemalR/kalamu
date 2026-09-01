@@ -115,6 +115,10 @@ export function createHubServer(assetsDir: string | null, options: HubOptions = 
       color: projectColor(entry),
       openTasks: countOpenTasks(entry),
       lastSeenAt: entry.lastSeenAt,
+      // The outline file is gone (deleted, moved, repo removed). Kept listed
+      // so the path is still findable — silently dropping it once turned a
+      // recoverable loss into "no registered project".
+      missing: !existsSync(pathsFor(entry.path).outline),
     }));
     return c.json({ projects });
   });

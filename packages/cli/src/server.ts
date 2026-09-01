@@ -12,6 +12,7 @@ import {
   OperationError,
   preorder,
   removeBlocker,
+  renumber,
   reopen,
   searchNodes,
   serializeJsonl,
@@ -232,7 +233,7 @@ export function createServer(
     const body = z.object({ nodes: z.array(nodeSchema) }).parse(await c.req.json());
     const validation = validateOutline(serializeJsonl(body.nodes));
     if (!validation.valid) return c.json({ error: validation.errors[0] }, 400);
-    writeOutline(paths.outline, preorder(buildTree(body.nodes)));
+    writeOutline(paths.outline, renumber(preorder(buildTree(body.nodes))));
     return c.json({ nodes: readNodes() });
   });
 

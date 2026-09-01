@@ -6,6 +6,7 @@ describe("resolveEditorTemplate", () => {
     expect(resolveEditorTemplate("vscode")).toBe(EDITOR_PRESETS.vscode);
     expect(resolveEditorTemplate("  zed  ")).toBe(EDITOR_PRESETS.zed);
     expect(resolveEditorTemplate("myeditor://go?f={path}")).toBe("myeditor://go?f={path}");
+    expect(resolveEditorTemplate("myeditor://go?f={path}[&l={line}]")).toBe("myeditor://go?f={path}[&l={line}]");
   });
 
   it("rejects templates without {path}, without a scheme, or with a script scheme", () => {

@@ -40,7 +40,7 @@ import { ensureAgentDocs } from "./agent-docs.js";
 import { hubBaseUrl } from "./config.js";
 import { CliError, looksLikeRepo, resolvePaths, type CommandResult } from "./context.js";
 import { ensureGitignore, IGNORE_ENTRIES } from "./gitignore.js";
-import { createNodeLink } from "./link.js";
+import { createNodeLink, type NodeLink } from "./link.js";
 import { readRegistry, registerProject } from "./registry.js";
 import { glyphFor, prefixFor, renderOutline, suffixFor } from "./render.js";
 import { seedTour } from "./tour.js";
@@ -115,6 +115,18 @@ export function tour(cwd: string): CommandResult {
   };
 }
 
+/**
+ * Best-effort link for the `Link:` line that add/done/start/next append, so
+ * the copy-ready reference is already in the tool result an agent is reading.
+ * Unlike `kalamu link` — which fails loudly rather than invent a broken URL —
+ * an unresolvable slug here just omits the line: registry failures never break
+ * the command that triggered them (SPEC "Hub").
+ */
+function tryNodeLink(root: string, node: Pick<KalamuNode, "id" | "text">): NodeLink | undefined {
+  const slug = readRegistry().projects.find((project) => project.path === root)?.slug;
+  return slug !== undefined ? createNodeLink(node, slug, hubBaseUrl()) : undefined;
+}
+
 export interface AddOptions {
   parent?: string;
   kind?: string;
@@ -158,10 +170,21 @@ export function add(cwd: string, options: AddOptions): CommandResult {
     node.parentId === null && node.createdBy === "agent"
       ? "pass --parent <id> to nest; `kalamu ls` walks the tree one level at a time"
       : undefined;
-  const text = warning ? `Created ${node.id}${location}\nNote: ${warning}` : `Created ${node.id}${location}`;
+  const link = tryNodeLink(paths.root, node);
+  const lines = [
+    `Created ${node.id}${location}`,
+    ...(link !== undefined ? [`Link: ${link.markdown}`] : []),
+    ...(warning !== undefined ? [`Note: ${warning}`] : []),
+  ];
   return {
-    text,
-    json: { id: node.id, parentId: node.parentId, path, ...(warning !== undefined ? { warning } : {}) },
+    text: lines.join("\n"),
+    json: {
+      id: node.id,
+      parentId: node.parentId,
+      path,
+      ...(link !== undefined ? { link: link.markdown } : {}),
+      ...(warning !== undefined ? { warning } : {}),
+    },
   };
 }
 
@@ -246,7 +269,11 @@ export function done(cwd: string, id: string): CommandResult {
     const result = markDone(nodes, id);
     return { nodes: result.nodes, result: result.node };
   });
-  return { text: `Done ${node.id}`, json: { id: node.id, doneAt: node.doneAt } };
+  const link = tryNodeLink(paths.root, node);
+  return {
+    text: link !== undefined ? `Done ${node.id}\nLink: ${link.markdown}` : `Done ${node.id}`,
+    json: { id: node.id, doneAt: node.doneAt, ...(link !== undefined ? { link: link.markdown } : {}) },
+  };
 }
 
 export function reopen(cwd: string, id: string): CommandResult {
@@ -264,7 +291,11 @@ export function start(cwd: string, id: string, options: { force?: boolean } = {}
     const result = startTask(nodes, id, { force: options.force });
     return { nodes: result.nodes, result: result.node };
   });
-  return { text: `Started ${node.id}`, json: { id: node.id, startedAt: node.startedAt } };
+  const link = tryNodeLink(paths.root, node);
+  return {
+    text: link !== undefined ? `Started ${node.id}\nLink: ${link.markdown}` : `Started ${node.id}`,
+    json: { id: node.id, startedAt: node.startedAt, ...(link !== undefined ? { link: link.markdown } : {}) },
+  };
 }
 
 export function end(cwd: string, id: string): CommandResult {
@@ -529,6 +560,8 @@ export function next(cwd: string, options: NextCommandOptions = {}): CommandResu
     lines.push(`${indent}${glyphFor(child)} ${prefixFor(child)}${child.text}  (${child.id})`);
   }
   lines.push(`Reason: ${result.reason}`);
+  const link = tryNodeLink(paths.root, result.node);
+  if (link !== undefined) lines.push(`Link: ${link.markdown}`);
   return {
     text: lines.join("\n"),
     json: {
@@ -539,6 +572,7 @@ export function next(cwd: string, options: NextCommandOptions = {}): CommandResu
       ancestors: chain.map((n) => ({ id: n.id, text: n.text, kind: n.kind })),
       descendants,
       reason: result.reason,
+      ...(link !== undefined ? { link: link.markdown } : {}),
     },
   };
 }

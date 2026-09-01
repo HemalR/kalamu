@@ -53,7 +53,7 @@ These were deliberated and are settled. Do not relitigate them during implementa
 16. **Blockers point one way: `blockedBy`.** (Added 2026-08-08.) A task records what blocks it (`blockedBy: string[]` of node IDs). There is deliberately no reverse `blocks` array. Two directions must be kept in sync, and they drift: dex stores both (`blocker.blocks[]` ↔ `blocked.blockedBy[]`) and its own cycle check reads both "for robustness against data inconsistencies" — a bug class Kalamu declines to buy. One direction cannot disagree with itself. `blockedBy` is also the direction the hot path needs: `next` asks "is this task blocked?", answerable from the node alone, while "what does finishing this unblock?" is a cold UI query derived by scanning. It matches the existing `parentId` shape — the dependent points at its dependency, and there is no `children[]` array either. Blockers may cross the tree freely; a blocker cycle is a validation error exactly as a parent cycle is. (Amended 2026-08-10: discussions are blockable too. A discussion whose conversation cannot usefully happen until other work lands — the grilling/prototype ticket that waits on a research task — is a real dependency of exactly the same shape, and recording it in the data is the whole point of decision 16. `blockedBy` on a discussion carries full semantics: `next --discussion` skips it, cycles and dangling references are the same validation errors, and deletes strip it the same way. Bullets remain unblockable — they are structure, not work.) (Amended 2026-08-13: a node cannot be blocked by an ancestor. Nesting already says the child lives under that work, and a done ancestor task closes its umbrella — key decision 4 — so the child could never become eligible after the blocker finished. Cross-tree and sibling blockers stay legal; indenting under a recorded blocker drops that edge rather than refusing the move.)
 17. **In-progress is a timestamp, not a status.** (Added 2026-08-08.) `startedAt` marks a task an agent has claimed, for the same reason SPEC declines a `done` boolean (see [`doneAt`](#doneat)): timestamps carry when as well as whether, and never accumulate into a status enum. Without it, two agent sessions both call `kalamu next`, both receive the same task, and both do the work. `next` skips claimed tasks; `kalamu start <id> --force` re-claims one whose owner died. State in Kalamu is exactly three timestamps — `createdAt`, `startedAt`, `doneAt` — and never a workflow.
 18. **`handoff` is removed; promoting a task means deleting it.** (Added 2026-08-08.) A task that outgrows Kalamu is created in the external tracker and then deleted here. Recording *where it went* was a mandatory nullable field on every line of every outline, and in ten months of dogfooding not one node ever carried a non-null value — the forwarding address turned out to be a thing nobody looked up. The `handoff` field, the `Handoff` type, `kalamu handoff`/`unhandoff`, `next --include-handed-off`, `list --handoff`, and `POST /api/nodes/:id/handoff` are all gone. The consequence is deliberate: Kalamu keeps no record of promoted work, so an agent that creates a GitHub issue from a task **must** delete the task, or the next agent will do it again. Readers still accept a legacy `handoff` and fold a non-null one into the node's text as the same `→ target:ref` suffix the CLI used to render, so upgrading never silently discards a reference; a null one carried no information and is dropped.
-19. **Doc references are plain repo-relative `.md` paths in text.** (Added 2026-08-17.) Kalamu holds state and structure; prose (specs, decision logs, plans) lives in ordinary repo Markdown, and a node points at it by writing the path in its text — `Spec: plans/admin-console-refresh.md Phase 2`. The two never duplicate the same fact, so there is nothing to keep in sync: the doc doesn't record done-ness, the node doesn't carry the prose. Same rendering model as tags and images: a whole-word token ending in `.md` renders as a quiet chip in unfocused nodes (click opens the file, served read-only by the local server under `/docs/*` — repo files only, `.md` only), the focused node shows raw text, and agents see an ordinary greppable path. Recognition is UI-only — no new node field, no core parsing, no CLI command, and the path is not validated to exist (a chip to a missing file 404s on click; a doctor-style existence check is possible future work, as are `#heading` anchors and inline peek rendering). A node body/description field was considered and rejected: it would fork prose away from the canonical doc and recreate the sync problem inside the data model. (Amended 2026-08-19: the same idea extends to any repo file via an explicit `@path` token — `@src/lib/caret.ts` — inserted by the editor's `@` picker and rendered as a chip that opens the file in the human's configured editor. Bare `.md` paths keep chipping without the `@` because prose references them in passing; every other file needs the marker, since arbitrary path-shaped text is too easy to match by accident. Requiring a `/` or `.` in the token is what keeps `@human`/`@agent` — still assignment tokens, still stripped by core — and ordinary `@mentions` out. Which editor is a per-developer preference, so it lives in machine-global `~/.kalamu/config.json` (`kalamu config editor <preset|template>`), never in the repo. The completion list comes from `git ls-files`, so ignored files never appear; Kalamu stores paths only, never file contents.)
+19. **Doc references are plain repo-relative `.md` paths in text.** (Added 2026-08-17.) Kalamu holds state and structure; prose (specs, decision logs, plans) lives in ordinary repo Markdown, and a node points at it by writing the path in its text — `Spec: plans/admin-console-refresh.md Phase 2`. The two never duplicate the same fact, so there is nothing to keep in sync: the doc doesn't record done-ness, the node doesn't carry the prose. Same rendering model as tags and images: a whole-word token ending in `.md` renders as a quiet chip in unfocused nodes (click opens the file, served read-only by the local server under `/docs/*` — repo files only, `.md` only), the focused node shows raw text, and agents see an ordinary greppable path. Recognition is UI-only — no new node field, no core parsing, no CLI command, and the path is not validated to exist (a chip to a missing file 404s on click; a doctor-style existence check is possible future work, as are `#heading` anchors and inline peek rendering). A node body/description field was considered and rejected: it would fork prose away from the canonical doc and recreate the sync problem inside the data model. (Amended 2026-08-19: the same idea extends to any repo file via an explicit `@path` token — `@src/lib/caret.ts` — inserted by the editor's `@` picker and rendered as a chip that opens the file in the human's configured editor. Bare `.md` paths keep chipping without the `@` because prose references them in passing; every other file needs the marker, since arbitrary path-shaped text is too easy to match by accident. Requiring a `/` or `.` in the token is what keeps `@human`/`@agent` — still assignment tokens, still stripped by core — and ordinary `@mentions` out. Which editor is a per-developer preference, so it lives in machine-global `~/.kalamu/config.json` (`kalamu config editor <preset|template>`), never in the repo. The completion list comes from `git ls-files`, so ignored files never appear; Kalamu stores paths only, never file contents. Amended 2026-08-23: a token may carry a line, `@src/a.ts:42`, filled into the template's `{line}` placeholder; the delimiter lives in an optional `[...]` group dropped when no line is given, since `:` and `&line=` differ per editor.)
 
 ---
 
@@ -319,6 +319,21 @@ Agents should only work on `task` nodes.
 Plain text content.
 
 No Markdown requirement for MVP, but Markdown-like text is fine.
+
+**Numbered lists** (added 2026-08-23). Text starting with `N.` followed by
+whitespace or the end of the text (`1. foo`, `12.`; never `3.14 pie`) marks the
+node as a numbered list entry. The prefix is real text — the file, the CLI and
+agents all see it — but its value is never authored: every operation ends with
+a renumber pass that rewrites each prefix from sibling position, so inserting,
+deleting or moving inside a list keeps it `1..n`. Consecutive numbered siblings
+form one list; an unnumbered sibling ends it and the next numbered sibling
+starts again at `1.`. Each parent's children are their own list. `kalamu add
+--text "1. x"` after item 3 therefore stores `4. x` and shifts the rest. In the
+UI the ordinal renders before the text (a numbered bullet shows the ordinal in
+place of its dot; tasks and discussions keep their glyph) and never appears in
+the editable draft: typing `N.` and a space at the start numbers an item, Enter
+continues the list, and Backspace at the start of the text drops the number —
+the same gesture that clears a priority, which goes first.
 
 #### `createdAt`
 
@@ -686,7 +701,9 @@ credential, a manual step) must be recorded as a task via
 `kalamu add ... --assign human`, not just mentioned in chat. The block is
 appended to every `CLAUDE.md`/`AGENTS.md` that exists at the root, or a new
 `AGENTS.md` is created when neither does. It also tells agents never to cite a
-bare node ID to the human and to use `kalamu link <id>` for a named deep link.
+bare node ID to the human: user-facing mentions carry the node's Markdown deep
+link — the `Link:` line already echoed by `add`/`done`/`start`/`next`, or
+`kalamu link <id>` for any other node.
 Idempotent (the `<!-- kalamu:agents -->`
 marker is the already-installed check), so it also runs on re-init — existing
 projects adopt it by re-running `kalamu init`. `--no-agent-docs` skips it.
@@ -968,6 +985,15 @@ and node ID; it never guesses a slug. A registry failure is therefore a command
 error, not a plausible-looking broken link. JSON returns `id`, `text`, `url`,
 and `markdown`.
 
+The same Markdown reference is also echoed by the commands an agent already
+runs when handling a node — `add`, `done`, `start`, and single-task `next`
+append a `Link: <markdown>` line to their text output and a `link` field
+(the markdown string) to their JSON — so the copy-ready link sits in the tool
+result an agent quotes from and does not require a follow-up call. Because
+there the link is a bonus on another command's result, it is best-effort: an
+unresolvable slug omits the line rather than failing the command. The loud
+failure stays exclusive to `kalamu link` itself.
+
 The hub base address is machine-local configuration in
 `~/.kalamu/config.json`, set with `kalamu config base-url <http(s)-url>` and
 cleared with `kalamu config base-url default`. Missing or invalid configuration
@@ -980,8 +1006,11 @@ The editor for `@path` file references lives in the same file, set with
 `kalamu config editor <preset|template>` and cleared with `kalamu config editor
 none`. Presets cover the common editors (`vscode`, `cursor`, `windsurf`, `zed`,
 `sublime`, `textmate`, `idea`, `webstorm`); anything else is a URL template
-containing `{path}`, which is filled with the file's absolute path. Templates
-must carry an ordinary scheme — `javascript:`/`data:` are rejected, since the
+containing `{path}`, which is filled with the file's absolute path. A reference
+may name a line — `@src/a.ts:42` — filled into `{line}`; because every editor
+delimits the line differently, the delimiter sits inside an optional `[...]`
+group that is dropped whole when the reference has no line (`{path}[:{line}]`,
+`{path}[&line={line}]`). Templates must carry an ordinary scheme — `javascript:`/`data:` are rejected, since the
 value becomes an href in the web UI. Like the base URL, it is per-developer
 machine state and never lives in committed `.kalamu/meta.json`: two people
 sharing a repo rarely share an editor. Unset, `@path` chips still render and
@@ -1029,18 +1058,19 @@ If neither `--after` nor `--before` is given, append as last sibling.
 
 If priority is omitted for a task, do not write priority; treat it as default `2`.
 
-Text output says where the node landed (`Created n_009 under Auth improvements > Login UX`, or `Created n_009 (top-level)`). JSON includes `id`, `parentId`, and `path` (ancestor texts, root first). A non-interactive `add` that omits `--parent` also prints a `Note:` (and a `warning` field in JSON) pointing at `kalamu ls` — that is the failure mode the placement rule exists to stop. An interactive human adding a new top-level area is not warned.
+Text output says where the node landed (`Created n_009 under Auth improvements > Login UX`, or `Created n_009 (top-level)`), followed by the node's copy-ready `Link:` line (see `kalamu link`; best-effort — omitted when the slug cannot be resolved). JSON includes `id`, `parentId`, `path` (ancestor texts, root first), and `link` (the markdown reference, when resolvable). A non-interactive `add` that omits `--parent` also prints a `Note:` (and a `warning` field in JSON) pointing at `kalamu ls` — that is the failure mode the placement rule exists to stop. An interactive human adding a new top-level area is not warned.
 
 Example text output:
 
 ```text
 Created n_009 under Auth improvements
+Link: [Add password reset](http://localhost:4400/p/kalamu#z=n_009) (`n_009`)
 ```
 
 Example JSON output:
 
 ```json
-{"id":"n_009","parentId":"n_001","path":["Auth improvements"]}
+{"id":"n_009","parentId":"n_001","path":["Auth improvements"],"link":"[Add password reset](http://localhost:4400/p/kalamu#z=n_009) (`n_009`)"}
 ```
 
 ---
@@ -1168,6 +1198,10 @@ removes it and its entire subtree. Bullets stay non-work-items regardless of
 bullet it never closes its umbrella for queue eligibility, but `clean` removes
 it and its entire subtree.
 
+Like `add`, the output ends with the node's `Link:` line (`link` in JSON),
+best-effort — the closed task is exactly what an agent is about to cite in its
+summary. `kalamu start` behaves the same way.
+
 Potential option later (not MVP):
 
 ```bash
@@ -1261,6 +1295,7 @@ n_006  ☐ p1 Fix password reset redirect
 Path: Auth improvements > Login UX
   ☐ Sub step to reproduce first  (n_007)
 Reason: highest-priority open task; tie-breaker: outline order
+Link: [Fix password reset redirect](http://localhost:4400/p/kalamu#z=n_006) (`n_006`)
 ```
 
 JSON output:
@@ -1280,13 +1315,16 @@ kalamu next --format json
     { "id": "n_004", "text": "Login UX", "kind": "bullet" }
   ],
   "descendants": [ /* the task's subtree, pre-order, full nodes */ ],
-  "reason": "highest-priority open task; tie-breaker: outline order"
+  "reason": "highest-priority open task; tie-breaker: outline order",
+  "link": "[Fix password reset redirect](http://localhost:4400/p/kalamu#z=n_006) (`n_006`)"
 }
 ```
 
 `ancestors` is root-first (direct chain only — no siblings); `descendants` is
-the task's own subtree. Batch mode (`--limit`/`--all`) keeps its lighter
-per-entry shape (`id`, `text`, `priority`, `path`).
+the task's own subtree. `link` is the task's copy-ready markdown reference
+(see `kalamu link`; best-effort, omitted when the slug cannot be resolved).
+Batch mode (`--limit`/`--all`) keeps its lighter per-entry shape (`id`,
+`text`, `priority`, `path`) and carries no links.
 
 When no task is eligible, exit with a non-zero status and output `{"id": null}` in JSON mode so agents can detect "nothing to do" deterministically.
 
@@ -1964,8 +2002,8 @@ Shape:
 Rules:
 
 * Every CLI command that resolves a project (`init`, `open`, `add`, `next`, …) upserts that project's entry — registration is a side effect of use, never a setup step. Existing entry: touch `lastSeenAt` only.
-* Entries whose `path` no longer contains `.kalamu/outline.jsonl` are pruned silently on read. The outline file — not the bare directory — is the project test everywhere (`findRoot` included), so the machine-global `~/.kalamu` (registry, hub log) can never make the home directory masquerade as a project.
-* Writes use the same temp-file + atomic-rename pattern as everything else. Registry failures must never break an unrelated command that triggered registration — a broken registry degrades the hub, not ordinary CLI work. `kalamu link` is the deliberate exception because its result depends on the registered slug; it fails clearly rather than inventing a broken URL.
+* Entries whose `path` no longer contains `.kalamu/outline.jsonl` are **kept** and served with `missing: true`; the sidebar dims them and names the expected path. (Amended 2026-08-23: they used to be pruned silently on read, which turned a deleted outline into "no registered project" with no pointer to where the file had lived — the registry is the only record of that path, and losing it is exactly when the human needs it. `kalamu hub forget` remains the explicit way to drop one.) The outline file — not the bare directory — is still the project test for registration (`findRoot`), so the machine-global `~/.kalamu` (registry, hub log) can never make the home directory masquerade as a project.
+* Writes use the same temp-file + atomic-rename pattern as everything else. Registry failures must never break an unrelated command that triggered registration — a broken registry degrades the hub, not ordinary CLI work. `kalamu link` is the deliberate exception because its result depends on the registered slug; it fails clearly rather than inventing a broken URL. The `Link:` lines that `add`/`done`/`start`/`next` append are back on the never-break side: an unresolvable slug omits the line, since there the link decorates a command that must still succeed.
 * The registry is plumbing, not data: deleting it loses nothing except the sidebar list (plus slug assignments, name/colour overrides, and the manual sidebar order), which repopulates on use.
 
 ### Slugs

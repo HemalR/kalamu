@@ -192,6 +192,13 @@ describe("segmentText", () => {
     expect(segmentText("see @src/app.ts.").find((s) => s.kind === "file")?.path).toBe("src/app.ts");
   });
 
+  it("takes an @path:42 line into the token, but not a sentence colon or a :col tail", () => {
+    expect(segmentText("fix @src/a.ts:42 now")[1]).toEqual({ kind: "file", path: "src/a.ts", line: 42, start: 4, length: 12 });
+    expect(segmentText("see @src/a.ts: broken")[1]).toEqual({ kind: "file", path: "src/a.ts", start: 4, length: 9 });
+    expect(segmentText("at @src/a.ts.:3")[1]).toEqual({ kind: "file", path: "src/a.ts", start: 3, length: 9 });
+    expect(segmentText("at @src/a.ts:42:7")[1]).toEqual({ kind: "file", path: "src/a.ts", line: 42, start: 3, length: 12 });
+  });
+
   it("never treats an email address or an @ inside a URL as a file", () => {
     expect(segmentText("mail me@example.com now").filter((s) => s.kind === "file")).toEqual([]);
     expect(segmentText("see https://a.io/@scope/pkg.ts now").filter((s) => s.kind === "file")).toEqual([]);

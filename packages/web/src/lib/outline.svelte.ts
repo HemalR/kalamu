@@ -22,6 +22,7 @@ import {
   endTask as endTaskOp,
   markDone,
   moveNode,
+  parseNumbering,
   removeBlocker as removeBlockerOp,
   reopen,
   startTask as startTaskOp,
@@ -35,7 +36,6 @@ import {
 import { api, type PatchNodeBody, type Priority } from "./api";
 import { commitPatch, tokenPatch, type CommitPatch } from "./commit";
 import { rawNodeText, serializeNodeContext, writeClipboard } from "./copy";
-import { nextNumberPrefix } from "./numbering";
 import { applyPasteLines } from "./paste";
 import { OutlineViewState } from "./view-state.svelte";
 
@@ -61,7 +61,7 @@ export class OutlineStore extends OutlineViewState {
 
   // ---- node operations -------------------------------------------------------
 
-  /** New sibling below `id`, inheriting its kind and continuing an `N.` numbering prefix (else empty); focuses it. */
+  /** New sibling below `id`, inheriting its kind and its numbering (core assigns the ordinal); focuses it. */
   createAfter(id: string): void {
     const node = this.tree.byId.get(id);
     if (!node) return;
@@ -71,7 +71,7 @@ export class OutlineStore extends OutlineViewState {
       this.createFirstChild(node);
       return;
     }
-    const text = nextNumberPrefix(node.text);
+    const text = parseNumbering(node.text) === null ? "" : "1.";
     let localId = "";
     const applied = this.mutate(
       (nodes) => {
@@ -89,7 +89,7 @@ export class OutlineStore extends OutlineViewState {
         this.adopt(localId, created.id);
       },
     );
-    if (applied) this.revealNewNode(localId, text === "" ? "start" : "end");
+    if (applied) this.revealNewNode(localId);
   }
 
   /** Enter on the zoom root: new empty first child (its kind inherited), focused. */

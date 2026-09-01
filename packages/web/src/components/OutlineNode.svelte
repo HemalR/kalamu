@@ -1,5 +1,13 @@
 <script lang="ts">
-  import { DEFAULT_PRIORITY, deriveTags, formatRelativeTime, tagColor, type KalamuNode } from "@kalamu/core";
+  import {
+    DEFAULT_PRIORITY,
+    deriveTags,
+    formatRelativeTime,
+    parseNumbering,
+    tagColor,
+    withNumbering,
+    type KalamuNode,
+  } from "@kalamu/core";
   import { tick } from "svelte";
   import {
     caretHit,
@@ -20,7 +28,7 @@
   import { now } from "../lib/now.svelte";
   import type { FocusTarget, OutlineStore } from "../lib/outline.svelte";
   import { fileRefs } from "../lib/file-refs.svelte";
-  import { assetUrl, docUrl, segmentText } from "../lib/segments";
+  import { assetUrl, docUrl, segmentText, type FileSegment } from "../lib/segments";
   import { matches, SHORTCUTS as S } from "../lib/shortcuts";
   import { summarize } from "../lib/summary";
   import { blockedTitle, isStarted, openBlockers } from "../lib/task-state";
@@ -47,6 +55,18 @@
   // never touch the draft or caret while editing.
   let editing = $state(false);
   let draft = $state("");
+
+  // Numbered lists (core numbering.ts): the `N.` prefix is metadata like the
+  // priority field — shown as an ordinal before the text, never in the draft.
+  // Core rewrites the ordinal from sibling position on every write, so the
+  // editor only ever decides WHETHER the node is numbered, not what number.
+  const numbering = $derived(parseNumbering(node.text));
+  /** node.text minus its numbering prefix: what the editable and the display show. */
+  const body = $derived(numbering?.body ?? node.text);
+  /** Draft back to stored form: re-attach the prefix if the node is numbered. */
+  function fromDraft(text: string): string {
+    return numbering === null ? text : withNumbering(text, numbering.ordinal);
+  }
   let el: HTMLElement | undefined;
   let displayEl: HTMLElement | undefined;
 
@@ -105,8 +125,8 @@
   // any of this.
 
   /** The shortened label, or null when the row shows its text in full (see lib/summary.ts). */
-  const label = $derived(store.overview ? summarize(node.text) : null);
-  const segments = $derived(segmentText(label ?? node.text));
+  const label = $derived(store.overview ? summarize(body) : null);
+  const segments = $derived(segmentText(label ?? body));
   /**
    * Tags the summary cut off. They sit at the end of long text more often than
    * not, and are the most scannable thing on a row, so they are re-attached
@@ -164,7 +184,7 @@
         displayEl?.focus(); // read-only while the server is unreachable
         return;
       }
-      draft = node.text;
+      draft = body;
       editing = true;
       await tick();
     }
@@ -196,17 +216,17 @@
 
   /** Full token parsing happens here — on Enter/blur/structural keys, never per keystroke. */
   function commit(): void {
-    if (editing) store.commitText(node.id, draft);
+    if (editing) store.commitText(node.id, fromDraft(draft));
   }
 
   function currentRawText(): string {
-    return editing ? draft : node.text;
+    return editing ? fromDraft(draft) : node.text;
   }
 
   function onEditableFocus(): void {
     store.lastFocusedId = node.id; // the command palette acts on this node
     if (!editing) {
-      draft = node.text;
+      draft = body;
       editing = true;
     }
     refreshHighlights();
@@ -519,6 +539,23 @@
     refreshHighlights(); // token positions shifted
   }
 
+  /**
+   * Typing `N.` then space at the start of an unnumbered node turns it into a
+   * numbered item (the typed N is ignored — core assigns the ordinal). The
+   * digits leave the draft the way an extracted token does.
+   */
+  function startNumbering(event: KeyboardEvent): boolean {
+    if (numbering !== null || !el || window.getSelection()?.isCollapsed !== true) return false;
+    const offset = caretOffset(el);
+    if (!/^\d+\.$/.test(draft.slice(0, offset))) return false;
+    event.preventDefault();
+    draft = draft.slice(offset);
+    store.commitText(node.id, withNumbering(draft, 1));
+    const element = el;
+    void tick().then(() => placeCaret(element, 0));
+    return true;
+  }
+
   /** Images upload to .kalamu/assets/; a multi-line paste into an empty node splits into siblings. */
   function onPaste(event: ClipboardEvent): void {
     closeCombo(); // pasted text would desync the filter
@@ -598,7 +635,7 @@
     }
 
     if (event.key === " " && !mod && !event.altKey) {
-      extractTokenAtCaret(event); // without a token, the space inserts normally
+      if (!startNumbering(event)) extractTokenAtCaret(event); // without a token, the space inserts normally
       return;
     }
     if (matches(event, S.cycleKind)) {
@@ -631,7 +668,8 @@
       const before = draft.slice(0, sel.start);
       const after = draft.slice(sel.end);
       draft = before;
-      store.splitNode(node.id, before, after);
+      // The continuation stays in the list: core gives it its ordinal.
+      store.splitNode(node.id, fromDraft(before), numbering === null ? after : withNumbering(after, 1));
       return;
     }
     if (matches(event, S.indent) || matches(event, S.outdent)) {
@@ -673,6 +711,12 @@
       if (atStart && node.kind !== "bullet" && node.priority !== undefined) {
         event.preventDefault();
         store.setPriority(node.id, 2);
+        return;
+      }
+      // Then one press drops the numbering (the draft is already the bare body).
+      if (atStart && numbering !== null) {
+        event.preventDefault();
+        store.commitText(node.id, draft);
         return;
       }
       if (draft === "") {
@@ -772,11 +816,11 @@
 
 <!-- File chip contents, shared by its link and its no-editor button form. Angle
      brackets read as source code — deliberately distinct from the doc chip's page glyph. -->
-{#snippet fileChipBody(path: string)}
+{#snippet fileChipBody(seg: FileSegment)}
   <svg viewBox="0 0 16 16" width="12" height="12" fill="none" aria-hidden="true">
     <path d="M6 3.5 2.5 8 6 12.5M10 3.5 13.5 8 10 12.5" stroke="currentColor" stroke-linecap="round" />
   </svg>
-  {basename(path)}
+  {basename(seg.path)}{seg.line === undefined ? "" : `:${seg.line}`}
 {/snippet}
 
 <svelte:window
@@ -876,7 +920,7 @@
            discussion bubble keep their toggle-done click — keyboard and
            breadcrumbs cover zooming those kinds. -->
       <button
-        class={["glyph", "dot", { ringed }]}
+        class={["glyph", "dot", { ringed, numbered: numbering !== null }]}
         aria-label="Zoom in"
         title="Zoom in"
         tabindex="-1"
@@ -914,6 +958,9 @@
     <!-- pointer-only widening of the textbox's click target; keyboard users focus the textbox directly -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="content" onpointerdown={onContentPointerDown}>
+      {#if numbering !== null}
+        <span class="ordinal" aria-hidden="true">{numbering.ordinal}.</span>
+      {/if}
       {#if editing}
         <div
           class="text"
@@ -1010,7 +1057,7 @@
                 </a>
               </span>
             {:else if seg.kind === "file"}
-              {@const href = fileRefs.editorUrl(seg.path)}
+              {@const href = fileRefs.editorUrl(seg.path, seg.line)}
               <!-- data-chip: the chip handles its own click (hands the file to the
                    configured editor, or explains how to configure one) -->
               <span class="chip-slot" data-chip data-start={seg.start} data-length={seg.length}>
@@ -1021,12 +1068,12 @@
                     title={seg.path}
                     onclick={() => store.showToast("Set an editor to open files: kalamu config editor vscode")}
                   >
-                    {@render fileChipBody(seg.path)}
+                    {@render fileChipBody(seg)}
                   </button>
                 {:else}
                   <!-- No target=_blank: a custom scheme is an OS handoff, not a page -->
                   <a class="doc file" {href} title={seg.path}>
-                    {@render fileChipBody(seg.path)}
+                    {@render fileChipBody(seg)}
                   </a>
                 {/if}
               </span>
@@ -1282,6 +1329,12 @@
   .dot:hover::before {
     box-shadow: 0 0 0 3.5px var(--ring);
   }
+  /* A numbered bullet's marker is its ordinal; the dot only surfaces on hover
+     (it is still the zoom target). Collapsed stays visible: the ring is the
+     only sign that children are folded. */
+  .dot.numbered:not(:hover):not(.ringed)::before {
+    opacity: 0;
+  }
 
   .check {
     position: relative; /* the checkmark svg / pulsing dot overlays the ::after box */
@@ -1373,6 +1426,22 @@
     align-items: baseline;
     column-gap: 6px;
     cursor: text;
+  }
+
+  /* The list ordinal, sized for two digits so 1–99 share one text edge;
+     tabular figures keep the dots aligned down the list. */
+  .ordinal {
+    flex: none;
+    min-width: 1.6em;
+    padding: 2px 0;
+    line-height: 22px;
+    text-align: right;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    user-select: none;
+  }
+  .row.done .ordinal {
+    color: var(--done);
   }
 
   .text {

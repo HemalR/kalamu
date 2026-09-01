@@ -6,8 +6,12 @@
  *
  * A template is any URL containing `{path}`, which is replaced with the file's
  * absolute path — forward slashes, always leading with one, so the presets read
- * the same on every platform (`/repo/src/a.ts`, `/C:/repo/src/a.ts`). Presets
- * cover the common editors; anything else can be typed out in full.
+ * the same on every platform (`/repo/src/a.ts`, `/C:/repo/src/a.ts`). A
+ * reference may also carry a line (`@src/a.ts:42`), filled into `{line}`; each
+ * editor delimits the line differently, so the delimiter goes inside an
+ * optional `[...]` group that is dropped whole when the reference has no line
+ * (`{path}[:{line}]`, `{path}[&line={line}]`). Presets cover the common
+ * editors; anything else can be typed out in full.
  *
  * The URL itself is built in the web UI (packages/web/src/lib/file-refs.svelte.ts),
  * which is where the chips live; this module only resolves and validates.
@@ -17,14 +21,14 @@ import { createInterface } from "node:readline/promises";
 
 /** Known editors, by the name accepted by `kalamu config editor <name>`. */
 export const EDITOR_PRESETS = {
-  vscode: "vscode://file{path}",
-  cursor: "cursor://file{path}",
-  windsurf: "windsurf://file{path}",
-  zed: "zed://file{path}",
-  sublime: "subl://open?url=file://{path}",
-  textmate: "txmt://open?url=file://{path}",
-  idea: "idea://open?file={path}",
-  webstorm: "webstorm://open?file={path}",
+  vscode: "vscode://file{path}[:{line}]",
+  cursor: "cursor://file{path}[:{line}]",
+  windsurf: "windsurf://file{path}[:{line}]",
+  zed: "zed://file{path}[:{line}]",
+  sublime: "subl://open?url=file://{path}[&line={line}]",
+  textmate: "txmt://open?url=file://{path}[&line={line}]",
+  idea: "idea://open?file={path}[&line={line}]",
+  webstorm: "webstorm://open?file={path}[&line={line}]",
 } as const satisfies Record<string, string>;
 
 export type EditorPreset = keyof typeof EDITOR_PRESETS;

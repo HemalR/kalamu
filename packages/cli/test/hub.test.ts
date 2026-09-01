@@ -56,6 +56,13 @@ describe("hub", () => {
     expect(projects.every((p) => p.openTasks === 0)).toBe(true);
   });
 
+  it("keeps listing a project whose outline file is gone, flagged missing", async () => {
+    rmSync(join(base, "beta", ".kalamu", "outline.jsonl"));
+    const res = await hub.app.request("/api/projects");
+    const { projects } = (await res.json()) as { projects: { slug: string; missing: boolean; openTasks: number | null }[] };
+    expect(projects.map((p) => [p.slug, p.missing, p.openTasks])).toEqual([["alpha", false, 0], ["beta", true, null]]);
+  });
+
   it("moves a project to a new sidebar position on PATCH {index}", async () => {
     const res = await hub.app.request("/api/projects/beta", {
       method: "PATCH",

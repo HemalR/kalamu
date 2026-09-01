@@ -1,5 +1,6 @@
 import { newId } from "./ids.js";
 import { effectivePriority, TAG_PATTERN, type Assignee, type KalamuNode, type NodeKind } from "./model.js";
+import { renumber } from "./numbering.js";
 import { appendTags, stripTags } from "./tokens.js";
 import { ancestors, buildTree, isDescendant, pathOf, preorder, subtreeIds, type Tree } from "./tree.js";
 
@@ -11,9 +12,13 @@ function requireNode(tree: Tree, id: string): KalamuNode {
   return node;
 }
 
-/** Every operation returns the full node list in canonical pre-order. */
+/**
+ * Every operation returns the full node list in canonical pre-order, with
+ * numbered-list prefixes rewritten from sibling position (numbering.ts) — so
+ * the client's optimistic result and the server's agree byte for byte.
+ */
 function emit(tree: Tree): KalamuNode[] {
-  return preorder(tree);
+  return renumber(preorder(tree));
 }
 
 function insertAmongSiblings(
@@ -79,7 +84,13 @@ export function addNode(nodes: readonly KalamuNode[], input: AddInput): { nodes:
   const siblings = tree.children.get(parentId) ?? [];
   tree.children.set(parentId, insertAmongSiblings(siblings, node, input));
   tree.byId.set(node.id, node);
-  return { nodes: emit(tree), node };
+  return emitWith(tree, node.id);
+}
+
+/** emit, plus the (possibly renumbered) node `id` as it appears in the result. */
+function emitWith(tree: Tree, id: string): { nodes: KalamuNode[]; node: KalamuNode } {
+  const nodes = emit(tree);
+  return { nodes, node: nodes.find((n) => n.id === id)! };
 }
 
 function validTags(tags: readonly string[]): string[] {
@@ -157,7 +168,7 @@ function replace(tree: Tree, updated: KalamuNode): { nodes: KalamuNode[]; node: 
     updated.parentId,
     siblings.map((s) => (s.id === updated.id ? updated : s)),
   );
-  return { nodes: emit(tree), node: updated };
+  return emitWith(tree, updated.id);
 }
 
 export interface MoveInput {
@@ -206,7 +217,7 @@ export function deleteNode(nodes: readonly KalamuNode[], id: string, options: { 
   // A delete must never leave a dangling blocker: strip every deleted id from
   // the nodes that waited on it, dropping the field when nothing is left.
   const remaining = stripBlockers(preorder(tree).filter((n) => !doomed.has(n.id)), doomed);
-  return { nodes: remaining, deletedCount: doomed.size };
+  return { nodes: renumber(remaining), deletedCount: doomed.size };
 }
 
 /**
@@ -465,7 +476,7 @@ export function cleanDone(nodes: readonly KalamuNode[]): CleanResult {
   return {
     // Clean deletes nodes like `delete` does, so the same invariant applies:
     // survivors must not be left blocked by an id that no longer exists.
-    nodes: stripBlockers(ordered.filter((n) => !doomed.has(n.id)), doomed),
+    nodes: renumber(stripBlockers(ordered.filter((n) => !doomed.has(n.id)), doomed)),
     removed: ordered.filter((n) => doomed.has(n.id)),
     doneTasks,
     doneBullets,

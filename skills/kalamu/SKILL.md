@@ -50,14 +50,18 @@ We must always be mindful that the Kalamu interface if it were to get too clutte
 Node IDs are handles for agents and the CLI, not names a human can recognize.
 Never refer to a node by ID alone in user-facing messages.
 
-- Name the node using the first line of its text. Include its ID afterward when
-  the human may need to find it or pass it back to an agent:
-  `Fix duplicate task creation (n_0JC1YXY9BV)`.
-- Prefer `kalamu link <id>` when a clickable reference would help. It resolves
-  the machine's configured hub address and the project's actual stable slug,
-  and prints copy-ready Markdown such as
-  `[Fix duplicate task creation](http://localhost:4400/p/kalamu#z=n_0JC1YXY9BV) (n_0JC1YXY9BV)`.
-  Do not assemble or guess the URL yourself.
+- When you mention a node in any user-facing message — including end-of-turn
+  summaries — reference it with its Markdown deep link. `add`, `done`, `start`,
+  and `next` already print one on a `Link:` line (a `link` field in
+  `--format json`): paste that. For any other node, run `kalamu link <id>`,
+  which resolves the machine's configured hub address and the project's actual
+  stable slug. Never assemble or guess the URL yourself.
+  - Good: `[Fix duplicate task creation](http://localhost:4400/p/kalamu#z=n_0JC1YXY9BV) (n_0JC1YXY9BV)`
+  - Bad: `n_0JC1YXY9BV` or `(n_0JC1YXY9BV)` — an ID with no name and no link.
+- The plain-text form — first line of the node's text, ID in parens:
+  `Fix duplicate task creation (n_0JC1YXY9BV)` — is a fallback for when no link
+  can be produced (`kalamu link` errors, or the output medium cannot render
+  Markdown), not an alternative to linking.
 - When describing a relationship, name every node involved. For example:
   `Deploy the release (n_release) is blocked by Fix migration ordering
   (n_migration)`, not `n_release is blocked by n_migration`.
@@ -136,9 +140,10 @@ to the human (`--assign human`) when you need something from them.
 3. When creating or editing a task try and get the first line of the text to be short and descriptive so that in the compact overview view, it's easy for the human to scan and get a summary of the detail hidden from view.
 4. Never work on tasks with `"assignee": "human"` (rendered as `@human`; legacy files may write `"self": true`): they belong to the human. `kalamu next` already excludes them — but they may appear as descendants of a returned task; leave those to the human. Tasks with `"assignee": "agent"` or no assignee are yours.
 5. Priority runs p1 (high) to p3 (low); a missing priority means p2 (medium). Set priority with `--p`; never write `"priority": 2` explicitly.
-5. Tags live inline in task text as `#tokens` (`#web`, `#bug`) — there is no separate tags field. Keep them when editing text.
-6. If you promote a task into another tracker (GitHub issue, Linear, a plan file), create it there and then delete the Kalamu task — Kalamu keeps no forwarding record, so leaving it would let another agent duplicate the work.
-7. When your work completes a task, mark it done and run `kalamu validate` before finishing.
+6. Tags live inline in task text as `#tokens` (`#web`, `#bug`) — there is no separate tags field. Keep them when editing text.
+7. If you promote a task into another tracker (GitHub issue, Linear, a plan file), create it there and then delete the Kalamu task — Kalamu keeps no forwarding record, so leaving it would let another agent duplicate the work.
+8. When your work completes a task, mark it done and run `kalamu validate` before finishing.
+9. Every node mentioned in a user-facing message gets its Markdown link — reuse the `Link:` line from the `add`/`done`/`start`/`next` output you already have, or run `kalamu link <id>`. Bad: `(n_0JC1YXY9BV)` with no link. See "Communicating with the human" above.
 
 ## Recognising a Kalamu repo
 

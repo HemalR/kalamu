@@ -308,10 +308,11 @@
     /* Sticks while the outline scrolls. main's old 28px top padding and the
        old 20px margin below both live here as padding, so the opaque
        background reaches the viewport edge with no see-through strips.
-       z-index 10 matches .crumbs: above outline rows, below every overlay. */
+       Sits one above .crumbs (z-index 10 in Breadcrumbs.svelte) so the header's
+       dropdowns cover the trail's progress bar, and below every overlay. */
     position: sticky;
     top: 0;
-    z-index: 10;
+    z-index: 11;
     background: var(--bg);
     padding: 28px 0 20px;
     display: flex;

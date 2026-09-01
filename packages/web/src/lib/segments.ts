@@ -61,8 +61,10 @@ export interface FileSegment {
   kind: "file";
   /** Repo-relative path without the `@`, e.g. `src/lib/caret.ts`. */
   path: string;
+  /** Line number from an `@path:42` reference, if one was written. */
+  line?: number;
   start: number;
-  /** Length of the raw `@path` token in the source text. */
+  /** Length of the raw `@path[:line]` token in the source text. */
   length: number;
 }
 
@@ -77,8 +79,8 @@ const LINK_TOKEN = /https?:\/\/\S+/g;
 const DOC_TOKEN = /(?<=^|[\s("'[])(?:[\w.-]+\/)*[\w.-]+\.md(?=$|[\s)"'\],;:!?]|\.(?=$|\s))/g;
 // `@`-prefixed repo path. Requiring a `/` or a `.` is what keeps `@human`,
 // `@agent` (assignment tokens, stripped by core) and ordinary `@mentions` out
-// — they carry neither.
-const FILE_TOKEN = /(?<=^|[\s("'[])@((?:[\w.-]+\/)*[\w.-]+)/g;
+// — they carry neither. An optional `:42` names a line.
+const FILE_TOKEN = /(?<=^|[\s("'[])@((?:[\w.-]+\/)*[\w.-]+)(?::(\d+)(?![\w]))?/g;
 
 /** Trailing punctuation that's almost never part of a pasted URL. */
 const LINK_TRAILING = new Set([".", ",", ";", ":", "!", "?", "'", '"', "›", "»"]);
@@ -171,7 +173,10 @@ export function segmentText(text: string): Segment[] {
     if (raw === undefined) continue;
     const path = raw.replace(/[.]+$/, ""); // sentence punctuation, never part of the path
     if (path === "" || !/[/.]/.test(path)) continue; // @human / @agent / plain @mention
-    files.push({ kind: "file", path, start: match.index, length: path.length + 1 });
+    // A trimmed dot means the colon belonged to the sentence, not the token.
+    const line = path === raw && match[2] !== undefined ? Number(match[2]) : undefined;
+    const length = path.length + 1 + (line === undefined ? 0 : match[2]!.length + 1);
+    files.push({ kind: "file", path, ...(line === undefined ? {} : { line }), start: match.index, length });
   }
 
   const tokens: (TagSegment | ImageSegment | LinkSegment | DocSegment | FileSegment)[] = [

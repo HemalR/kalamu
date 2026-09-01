@@ -31,6 +31,17 @@ describe("editorUrl", () => {
     expect(fileRefs.editorUrl("my notes.md")).toBe("subl://open?url=file:///repo/my%20notes.md");
   });
 
+  it("fills {line} and drops its optional [...] group when the reference has no line", () => {
+    configure({ editorTemplate: "vscode://file{path}[:{line}]" });
+    expect(fileRefs.editorUrl("src/a.ts", 42)).toBe("vscode://file/repo/src/a.ts:42");
+    expect(fileRefs.editorUrl("src/a.ts")).toBe("vscode://file/repo/src/a.ts");
+    configure({ editorTemplate: "subl://open?url=file://{path}[&line={line}]" });
+    expect(fileRefs.editorUrl("a.ts", 7)).toBe("subl://open?url=file:///repo/a.ts&line=7");
+    expect(fileRefs.editorUrl("a.ts")).toBe("subl://open?url=file:///repo/a.ts");
+    configure({ editorTemplate: "x://o?f={path}&l={line}" }); // no group: bare {line} just empties
+    expect(fileRefs.editorUrl("a.ts")).toBe("x://o?f=/repo/a.ts&l=");
+  });
+
   it("normalises a Windows root to forward slashes with one leading slash", () => {
     configure({ repoRoot: "C:\\repo", editorTemplate: "vscode://file{path}" });
     expect(fileRefs.editorUrl("src/a.ts")).toBe("vscode://file/C:/repo/src/a.ts");

@@ -136,22 +136,13 @@ describe("reorderProject", () => {
 });
 
 describe("readRegistry", () => {
-  it("prunes entries whose project lost its .kalamu directory", () => {
+  it("keeps entries whose outline file is gone — the path is the only record of where it lived", () => {
     const keep = makeProject("keep");
     const gone = makeProject("gone");
     registerProject(keep, file);
     registerProject(gone, file);
     rmSync(gone, { recursive: true, force: true });
-    expect(readRegistry(file).projects.map((p) => p.path)).toEqual([keep]);
-  });
-
-  it("prunes entries whose .kalamu remains but has no outline (config dirs are not projects)", () => {
-    const keep = makeProject("keep");
-    const husk = makeProject("husk");
-    registerProject(keep, file);
-    registerProject(husk, file);
-    rmSync(join(husk, ".kalamu", "outline.jsonl"));
-    expect(readRegistry(file).projects.map((p) => p.path)).toEqual([keep]);
+    expect(readRegistry(file).projects.map((p) => p.path)).toEqual([keep, gone]);
   });
 
   it("returns an empty registry for a missing file", () => {

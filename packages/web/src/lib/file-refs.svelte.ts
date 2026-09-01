@@ -38,11 +38,16 @@ export const fileRefs = {
    * normalised to forward slashes with exactly one leading slash so a single
    * preset works everywhere — `vscode://file` + `/repo/a.ts` is the documented
    * shape, and a Windows root becomes `/C:/repo/a.ts` rather than breaking it.
+   * `{line}` takes the reference's line; an optional `[...]` group around it
+   * (`[:{line}]`) is dropped whole when there is no line, so no delimiter dangles.
    */
-  editorUrl(path: string): string | null {
+  editorUrl(path: string, line?: number): string | null {
     if (editorTemplate === null) return null;
     const absolute = `${repoRoot}/${path}`.replaceAll("\\", "/");
-    return editorTemplate.replaceAll("{path}", encodeURI(absolute.startsWith("/") ? absolute : `/${absolute}`));
+    return editorTemplate
+      .replaceAll(/\[([^\]]*\{line\}[^\]]*)\]/g, line === undefined ? "" : "$1")
+      .replaceAll("{line}", line === undefined ? "" : String(line))
+      .replaceAll("{path}", encodeURI(absolute.startsWith("/") ? absolute : `/${absolute}`));
   },
 
   get files(): string[] {

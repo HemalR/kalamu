@@ -38,7 +38,7 @@ const BLOCK = [
   "",
   "Placement is part of the record. Before adding, walk to the parent one level at a time (`kalamu ls`, then `kalamu ls <id>`) or `kalamu search <term>` (each hit includes its Path), and nest with `--parent <id>` — work discovered while doing a task usually belongs under that task or its umbrella; a human-assigned follow-up belongs under the work that raised it. Add at top level only when the node starts a genuinely new area, never because finding the parent takes effort.",
   "",
-  "Never refer to a Kalamu node to the human by ID alone. Name it using the first line of its text; use `kalamu link <id>` when a clickable, copy-ready reference would help.",
+  "Never refer to a Kalamu node to the human by ID alone. When a user-facing message mentions a node, include its Markdown deep link: `add`, `done`, `start`, and `next` print one on a `Link:` line — paste that, or run `kalamu link <id>` for any other node. The plain `Name (id)` form is a fallback for when no link can be produced, not an alternative to linking.",
   "",
   'Nodes with `kind: "discussion"` are the human\'s tool for parking conversations to have with an agent later — never create one, never treat one as coding work; `kalamu next` never returns them. When the human brings one to a session (a pasted discussion prompt, or by id), discuss only: make no code changes, record the outcome as child bullets under the node, then mark it done.',
   END_MARKER,

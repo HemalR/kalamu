@@ -40,7 +40,8 @@
   .crumbs {
     position: sticky;
     top: var(--header-height, 0px); /* stack below the sticky header (App.svelte) */
-    z-index: 10; /* above the outline rows (combo menus sit at the row level) */
+    z-index: 10; /* above the outline rows (combo menus sit at the row level), below
+                    the sticky header at 11 so its dropdowns cover this trail */
     display: flex;
     flex-wrap: wrap;
     align-items: center;

@@ -16,8 +16,10 @@ function addTask(text: string, extra: Partial<commands.AddOptions> = {}): string
 beforeEach(() => {
   cwd = mkdtempSync(join(tmpdir(), "kalamu-cli-"));
   // Commands register projects for the hub as a side effect; keep tests
-  // out of the real ~/.kalamu/projects.json.
+  // out of the real ~/.kalamu/projects.json. KALAMU_HOME isolates the hub
+  // base-url config so echoed Link: lines are deterministic.
   process.env.KALAMU_REGISTRY = join(cwd, "test-registry.json");
+  process.env.KALAMU_HOME = join(cwd, "kalamu-home");
   commands.init(cwd);
 });
 
@@ -583,7 +585,7 @@ describe("placement: ls, paths, and add location", () => {
   it("add echoes where the node landed; agents are warned when they omit --parent", () => {
     const { auth } = tree();
     const nested = commands.add(cwd, { text: "Follow-up", kind: "task", parent: auth });
-    expect(nested.text).toBe(`Created ${(nested.json as { id: string }).id} under Auth improvements`);
+    expect(nested.text.split("\n")[0]).toBe(`Created ${(nested.json as { id: string }).id} under Auth improvements`);
     expect(nested.json).toMatchObject({ parentId: auth, path: ["Auth improvements"] });
     expect(nested.text).not.toContain("Note:");
 
@@ -593,8 +595,42 @@ describe("placement: ls, paths, and add location", () => {
     expect(top.json).toMatchObject({ parentId: null, path: [], warning: expect.stringContaining("kalamu ls") });
 
     const human = commands.add(cwd, { text: "New area", kind: "bullet", by: "human" });
-    expect(human.text).toMatch(/^Created \S+ \(top-level\)$/);
+    expect(human.text).toMatch(/^Created \S+ \(top-level\)/);
     expect(human.json).not.toHaveProperty("warning");
+  });
+});
+
+describe("link echo (SPEC `kalamu link`)", () => {
+  it("add, next, start and done carry the node's copy-ready link", () => {
+    const added = commands.add(cwd, { text: "Ship the fix", kind: "task" });
+    const id = (added.json as { id: string }).id;
+    // The echoed line must match what `kalamu link` itself would print.
+    const markdown = commands.link(cwd, id).text;
+    expect(markdown).toContain(`#z=${encodeURIComponent(id)}`);
+
+    expect(added.text).toContain(`Link: ${markdown}`);
+    expect(added.json).toMatchObject({ link: markdown });
+
+    const next = commands.next(cwd);
+    expect(next.text.split("\n").at(-1)).toBe(`Link: ${markdown}`);
+    expect(next.json).toMatchObject({ id, link: markdown });
+
+    expect(commands.start(cwd, id)).toMatchObject({ text: `Started ${id}\nLink: ${markdown}`, json: { link: markdown } });
+    expect(commands.done(cwd, id)).toMatchObject({ text: `Done ${id}\nLink: ${markdown}`, json: { link: markdown } });
+  });
+
+  it("batch next carries no links; an unusable registry omits the line without failing", () => {
+    const id = addTask("Queue item");
+    const batch = commands.next(cwd, { all: true });
+    expect(batch.text).not.toContain("Link:");
+    expect((batch.json as { tasks: object[] }).tasks[0]).not.toHaveProperty("link");
+
+    // dirname is a file, so the registry can be neither read nor re-created —
+    // the link degrades to nothing, never to an error or a guessed URL.
+    process.env.KALAMU_REGISTRY = join(cwd, ".kalamu", "outline.jsonl", "projects.json");
+    const finished = commands.done(cwd, id);
+    expect(finished.text).toBe(`Done ${id}`);
+    expect(finished.json).not.toHaveProperty("link");
   });
 });
 
