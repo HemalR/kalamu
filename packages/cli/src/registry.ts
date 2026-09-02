@@ -6,7 +6,7 @@
  * triggered it.
  */
 import { tagColor } from "@kalamu/core";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { projectName } from "./server.js";
@@ -89,10 +89,12 @@ export function readRegistry(file = defaultRegistryFile()): Registry {
 }
 
 /**
- * Upsert the project at `root` (absolute path). New projects get a slug derived
- * from the package.json name (else the directory name), deduplicated with
- * numeric suffixes; existing projects keep their slug forever so hub bookmarks
- * survive renames (SPEC key decision 12). Never throws.
+ * Upsert the project at `root` (absolute path — a resolved project root, so a
+ * linked worktree has already become its main checkout, SPEC key decision 20).
+ * New projects get a slug derived from the package.json name (else the
+ * directory name), deduplicated with numeric suffixes; existing projects keep
+ * their slug forever so hub bookmarks survive renames (SPEC key decision 12).
+ * Never throws.
  */
 export function registerProject(root: string, file = defaultRegistryFile()): void {
   try {
@@ -112,6 +114,11 @@ export function registerProject(root: string, file = defaultRegistryFile()): voi
   } catch {
     // registry failures degrade the hub, never the command that triggered them
   }
+}
+
+/** The registered hub slug for the project at `root`, if any. */
+export function slugFor(root: string, file = defaultRegistryFile()): string | undefined {
+  return readRegistry(file).projects.find((p) => p.path === root)?.slug;
 }
 
 /**

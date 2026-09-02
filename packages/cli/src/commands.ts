@@ -41,7 +41,7 @@ import { hubBaseUrl } from "./config.js";
 import { CliError, looksLikeRepo, resolvePaths, type CommandResult } from "./context.js";
 import { ensureGitignore, IGNORE_ENTRIES } from "./gitignore.js";
 import { createNodeLink, type NodeLink } from "./link.js";
-import { readRegistry, registerProject } from "./registry.js";
+import { readRegistry, registerProject, slugFor } from "./registry.js";
 import { glyphFor, prefixFor, renderOutline, suffixFor } from "./render.js";
 import { seedTour } from "./tour.js";
 import { ensureWayfinderDocs } from "./wayfinder-docs.js";
@@ -123,7 +123,7 @@ export function tour(cwd: string): CommandResult {
  * the command that triggered them (SPEC "Hub").
  */
 function tryNodeLink(root: string, node: Pick<KalamuNode, "id" | "text">): NodeLink | undefined {
-  const slug = readRegistry().projects.find((project) => project.path === root)?.slug;
+  const slug = slugFor(root);
   return slug !== undefined ? createNodeLink(node, slug, hubBaseUrl()) : undefined;
 }
 
@@ -441,7 +441,7 @@ export function link(cwd: string, id: string, options: LinkOptions = {}): Comman
   const { nodes } = readOutline(paths.outline);
   const node = nodes.find((candidate) => candidate.id === id);
   if (!node) throw new CliError(`no node with id ${id}`);
-  const slug = readRegistry().projects.find((project) => project.path === paths.root)?.slug;
+  const slug = slugFor(paths.root);
   if (slug === undefined) {
     throw new CliError("could not resolve this project's hub slug — check that ~/.kalamu is writable");
   }

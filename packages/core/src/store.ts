@@ -5,7 +5,7 @@
  * state, then fails loudly.
  */
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { parseJsonl, serializeJsonl } from "./jsonl.js";
 import { metaSchema, uiStateSchema, type KalamuMeta, type KalamuNode, type UiState } from "./model.js";
 
@@ -37,19 +37,58 @@ export function pathsFor(root: string): KalamuPaths {
 }
 
 /**
- * Walk up from cwd to the nearest project root. A project is a directory whose
- * .kalamu/ contains outline.jsonl — the dir alone doesn't count, because the
- * machine-global ~/.kalamu (hub registry, logs) would otherwise make the home
- * directory masquerade as a project for everything beneath it.
+ * A project is a directory whose .kalamu/ contains outline.jsonl — the dir
+ * alone doesn't count, because the machine-global ~/.kalamu (hub registry,
+ * logs) would otherwise make the home directory masquerade as a project for
+ * everything beneath it.
  */
+function isProject(dir: string): boolean {
+  try {
+    return statSync(join(dir, KALAMU_DIR, OUTLINE_FILE)).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The main checkout's root when `dir` is the root of a linked git worktree,
+ * else null. Read straight from git's on-disk layout, no git binary: a linked
+ * worktree's `.git` is a file (`gitdir: <main>/.git/worktrees/<name>`) and that
+ * directory's `commondir` points back at the shared `.git`. Submodules also
+ * have a `.git` file but no `commondir`, so they stay their own project.
+ */
+function mainWorktreeRoot(dir: string): string | null {
+  try {
+    const dotGit = join(dir, ".git");
+    if (!statSync(dotGit).isFile()) return null;
+    const gitdir = /^gitdir:\s*(.+)$/m.exec(readFileSync(dotGit, "utf8"))?.[1]?.trim();
+    if (gitdir === undefined) return null;
+    const worktreeGitdir = resolve(dir, gitdir);
+    const commondir = readFileSync(join(worktreeGitdir, "commondir"), "utf8").trim();
+    return dirname(resolve(worktreeGitdir, commondir));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The project root `dir` itself resolves to, or null. A linked git worktree is
+ * the same project as its main checkout (SPEC key decision 20): its own
+ * committed .kalamu/ is ignored in favour of the main checkout's whenever that
+ * checkout is a project, so every branch sees and writes one outline.
+ */
+function projectRootAt(dir: string): string | null {
+  const main = mainWorktreeRoot(dir);
+  if (main !== null && isProject(main)) return main;
+  return isProject(dir) ? dir : null;
+}
+
+/** Walk up from cwd to the nearest project root (see `projectRootAt`). */
 export function findRoot(cwd: string): string | null {
   let current = cwd;
   for (;;) {
-    try {
-      if (statSync(join(current, KALAMU_DIR, OUTLINE_FILE)).isFile()) return current;
-    } catch {
-      // keep walking
-    }
+    const root = projectRootAt(current);
+    if (root !== null) return root;
     const parent = dirname(current);
     if (parent === current) return null;
     current = parent;
@@ -145,9 +184,16 @@ export interface InitResult {
   paths: KalamuPaths;
 }
 
+/**
+ * Create .kalamu/ at `root` unless a project is already there. A linked
+ * worktree of an initialised checkout counts as already initialised — the
+ * returned paths are the main checkout's, never a second outline (SPEC key
+ * decision 20).
+ */
 export function initKalamu(root: string): InitResult {
+  const existing = projectRootAt(root);
+  if (existing !== null) return { created: false, paths: pathsFor(existing) };
   const paths = pathsFor(root);
-  if (mtimeOf(paths.outline) !== null) return { created: false, paths };
   mkdirSync(paths.dir, { recursive: true });
   if (mtimeOf(paths.outline) === null) atomicWrite(paths.outline, "");
   if (mtimeOf(paths.meta) === null) writeMeta(paths.meta, { version: 1 });

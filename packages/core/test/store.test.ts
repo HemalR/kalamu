@@ -49,6 +49,57 @@ describe("findRoot", () => {
     expect(findRoot(tmpdir())).toBeNull();
   });
 
+  describe("in a linked git worktree", () => {
+    /** Lay out git's linked-worktree files by hand — no git binary needed. */
+    function makeWorktree(main: string, location: string, { commondir = true } = {}): string {
+      const gitdir = join(main, ".git", "worktrees", "wt");
+      mkdirSync(gitdir, { recursive: true });
+      if (commondir) writeFileSync(join(gitdir, "commondir"), "../..\n");
+      mkdirSync(location, { recursive: true });
+      writeFileSync(join(location, ".git"), `gitdir: ${gitdir}\n`);
+      return location;
+    }
+
+    it("resolves to the main checkout, ignoring the worktree's own committed .kalamu", () => {
+      initKalamu(root);
+      // Outside the main checkout, like ~/.t3/worktrees — a walk-up alone would never find it.
+      const worktree = makeWorktree(root, mkdtempSync(join(tmpdir(), "kalamu-wt-")));
+      mkdirSync(join(worktree, ".kalamu"));
+      writeFileSync(join(worktree, ".kalamu", "outline.jsonl"), "");
+      try {
+        expect(findRoot(worktree)).toBe(root);
+        expect(findRoot(join(worktree, "src", "deep"))).toBe(root);
+      } finally {
+        rmSync(worktree, { recursive: true, force: true });
+      }
+    });
+
+    it("resolves a worktree with no .kalamu of its own (branch predates init)", () => {
+      initKalamu(root);
+      const worktree = makeWorktree(root, join(root, ".worktrees", "feature"));
+      expect(findRoot(worktree)).toBe(root);
+    });
+
+    it("treats init inside a worktree as already initialised at the main checkout", () => {
+      initKalamu(root);
+      const worktree = makeWorktree(root, join(root, ".worktrees", "feature"));
+      const result = initKalamu(worktree);
+      expect(result.created).toBe(false);
+      expect(result.paths.root).toBe(root);
+    });
+
+    it("stays its own project when the main checkout is not one, or when .git has no commondir", () => {
+      const worktree = makeWorktree(root, join(root, ".worktrees", "feature"));
+      initKalamu(worktree);
+      expect(findRoot(worktree)).toBe(worktree);
+
+      const submodule = makeWorktree(join(root, "super"), join(root, "super", "sub"), { commondir: false });
+      initKalamu(join(root, "super"));
+      initKalamu(submodule);
+      expect(findRoot(submodule)).toBe(submodule);
+    });
+  });
+
   it("ignores a .kalamu directory without an outline (e.g. the hub's ~/.kalamu config dir)", () => {
     mkdirSync(join(root, ".kalamu"), { recursive: true });
     writeFileSync(join(root, ".kalamu", "projects.json"), "{}");
