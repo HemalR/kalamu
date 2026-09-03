@@ -16,6 +16,8 @@ under `Added` / `Changed` / `Fixed` / `Removed`.
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-09-03
+
 ### Added
 
 - **Repo file references.** Typing `@` in the editor opens a picker over the
