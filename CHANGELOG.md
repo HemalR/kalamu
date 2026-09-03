@@ -16,12 +16,61 @@ under `Added` / `Changed` / `Fixed` / `Removed`.
 
 ## [Unreleased]
 
+### Added
+
+- **Repo file references.** Typing `@` in the editor opens a picker over the
+  repo's tracked files (`git ls-files`, so ignored files never appear);
+  Enter/click inserts an `@path` token that chips on blur and opens the file
+  in your configured editor — `kalamu init` asks which one on first use, or
+  set it any time with `kalamu config editor <preset|template>` (`vscode`,
+  `cursor`, `windsurf`, `zed`, `sublime`, `textmate`, `idea`, `webstorm`, or
+  any `{path}`/`{line}` URL template). A bare `.md` path in text keeps
+  chipping without the `@`, opening read-only under the server's new
+  `/docs/*` route.
+- **Numbered lists.** An item starting with `N.` (`1. foo`) becomes a
+  numbered list entry; the prefix renumbers itself from sibling position on
+  every outline operation, so inserting, deleting, or moving inside a list
+  keeps it `1..n`. Backspace at the start of the text drops the number.
+- **`add`, `done`, `start`, and single-task `next` now echo a copy-ready
+  `Link:` line** (and a `link` field in JSON) for the node they just acted
+  on, so an agent quoting the result to you no longer needs a follow-up
+  `kalamu link` call. Best-effort: an unresolvable slug just omits the line.
+- **Find jumps straight to a node** when the query is a bare node id or a
+  kalamu link (`#z=<id>`, including inside a URL or markdown), instead of
+  only ever searching text.
+- **Pasting multiple lines into an empty item splits them into siblings**,
+  one per line, inheriting the target's kind — pasting on the zoom root
+  creates children instead of invisible siblings, matching Enter.
+- **A linked git worktree now shares its main checkout's outline.** Every
+  read and write from any branch or worktree lands in the main checkout's
+  `.kalamu/`, so a task added on a feature branch is visible everywhere and
+  the outline file never conflicts on merge. Worktrees also no longer
+  register as separate hub projects.
+
 ### Changed
 
 - **Overview mode** replaces compact mode. Toggle it from the command palette
   with `o` at the root (`⌘K` then `o`) — the row reads "Overview enabled" or
   "Overview disabled" depending on the current state — instead of the old
   View → compact sequence.
+- **Assign moved from `@` to `/`** — `@` now opens the file-reference picker
+  instead. `@human`/`@agent` typed in full still assign either way.
+- **The Blocked badge moved into the metadata row**, alongside progress,
+  assignment, and age, instead of sitting apart from the rest of a row's
+  metadata.
+- **The header stays visible while an outline scrolls**, with the breadcrumb
+  trail stacking sticky beneath it.
+- **A registered project whose folder disappears is now kept, dimmed, in the
+  hub sidebar** instead of being pruned silently — `kalamu hub forget`
+  remains the explicit way to drop it.
+
+### Fixed
+
+- **A node can no longer be blocked by its own ancestor.** Nesting already
+  says the child lives under that work, and a done ancestor task closes its
+  umbrella regardless, so the child could never have become eligible anyway.
+  `kalamu validate` now rejects the edge; indenting a node under a recorded
+  blocker drops that blocker rather than refusing the move.
 
 ## [0.12.0] - 2026-08-13
 

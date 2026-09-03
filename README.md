@@ -50,6 +50,7 @@ In the UI, everything is a keystroke away:
 - **?** — the full cheat sheet
 - Inline tokens as you type: `p1`…`p3` set priority, `#tag` becomes a coloured chip, `@human` keeps a task for yourself, `@agent` marks it as agent work, and a repo-relative `.md` path becomes a doc reference chip that opens the file read-only
 - File references: `@` opens a repo-file picker (`/` opens the assign menu), and the inserted `@path` chip opens that file in your editor — `kalamu init` asks which one, or set it any time with `kalamu config editor zed` (`vscode`, `cursor`, `windsurf`, `sublime`, `textmate`, `idea`, `webstorm`, or any `{path}` URL template)
+- Numbered lists: start an item with `1.` and Enter continues the sequence, renumbering itself as items are added, removed, or moved
 - Mouse shortcuts: **⌘-click** a row to collapse it, **⌥-click** to zoom into it — the whole row is the target, not just the chevron
 
 Two view controls sit in the header. **Overview mode** shortens every row to a derived one-line label so a long outline stays scannable — nothing is stored, and the full text comes back the moment you edit. The **filter menu** hides items by who wrote them (you or an agent) and who they're assigned to, and holds the show/hide-completed toggle (⌘⇧H). Any item with work beneath it carries a segmented progress bar showing what's done, what's in progress, and what's left, and every row shows how long ago it was created — hover for the exact timestamp.
@@ -166,7 +167,7 @@ kalamu validate                # before finishing
 4. Priority runs p1 (high) to p3 (low); a missing priority means p2 (medium).
 5. Before starting, run `kalamu next` or inspect the relevant task nodes, and claim the task with `kalamu start <id>` — an unclaimed task can be picked up twice.
 6. If you promote a task into another system (a GitHub issue, Linear, a plan file), move it there and delete it here — Kalamu keeps no forwarding record.
-7. Never refer to a node to the human by ID alone; name it, and use `kalamu link <id>` when a clickable reference helps.
+7. Never refer to a node to the human by ID alone; name it, and use its `Link:` line — already echoed by `add`, `done`, `start`, and `next` — or `kalamu link <id>` for any other node.
 8. After completing Kalamu-originated work, mark the originating task done and
    run `kalamu validate`. Do not run `kalamu done` for ordinary direct requests.
 
@@ -183,6 +184,8 @@ That writes `docs/agents/issue-tracker.md` (the tracker doc the skill reads) and
 ## The data
 
 `.kalamu/outline.jsonl` — one node per line, line order **is** sibling order. Nodes are bullets (thoughts), tasks (agent-executable work), or discussions. Tags live inline in node text as `#tokens`; priority, `assignee`, `createdBy`, `startedAt`, and `blockedBy` are fields, each omitted at its default so lines stay short. `ui-state.json` (collapse state) and `meta.json` (tag colours) are cosmetic and safe to ignore or delete — `kalamu init` adds them, plus the local cache, to your `.gitignore` automatically. See [SPEC.md](SPEC.md) for the full data model.
+
+Running `kalamu` inside a linked git worktree reads and writes the main checkout's `.kalamu/` — so a task added on a feature branch is visible everywhere, and the outline file never conflicts on merge.
 
 ## Development
 
