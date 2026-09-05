@@ -48,7 +48,7 @@ In the UI, everything is a keystroke away:
 - **⌘Enter** — done/reopen · **⌥Enter** — cycle bullet/task/discussion · **⌘.** — collapse · **⌘⇧C** — copy only the item's text
 - **Find** (the search icon, or ⌘K then f) — full-text search, or jump straight to a node id
 - **?** — the full cheat sheet
-- Inline tokens as you type: `p1`…`p3` set priority, `#tag` becomes a coloured chip, `@human` keeps a task for yourself, `@agent` marks it as agent work, and a repo-relative `.md` path becomes a doc reference chip that opens the file read-only
+- Inline tokens as you type: `p1`…`p3` set priority, `#tag` becomes a coloured chip, `@human` keeps a task for yourself, `@agent` marks it as agent work, and a repo-relative `.md` path (optionally `#heading-slug`) becomes a doc reference chip that opens the file read-only at that heading
 - File references: `@` opens a repo-file picker (`/` opens the assign menu), and the inserted `@path` chip opens that file in your editor — `kalamu init` asks which one, or set it any time with `kalamu config editor zed` (`vscode`, `cursor`, `windsurf`, `sublime`, `textmate`, `idea`, `webstorm`, or any `{path}` URL template)
 - Numbered lists: start an item with `1.` and Enter continues the sequence, renumbering itself as items are added, removed, or moved
 - Mouse shortcuts: **⌘-click** a row to collapse it, **⌥-click** to zoom into it — the whole row is the target, not just the chevron

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { serializeMarkdown } from "../src/markdown.js";
+import { headingSlug, markdownHeadings, serializeMarkdown } from "../src/markdown.js";
 import { buildTree } from "../src/tree.js";
 import { bullet, discussion, task } from "./helpers.js";
 
@@ -41,5 +41,16 @@ describe("serializeMarkdown", () => {
     const root = tree.byId.get("n_001");
     expect(root && serializeMarkdown(tree, [root], 0)).toBe("- root");
     expect(root && serializeMarkdown(tree, [root], 1)).toBe("- root\n  - child");
+  });
+});
+
+describe("headingSlug / markdownHeadings", () => {
+  it("slugs GitHub-style and skips fenced code", () => {
+    expect(headingSlug("Phase 2: Admin Console!")).toBe("phase-2-admin-console");
+    const source = "# Plan\n\ntext\n```\n# not a heading\n```\n## Phase 2 ##\n";
+    expect(markdownHeadings(source)).toEqual([
+      { level: 1, text: "Plan", slug: "plan", line: 0 },
+      { level: 2, text: "Phase 2", slug: "phase-2", line: 6 },
+    ]);
   });
 });

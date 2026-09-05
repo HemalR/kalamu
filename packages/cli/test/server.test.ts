@@ -233,8 +233,17 @@ describe("docs route", () => {
     writeFileSync(join(root, "plans", "refresh.md"), "# Plan\n");
     const res = await server.app.request("/docs/plans/refresh.md");
     expect(res.status).toBe(200);
-    expect(res.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+    expect(res.headers.get("content-type")).toMatch(/^text\/plain/);
     expect(await res.text()).toBe("# Plan\n");
+  });
+
+  it("serves a browser an HTML page whose headings carry slug ids for #anchors", async () => {
+    writeFileSync(join(root, "plan.md"), "# Plan\n\n<b>raw</b>\n\n## Phase 2\n");
+    const res = await server.app.request("/docs/plan.md", { headers: { accept: "text/html,*/*" } });
+    expect(res.headers.get("content-type")).toContain("text/html");
+    const html = await res.text();
+    expect(html).toContain('<span id="phase-2">## Phase 2</span>');
+    expect(html).toContain("&lt;b&gt;raw&lt;/b&gt;"); // source is shown, never rendered
   });
 
   it("rejects non-md files, missing files, and traversal reads", async () => {

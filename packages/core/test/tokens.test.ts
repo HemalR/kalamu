@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appendTags, deriveTags, parseTokens, stripTags } from "../src/tokens.js";
+import { appendTags, deriveTags, docReferences, parseTokens, stripTags } from "../src/tokens.js";
 
 describe("parseTokens", () => {
   it("extracts p1-p3 and strips the token", () => {
@@ -66,5 +66,15 @@ describe("deriveTags / appendTags / stripTags", () => {
     expect(stripTags("Build a new #feature to do xyz", ["feature"])).toBe("Build a new to do xyz");
     expect(stripTags("keep issue#42 #Real", ["real"])).toBe("keep issue#42");
     expect(stripTags("no change", ["ghost"])).toBe("no change");
+  });
+});
+
+describe("docReferences", () => {
+  it("finds .md paths with optional heading anchors and their spans", () => {
+    expect(docReferences("Spec: plans/a.md#phase-2, see SPEC.md.")).toEqual([
+      { path: "plans/a.md", anchor: "phase-2", start: 6, length: 18 },
+      { path: "SPEC.md", start: 30, length: 7 },
+    ]);
+    expect(deriveTags("plans/a.md#phase-2 #real")).toEqual(["real"]); // the anchor is not a tag
   });
 });

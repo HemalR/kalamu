@@ -159,6 +159,16 @@ describe("segmentText", () => {
     });
   });
 
+  it("carries a #heading anchor on the doc segment", () => {
+    expect(segmentText("see plans/a.md#phase-2 now")[1]).toEqual({
+      kind: "doc",
+      path: "plans/a.md",
+      anchor: "phase-2",
+      start: 4,
+      length: 18,
+    });
+  });
+
   it("sheds sentence punctuation after the path", () => {
     for (const text of ["read plans/a.md.", "read plans/a.md, then", "(read plans/a.md)", "read plans/a.md; ok"]) {
       expect(segmentText(text).find((s) => s.kind === "doc")?.path).toBe("plans/a.md");
@@ -226,6 +236,7 @@ describe("assetUrl", () => {
 describe("docUrl", () => {
   it("serves the repo-relative path under /docs/ with encoded segments", () => {
     expect(docUrl("plans/admin console.md")).toBe("/docs/plans/admin%20console.md");
+    expect(docUrl("plans/a.md", "phase-2")).toBe("/docs/plans/a.md#phase-2");
   });
 });
 

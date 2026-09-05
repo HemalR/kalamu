@@ -23,6 +23,7 @@ import {
   TAG_PATTERN,
   type KalamuNode,
   type NodeKind,
+  markdownHeadings,
 } from "@kalamu/core";
 import {
   offDefaultBranch,
@@ -133,6 +134,27 @@ const CONTENT_TYPES: Record<string, string> = {
 export interface KalamuServer {
   app: Hono;
   close: () => void;
+}
+
+const escapeHtml = (text: string): string =>
+  text.replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch] ?? ch);
+
+/** The browser view of a doc: its Markdown source, verbatim, with heading lines wrapped in id'd anchors. */
+export function docPage(path: string, source: string): string {
+  const headings = new Map(markdownHeadings(source).map((h) => [h.line, h.slug]));
+  const body = source
+    .split("\n")
+    .map((line, i) => {
+      const slug = headings.get(i);
+      return slug === undefined ? escapeHtml(line) : `<span id="${escapeHtml(slug)}">${escapeHtml(line)}</span>`;
+    })
+    .join("\n");
+  return (
+    `<!doctype html><meta charset="utf-8"><title>${escapeHtml(path)}</title>` +
+    `<style>body{margin:0}pre{margin:0;padding:24px 32px;font:13px/1.5 ui-monospace,monospace;white-space:pre-wrap;word-break:break-word}` +
+    `span:target{background:#fff3b0}@media(prefers-color-scheme:dark){body{background:#111;color:#ddd}span:target{background:#5a4a00}}</style>` +
+    `<pre>${body}</pre>`
+  );
 }
 
 /** Static web-asset handler (SPA: unknown paths fall back to index.html). Shared with the hub. */
@@ -405,8 +427,10 @@ export function createServer(
   });
 
   // Doc references: repo-relative `.md` paths in node text (SPEC key decision
-  // 19) open here as plain text. Repo files only, `.md` only — this is a doc
-  // viewer, never a general file server.
+  // 19) open here. Repo files only, `.md` only — this is a doc viewer, never a
+  // general file server. A browser tab (Accept: text/html) gets the source in
+  // a <pre> with every heading carrying its slug as an id, so `#slug` in the
+  // URL lands on that heading; any other client gets the raw file.
   app.get("/docs/*", (c) => {
     let raw: string;
     try {
@@ -418,7 +442,9 @@ export function createServer(
     const full = normalize(join(repoRoot, raw));
     if (!full.startsWith(repoRoot + sep) || extname(full) !== ".md") return c.text("not found", 404);
     if (!existsSync(full) || !statSync(full).isFile()) return c.text("not found", 404);
-    return c.body(readFileSync(full), 200, { "Content-Type": "text/plain; charset=utf-8" });
+    const source = readFileSync(full, "utf8");
+    if (!c.req.header("accept")?.includes("text/html")) return c.text(source);
+    return c.html(docPage(raw, source));
   });
 
   app.get("/assets/:file", (c) => {

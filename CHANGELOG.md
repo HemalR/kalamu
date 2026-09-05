@@ -37,6 +37,10 @@ under `Added` / `Changed` / `Fixed` / `Removed`.
 - **`validate` checks doc references.** A `.md` path in node text that no
   longer exists in the repo (renamed, deleted) is reported as a warning by
   `kalamu validate` and `/api/validate`. Warnings never fail validation.
+- **Doc reference heading anchors.** `plans/foo.md#phase-2` chips as a doc
+  reference that opens the file scrolled to that heading (GitHub-style slug
+  of the heading text). The `/docs/*` viewer now serves browsers the Markdown
+  source with each heading anchored; other clients still get the raw file.
 - **Row delete button.** A trashcan appears beside the copy button on row
   hover; it deletes the item with its subtree, undoable like
   Mod+Shift+Backspace, so there is no confirmation prompt.

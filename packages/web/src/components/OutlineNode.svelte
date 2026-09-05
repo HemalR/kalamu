@@ -1050,9 +1050,10 @@
                 data-length={seg.length}>{seg.href}</a
               >
             {:else if seg.kind === "doc"}
+              {@const docLabel = seg.anchor === undefined ? seg.path : `${seg.path}#${seg.anchor}`}
               <!-- data-chip: the anchor handles its own click (opens the doc), like the image thumb -->
               <span class="chip-slot" data-chip data-start={seg.start} data-length={seg.length}>
-                <a class="doc" href={docUrl(seg.path)} target="_blank" rel="noreferrer" title={seg.path}>
+                <a class="doc" href={docUrl(seg.path, seg.anchor)} target="_blank" rel="noreferrer" title={docLabel}>
                   <svg viewBox="0 0 16 16" width="12" height="12" fill="none" aria-hidden="true">
                     <path
                       d="M4 1.5h5.5L13 5v9a.5.5 0 0 1-.5.5h-8.5a.5.5 0 0 1-.5-.5v-12a.5.5 0 0 1 .5-.5Z"
@@ -1060,7 +1061,7 @@
                     />
                     <path d="M9.5 1.5V5H13" stroke="currentColor" />
                   </svg>
-                  {basename(seg.path)}
+                  {basename(docLabel)}
                 </a>
               </span>
             {:else if seg.kind === "file"}

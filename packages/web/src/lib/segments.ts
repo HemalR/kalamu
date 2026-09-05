@@ -53,8 +53,10 @@ export interface DocSegment {
   kind: "doc";
   /** Repo-relative path as typed, e.g. `plans/admin-console-refresh.md`. */
   path: string;
+  /** Heading slug after a `#`, when the reference points into the doc. */
+  anchor?: string;
   start: number;
-  /** Length of the raw path in the source text. */
+  /** Length of the raw token (anchor included) in the source text. */
   length: number;
 }
 
@@ -111,9 +113,10 @@ export function assetUrl(path: string): string {
   return path.replace(/^\.kalamu\/assets\//, `${apiBase}/assets/`);
 }
 
-/** The browser-visible URL for a repo-relative doc path stored in node text. */
-export function docUrl(path: string): string {
-  return `${apiBase}/docs/${path.split("/").map(encodeURIComponent).join("/")}`;
+/** The browser-visible URL for a repo-relative doc path stored in node text; `anchor` lands on that heading. */
+export function docUrl(path: string, anchor?: string): string {
+  const base = `${apiBase}/docs/${path.split("/").map(encodeURIComponent).join("/")}`;
+  return anchor === undefined ? base : `${base}#${encodeURIComponent(anchor)}`;
 }
 
 /**

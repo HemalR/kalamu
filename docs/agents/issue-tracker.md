@@ -12,7 +12,7 @@ Issues for this repo live in `.kalamu/outline.jsonl`, managed by the Kalamu CLI.
 - **Close**: `kalamu done <id>`. Reopen with `kalamu reopen <id>`.
 - **Search**: `kalamu search <query>`.
 - **Place a node**: `kalamu ls` then `kalamu ls <id>` to walk to the parent without reading the whole outline; then `kalamu add --parent <id>`.
-- **Reference a spec doc**: write the repo-relative `.md` path in the node text (`Spec: plans/foo.md Phase 2`); the UI renders it as a chip that opens the file (SPEC key decision 19). Prose stays in the doc, state stays in the node — never duplicate one into the other.
+- **Reference a spec doc**: write the repo-relative `.md` path in the node text (`Spec: plans/foo.md Phase 2`), or point into it with a heading slug (`plans/foo.md#phase-2`); the UI renders it as a chip that opens the file at that heading (SPEC key decision 19). `kalamu validate` warns when a referenced file is missing. Prose stays in the doc, state stays in the node — never duplicate one into the other.
 - **Reference any other repo file**: write it with an `@` — `@packages/web/src/lib/caret.ts`. Bare `.md` paths chip on their own; every other file needs the `@` marker.
 
 ## When a skill says "publish to the issue tracker"
