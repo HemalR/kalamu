@@ -1,6 +1,7 @@
 import { findRoot, initKalamu, pathsFor } from "@kalamu/core/store";
 import { serve } from "@hono/node-server";
 import { join } from "node:path";
+import { warnIfOffDefaultBranch } from "./context.js";
 import { detectHub, wakeInstalledHub } from "./hub.js";
 import { HUB_PORT } from "./hub-url.js";
 import { openBrowser, pickPort, webAssetsDir } from "./launch.js";
@@ -19,6 +20,7 @@ export async function open(cwd: string, options: OpenOptions): Promise<void> {
   const root = findRoot(cwd) ?? cwd;
   initKalamu(root); // ensure .kalamu exists (never overwrites)
   registerProject(root);
+  warnIfOffDefaultBranch(root);
   const paths = pathsFor(root);
 
   // A running hub already serves every registered project — reuse it instead

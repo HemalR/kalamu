@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { findRoot, pathsFor, type KalamuPaths } from "@kalamu/core/store";
+import { findRoot, offDefaultBranch, pathsFor, type KalamuPaths } from "@kalamu/core/store";
 import { registerProject } from "./registry.js";
 
 export class CliError extends Error {}
@@ -25,11 +25,29 @@ export function looksLikeRepo(dir: string): boolean {
   return [".git", ".gitignore", "package.json"].some((marker) => existsSync(join(dir, marker)));
 }
 
+/**
+ * The outline is a committed file, so when the main checkout is on a branch
+ * other than its default, every command — from any worktree — is reading and
+ * writing that branch's copy (SPEC key decision 20). Kalamu cannot stop
+ * `git checkout`; this makes the slip loud. stderr keeps it clear of
+ * `--format json` stdout, and agents see it too: their writes are the ones
+ * that would otherwise strand on the wrong branch.
+ */
+export function warnIfOffDefaultBranch(root: string): void {
+  const drift = offDefaultBranch(root);
+  if (drift === null) return;
+  process.stderr.write(
+    `kalamu: ${root} is on ${drift.head}, not ${drift.expected} — the outline here is that checkout's copy, ` +
+      `not ${drift.expected}'s. Check out ${drift.expected} there and use a worktree for other branches.\n`,
+  );
+}
+
 export function resolvePaths(cwd: string): KalamuPaths {
   const root = findRoot(cwd);
   if (!root) throw new CliError('not a Kalamu project (no .kalamu directory found) — run "kalamu init"');
   // Hub registration is a side effect of use (SPEC "Hub"); it never throws.
   registerProject(root);
+  warnIfOffDefaultBranch(root);
   return pathsFor(root);
 }
 

@@ -15,6 +15,7 @@
   import { api, apiBase, type ProjectInfo } from "./lib/api";
   import { BRAND_BRONZE, setFavicon } from "./lib/favicon";
   import { fileRefs } from "./lib/file-refs.svelte";
+  import { consumeLaunches, planLaunch } from "./lib/launch";
   import { OutlineStore } from "./lib/outline.svelte";
   import { matches, SHORTCUTS as S } from "./lib/shortcuts";
   import { theme } from "./lib/theme.svelte";
@@ -40,6 +41,17 @@
     if (local === store.zoomId) return;
     if (local === null || store.tree.byId.has(local)) store.setZoom(local);
   }
+
+  // Installed-app deep links land here instead of in a new tab (lib/launch.ts).
+  consumeLaunches((target) => {
+    const step = planLaunch(target, new URL(location.href));
+    if (step.kind === "navigate") location.href = step.href;
+    else if (step.kind === "zoom") {
+      // Empty hash = zoom out; otherwise assigning the hash fires hashchange -> onHashChange applies it.
+      if (step.hash === "") store.setZoom(null);
+      else location.hash = step.hash;
+    }
+  });
 
   /** Project this instance serves (name for the title, platform/hubInstalled
       for HubHint); null until (and unless) it loads. */

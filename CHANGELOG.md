@@ -16,6 +16,22 @@ under `Added` / `Changed` / `Fixed` / `Removed`.
 
 ## [Unreleased]
 
+### Added
+
+- **Deep links land in one window.** The web manifest now asks the browser to
+  focus the existing Kalamu window (`launch_handler: focus-existing`) instead
+  of opening a tab per click. Install the hub as an app and turn on "Open
+  supported links" in its settings; agent links then jump the installed
+  window to the node (or switch project). Plain tabs are unchanged.
+- **Off-default-branch warning.** Every command (and `open`) now warns on
+  stderr when the main checkout has a branch other than its default checked
+  out — from a worktree too, since worktrees share that checkout's outline.
+  A committed file is per-branch by git's definition, so switching branches
+  in the main checkout silently swaps the outline for that branch's copy;
+  the warning makes the slip loud and points at the fix: check the default
+  branch back out and use a worktree for the other one. Read from `.git/HEAD`
+  and `origin/HEAD` (else a local `main`/`master`) with no git binary.
+
 ## [0.13.0] - 2026-09-03
 
 ### Added

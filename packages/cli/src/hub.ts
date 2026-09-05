@@ -191,6 +191,7 @@ export function createHubServer(assetsDir: string | null, options: HubOptions = 
       start_url: "/",
       scope: "/",
       display: "standalone",
+      launch_handler: { client_mode: "focus-existing" },
       theme_color: projectColor(entry),
       background_color: "#17191d",
       icons: [

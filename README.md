@@ -65,6 +65,8 @@ kalamu hub
 
 One local server for every Kalamu project on your machine: `http://127.0.0.1:4400` shows them all in a sidebar, and any repo you've run a `kalamu` command in appears there automatically. It runs in the foreground and installs nothing — Ctrl+C and it's gone (or `kalamu stop` if you've lost track of which tab it's in — this also stops a standalone `kalamu open` server for the current project). While a hub is running, `kalamu open` routes your browser to it instead of starting another server — and if you've `hub install`ed but it's not currently running, `open` wakes it first.
 
+Agents cite nodes with deep links into the hub, and every click would normally open a fresh tab. To have links land in one window instead, install the hub as an app (in Chrome or Edge: the install icon in the address bar at `http://localhost:4400`), then turn on "Open supported links" in the app's settings. The installed app focuses its existing window and jumps to the node; no new tabs.
+
 To remove an old entry without touching that project's files:
 
 ```bash
@@ -185,7 +187,7 @@ That writes `docs/agents/issue-tracker.md` (the tracker doc the skill reads) and
 
 `.kalamu/outline.jsonl` — one node per line, line order **is** sibling order. Nodes are bullets (thoughts), tasks (agent-executable work), or discussions. Tags live inline in node text as `#tokens`; priority, `assignee`, `createdBy`, `startedAt`, and `blockedBy` are fields, each omitted at its default so lines stay short. `ui-state.json` (collapse state) and `meta.json` (tag colours) are cosmetic and safe to ignore or delete — `kalamu init` adds them, plus the local cache, to your `.gitignore` automatically. See [SPEC.md](SPEC.md) for the full data model.
 
-Running `kalamu` inside a linked git worktree reads and writes the main checkout's `.kalamu/` — so a task added on a feature branch is visible everywhere, and the outline file never conflicts on merge.
+Running `kalamu` inside a linked git worktree reads and writes the main checkout's `.kalamu/` — so a task added on a feature branch is visible everywhere, and the outline file never conflicts on merge. The flip side: the main checkout should stay on its default branch, because checking out another branch there swaps the committed outline for that branch's copy. Kalamu warns on stderr when that happens; use a worktree for the other branch instead.
 
 ## Development
 

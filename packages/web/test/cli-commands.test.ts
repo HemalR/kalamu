@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { CLI_COMMANDS, nodeCommands, type NodeCommandInput } from "../src/lib/cli-commands";
 
 function input(overrides: Partial<NodeCommandInput> = {}): NodeCommandInput {
-  return { serverId: "n_1", done: false, hasChildren: false, isTask: true, started: false, ...overrides };
+  return { serverId: "n_1", done: false, hasChildren: false, claimable: true, started: false, ...overrides };
 }
 
 describe("nodeCommands", () => {
@@ -46,7 +46,7 @@ describe("nodeCommands", () => {
   });
 
   it("omits the claim pair on kinds that cannot be claimed", () => {
-    const commands = nodeCommands(input({ serverId: "n_7", isTask: false }));
+    const commands = nodeCommands(input({ serverId: "n_7", claimable: false }));
     expect(commands.some((command) => /^kalamu (start|end)/.test(command))).toBe(false);
   });
 });

@@ -5,9 +5,13 @@
 import { ancestors, buildTree, type KalamuNode, type Tree } from "@kalamu/core";
 import { summarize } from "./summary";
 
-/** In progress: a claimed task that is still open (`▶` where the CLI prints `☐`). */
+/**
+ * In progress: a claimed task or discussion that is still open (`▶` where the
+ * CLI prints `☐`/`?`). Bullets cannot be claimed, so a stale `startedAt` on one
+ * is inert.
+ */
 export function isStarted(node: KalamuNode): boolean {
-  return node.kind === "task" && node.startedAt !== undefined && node.doneAt === null;
+  return node.kind !== "bullet" && node.startedAt !== undefined && node.doneAt === null;
 }
 
 /**

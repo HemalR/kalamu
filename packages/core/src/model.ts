@@ -16,11 +16,11 @@ export interface KalamuNode {
   createdAt: string;
   doneAt: string | null;
   /**
-   * When an agent claimed this task (SPEC key decision 17). Set with `start`,
-   * cleared with `end`; present with a null `doneAt` means in progress. A
-   * claimed task is skipped by `next` so a second session cannot take work
-   * already underway. A timestamp rather than a status for the same reason
-   * `doneAt` is not a boolean.
+   * When an agent claimed this task or discussion (SPEC key decision 17). Set
+   * with `start`, cleared with `end`; present with a null `doneAt` means in
+   * progress. A claimed node is skipped by `next` so a second session cannot
+   * take work already underway. Inert on bullets. A timestamp rather than a
+   * status for the same reason `doneAt` is not a boolean.
    */
   startedAt?: string;
   /** 1 = high, 2 = medium (the default — never persisted), 3 = low. */

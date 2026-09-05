@@ -327,7 +327,7 @@ program
   .option("--tasks", "tasks only")
   .option("--open", "open tasks only")
   .option("--done", "done tasks only")
-  .option("--started", "claimed (in-progress) tasks only")
+  .option("--started", "claimed (in-progress) tasks and discussions only")
   .option("--blocked", "tasks and discussions with at least one blocker")
   .option("--discussions", "discussions only")
   .option("--assignee <who>", "tasks assigned to human or agent")
@@ -438,7 +438,7 @@ program
 program
   .command("start <id>")
   .description("claim a task so another agent session does not take it")
-  .option("--force", "re-claim a task already started (its owner died)")
+  .option("--force", "re-claim an item already started (its owner died)")
   .option("--format <format>", "output format (text|json)")
   .action((id: string, opts: { force?: boolean; format?: string }) => {
     run(() => commands.start(process.cwd(), id, opts), opts);

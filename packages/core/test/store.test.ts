@@ -1,12 +1,13 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { serializeJsonl } from "../src/jsonl.js";
 import { addNode } from "../src/operations.js";
 import {
   findRoot,
   initKalamu,
+  offDefaultBranch,
   pathsFor,
   readOutline,
   readUiState,
@@ -145,5 +146,43 @@ describe("ui state", () => {
     const paths = initKalamu(root).paths;
     writeFileSync(paths.uiState, JSON.stringify({ collapsed: [], compact: true }) + "\n");
     expect(readUiState(paths.uiState)).toEqual({ collapsed: [], overview: true });
+  });
+});
+
+describe("offDefaultBranch", () => {
+  /** Lay out a main checkout's .git by hand — no git binary needed. */
+  function gitDir(files: Record<string, string>): void {
+    for (const [name, content] of Object.entries(files)) {
+      const file = join(root, ".git", name);
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, content);
+    }
+  }
+
+  it("is null outside git, on the default branch, or when no default is known", () => {
+    expect(offDefaultBranch(root)).toBeNull();
+    gitDir({ HEAD: "ref: refs/heads/main\n", "refs/remotes/origin/HEAD": "ref: refs/remotes/origin/main\n" });
+    expect(offDefaultBranch(root)).toBeNull();
+    gitDir({ HEAD: "ref: refs/heads/feature\n" });
+    rmSync(join(root, ".git", "refs", "remotes"), { recursive: true });
+    expect(offDefaultBranch(root)).toBeNull(); // no origin/HEAD, no main/master
+  });
+
+  it("reports the branch and the default from origin/HEAD", () => {
+    gitDir({ HEAD: "ref: refs/heads/feature/x\n", "refs/remotes/origin/HEAD": "ref: refs/remotes/origin/trunk\n" });
+    expect(offDefaultBranch(root)).toEqual({ head: "feature/x", expected: "trunk" });
+  });
+
+  it("falls back to a local main or master, loose or packed", () => {
+    gitDir({ HEAD: "ref: refs/heads/feature\n", "refs/heads/main": "0".repeat(40) + "\n" });
+    expect(offDefaultBranch(root)).toEqual({ head: "feature", expected: "main" });
+    rmSync(join(root, ".git", "refs", "heads", "main"));
+    gitDir({ "packed-refs": `# pack-refs with: peeled fully-peeled sorted \n${"1".repeat(40)} refs/heads/master\n` });
+    expect(offDefaultBranch(root)).toEqual({ head: "feature", expected: "master" });
+  });
+
+  it("names a detached HEAD by its short hash", () => {
+    gitDir({ HEAD: "abcdef0123456789abcdef0123456789abcdef01\n", "refs/remotes/origin/HEAD": "ref: refs/remotes/origin/main\n" });
+    expect(offDefaultBranch(root)).toEqual({ head: "detached HEAD abcdef0", expected: "main" });
   });
 });

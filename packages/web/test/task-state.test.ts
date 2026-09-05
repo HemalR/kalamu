@@ -36,9 +36,9 @@ describe("isStarted", () => {
     expect(isStarted(node({ id: "c", startedAt: STARTED, doneAt: DONE }))).toBe(false);
   });
 
-  it("is false on other kinds, which cannot be claimed", () => {
+  it("is true for a claimed discussion, false on a bullet, which cannot be claimed", () => {
     expect(isStarted(node({ id: "d", kind: "bullet", startedAt: STARTED }))).toBe(false);
-    expect(isStarted(node({ id: "e", kind: "discussion", startedAt: STARTED }))).toBe(false);
+    expect(isStarted(node({ id: "e", kind: "discussion", startedAt: STARTED }))).toBe(true);
   });
 });
 

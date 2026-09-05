@@ -333,7 +333,7 @@
         serverId: store.serverId(target.id),
         done: target.doneAt !== null,
         hasChildren: (store.tree.children.get(target.id) ?? []).length > 0,
-        isTask: target.kind === "task",
+        claimable: target.kind !== "bullet",
         started: target.startedAt !== undefined,
       });
       const keys = assignKeys(commands.length);
@@ -404,9 +404,10 @@
     // fold — are disabled rather than hidden. Assign and Priority both promote
     // a bullet when given real task metadata.
     const assignable = target !== undefined && isAssignable(target);
-    const task = target?.kind === "task" ? target : undefined;
-    const started = task !== undefined && isStarted(task);
-    // Blocking is the one node action that covers discussions as well as tasks.
+    // Tasks and discussions can be claimed; bullets carry no state (SPEC key decision 17, amended 2026-09-05).
+    const claimable = target !== undefined && target.kind !== "bullet" ? target : undefined;
+    const started = claimable !== undefined && isStarted(claimable);
+    // Blocking and claiming both cover discussions as well as tasks.
     const blockable = target !== undefined && isBlockable(target);
     // Registry order — the same order that numbers the sidebar.
     const projectRows: Item[] = projects.map((project, index) => ({
@@ -442,16 +443,16 @@
       { id: "kind", key: "t", label: "Kind…", disabled: !target, run: () => enter("kind") },
       {
         // Claim / release, one slot labelled by state (SPEC key decision 17).
-        // A done task keeps its startedAt as a record of how long the work
+        // A done item keeps its startedAt as a record of how long the work
         // took, so End is never offered there — only Start, disabled.
         id: started ? "end" : "start",
         key: "s",
-        label: started ? "End — release the claim" : "Start — claim this task",
-        disabled: !task || (!started && task.doneAt !== null),
+        label: started ? "End — release the claim" : "Start — claim this item",
+        disabled: !claimable || (!started && claimable.doneAt !== null),
         run: () => {
-          if (!task) return;
-          if (started) store.endTask(task.id);
-          else store.startTask(task.id);
+          if (!claimable) return;
+          if (started) store.endTask(claimable.id);
+          else store.startTask(claimable.id);
           close();
         },
       },

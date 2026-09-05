@@ -33,9 +33,8 @@ describe("startTask / endTask", () => {
     expect(serializeNode(ended.node)).not.toContain("startedAt");
   });
 
-  it("refuses non-tasks, done tasks, and a second claim without force", () => {
-    expect(() => startTask([bullet("n_001")], "n_001")).toThrow(/only tasks can be started/);
-    expect(() => startTask([discussion("n_001")], "n_001")).toThrow(/only tasks can be started/);
+  it("refuses bullets, done tasks, and a second claim without force", () => {
+    expect(() => startTask([bullet("n_001")], "n_001")).toThrow(/only tasks and discussions can be started/);
     expect(() => startTask([task("n_001", { doneAt: NOW })], "n_001")).toThrow(/already done/);
 
     const claimed = startTask([task("n_001")], "n_001", {}, NOW);
@@ -65,6 +64,14 @@ describe("startTask / endTask", () => {
     const reopened = reopen(finished.nodes, "n_001");
     expect(reopened.node.startedAt).toBeUndefined();
     expect(nextTask(reopened.nodes)?.node.id).toBe("n_001");
+  });
+
+  it("a claimed discussion leaves the discussion queue and returns once ended", () => {
+    const nodes = [discussion("n_001"), discussion("n_002")];
+    const claimed = startTask(nodes, "n_001", {}, NOW);
+    expect(claimed.node.startedAt).toBe(NOW);
+    expect(nextTask(claimed.nodes, { kind: "discussion" })?.node.id).toBe("n_002");
+    expect(nextTask(endTask(claimed.nodes, "n_001").nodes, { kind: "discussion" })?.node.id).toBe("n_001");
   });
 
   it("next skips a claimed task and returns it once ended", () => {

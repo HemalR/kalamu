@@ -13,8 +13,8 @@ export interface NodeCommandInput {
   serverId: string;
   done: boolean;
   hasChildren: boolean;
-  /** Tasks alone can be claimed — `start`/`end` refuse other kinds. */
-  isTask: boolean;
+  /** Tasks and discussions can be claimed — `start`/`end` refuse bullets. */
+  claimable: boolean;
   /** Whether a claim is recorded (`startedAt`), done or not. */
   started: boolean;
 }
@@ -22,23 +22,23 @@ export interface NodeCommandInput {
 /**
  * Ready-to-run CLI commands for one node, real id filled in. Every command
  * applies to every kind — done/reopen included (on bullets it is visual only)
- * — except the claim pair, which core refuses on anything but a task.
+ * — except the claim pair, which core refuses on a bullet.
  *
  * Both of those pairs are also state-dependent: only the line that would do
  * something is offered — reopen for a done node and done otherwise, end for a
- * claimed task and start for an open unclaimed one.
+ * claimed item and start for an open unclaimed one.
  *
  * `block` is deliberately absent: it needs a second node's id, so it could
  * only be a template, not a ready-to-run line. The palette's "Block on…"
  * covers it with a picker.
  */
-export function nodeCommands({ serverId, done, hasChildren, isTask, started }: NodeCommandInput): string[] {
+export function nodeCommands({ serverId, done, hasChildren, claimable, started }: NodeCommandInput): string[] {
   const commands = [`kalamu show ${serverId} --children`, `kalamu ls ${serverId}`, `kalamu link ${serverId}`];
   commands.push(done ? `kalamu reopen ${serverId}` : `kalamu done ${serverId}`);
-  // A claim can be released even after the task is done; claiming a done task
+  // A claim can be released even after the item is done; claiming a done item
   // is refused (reopen it first), so that line is simply not offered.
-  if (isTask && started) commands.push(`kalamu end ${serverId}`);
-  else if (isTask && !done) commands.push(`kalamu start ${serverId}`);
+  if (claimable && started) commands.push(`kalamu end ${serverId}`);
+  else if (claimable && !done) commands.push(`kalamu start ${serverId}`);
   commands.push(`kalamu add --parent ${serverId} --kind task --text ""`);
   // Plain delete refuses nodes with children.
   commands.push(`kalamu delete ${serverId}${hasChildren ? " --recursive" : ""}`);
@@ -58,8 +58,8 @@ export const CLI_COMMANDS: readonly CliCommand[] = [
   { name: "delete", does: "Delete a node" },
   { name: "done", does: "Mark an item done — visual strikethrough on bullets" },
   { name: "reopen", does: "Reopen an item" },
-  { name: "start", does: "Claim a task so another agent session does not take it" },
-  { name: "end", does: "Release a claim, returning the task to the queue" },
+  { name: "start", does: "Claim a task or discussion so another agent session does not take it" },
+  { name: "end", does: "Release a claim, returning the item to its queue" },
   { name: "block", does: "Record that a task or discussion waits on another node" },
   { name: "unblock", does: "Remove one blocker, or all of them" },
   { name: "search", does: "Search node text" },

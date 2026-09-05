@@ -257,15 +257,16 @@ export function markDone(nodes: readonly KalamuNode[], id: string, now?: string)
 export function reopen(nodes: readonly KalamuNode[], id: string): { nodes: KalamuNode[]; node: KalamuNode } {
   const tree = buildTree(nodes);
   const node = requireNode(tree, id);
-  // Reopening returns the task to the queue, so the old claim must go with it:
-  // a reopened task still carrying startedAt would be invisible to `next`.
+  // Reopening returns the node to its queue, so the old claim must go with it:
+  // a reopened item still carrying startedAt would be invisible to `next`.
   const { startedAt: _dropped, ...rest } = node;
   return replace(tree, { ...rest, doneAt: null });
 }
 
 /**
- * Claim a task so a second agent session does not take the same work
- * (SPEC key decision 17). `force` re-claims one whose owner died.
+ * Claim a task or discussion so a second agent session does not take the same
+ * work (SPEC key decision 17). `force` re-claims one whose owner died. Bullets
+ * carry no state, so they cannot be claimed.
  */
 export function startTask(
   nodes: readonly KalamuNode[],
@@ -275,7 +276,7 @@ export function startTask(
 ): { nodes: KalamuNode[]; node: KalamuNode } {
   const tree = buildTree(nodes);
   const node = requireNode(tree, id);
-  if (node.kind !== "task") throw new OperationError(`${id} is a ${node.kind}; only tasks can be started`);
+  if (node.kind === "bullet") throw new OperationError(`${id} is a bullet; only tasks and discussions can be started`);
   if (node.doneAt !== null) throw new OperationError(`${id} is already done; reopen it before starting`);
   if (node.startedAt !== undefined && options.force !== true) {
     throw new OperationError(`${id} was already started at ${node.startedAt}; pass --force to re-claim it`);
@@ -283,11 +284,11 @@ export function startTask(
   return replace(tree, { ...node, startedAt: now ?? new Date().toISOString() });
 }
 
-/** Release a claim, returning the task to the queue. */
+/** Release a claim, returning the task or discussion to its queue. */
 export function endTask(nodes: readonly KalamuNode[], id: string): { nodes: KalamuNode[]; node: KalamuNode } {
   const tree = buildTree(nodes);
   const node = requireNode(tree, id);
-  if (node.kind !== "task") throw new OperationError(`${id} is a ${node.kind}; only tasks can be ended`);
+  if (node.kind === "bullet") throw new OperationError(`${id} is a bullet; only tasks and discussions can be ended`);
   if (node.startedAt === undefined) throw new OperationError(`${id} was never started`);
   const { startedAt: _cleared, ...rest } = node;
   return replace(tree, rest);
@@ -381,9 +382,9 @@ export interface NextOptions {
  * The full queue for one kind (default: the agent task queue). Eligibility:
  * open node of that kind with non-blank text, not blocked by an open node, and
  * no done ancestor TASK (a closed parent task closes its umbrella; bullets and
- * discussions never affect eligibility). Tasks must additionally be unclaimed
- * (no `startedAt`) and not assigned to the human; discussions can be neither
- * claimed nor assigned, so on them a `startedAt`/`assignee` is an inert
+ * discussions never affect eligibility), and unclaimed (no `startedAt`) — a
+ * claim gates both kinds. Tasks must additionally not be assigned to the human;
+ * discussions are never assigned, so on them an `assignee` is an inert
  * leftover from a past life as a task and never gates. Sort: priority
  * ascending (p1 first, missing = p2), then outline order. Sort is stable, so
  * outline order is the tie-breaker for free.
@@ -402,7 +403,8 @@ export function eligibleTasks(
         n.text.trim() !== "" &&
         n.doneAt === null &&
         !isBlocked(tree, n) &&
-        (kind === "discussion" || (n.startedAt === undefined && n.assignee !== "human")) &&
+        n.startedAt === undefined &&
+        (kind === "discussion" || n.assignee !== "human") &&
         (scope === null || scope.has(n.id)) &&
         !ancestors(tree, n).some((a) => a.kind === "task" && a.doneAt !== null),
     )

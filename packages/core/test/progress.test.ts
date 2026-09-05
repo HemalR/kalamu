@@ -104,6 +104,11 @@ describe("progressOf", () => {
     expect(progress(nodes, "n_root")).toEqual({ total: 3, done: 1, active: 1 });
   });
 
+  it("a claimed open discussion counts as active too", () => {
+    const nodes = [bullet("n_root"), discussion("n_a", { parentId: "n_root", startedAt: STARTED })];
+    expect(progress(nodes, "n_root")).toEqual({ total: 1, done: 0, active: 1 });
+  });
+
   it("a claim on a finished descendant is spent — done wins over active", () => {
     const nodes = [bullet("n_root"), task("n_a", { parentId: "n_root", startedAt: STARTED, doneAt: DONE })];
     expect(progress(nodes, "n_root")).toEqual({ total: 1, done: 1, active: 0 });

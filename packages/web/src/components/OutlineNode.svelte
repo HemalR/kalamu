@@ -106,7 +106,7 @@
   const isDone = $derived(node.doneAt !== null);
   // An agent's claim (SPEC key decision 17): the checkbox holds a slowly pulsing
   // amber dot — the UI's equivalent of the `▶` the CLI prints — so an in-progress
-  // task never reads as merely open.
+  // task or discussion never reads as merely open.
   const started = $derived(isStarted(node));
   // Tasks and discussions can both be blocked, so the badge is not kind-gated.
   // Only OPEN blockers hold a node up — a fully-done blocker list looks normal
@@ -887,10 +887,11 @@
       {:else}
         <!-- Speech bubble in place of the checkbox (SPEC key decision 12); clicking toggles done all the same. -->
         <button
-          class={["glyph", "bubble", { ringed }]}
+          class={["glyph", "bubble", { ringed, started }]}
           role="checkbox"
           aria-checked={isDone}
-          aria-label={isDone ? "Reopen discussion" : "Mark discussion done"}
+          aria-label={isDone ? "Reopen discussion" : started ? "Mark in-progress discussion done" : "Mark discussion done"}
+          title={startedTitle}
           tabindex="-1"
           onclick={() => store.toggleDone(node.id)}
         >
@@ -1392,6 +1393,9 @@
     .pulse {
       animation: none;
     }
+    .bubble.started svg {
+      animation: none;
+    }
   }
   .row.done .check {
     color: var(--bg);
@@ -1413,6 +1417,14 @@
   }
   .bubble.ringed svg {
     box-shadow: 0 0 0 3px var(--ring);
+  }
+  /* Claimed and still open: the bubble turns the claim colour and breathes,
+     the same signal the checkbox's dot gives on a task. */
+  .bubble.started {
+    color: var(--started);
+  }
+  .bubble.started svg {
+    animation: breathe 1.8s ease-in-out infinite;
   }
   .row.done .bubble {
     color: var(--done);

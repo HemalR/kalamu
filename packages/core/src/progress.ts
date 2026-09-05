@@ -24,7 +24,7 @@ export interface Progress {
   /** Actionable descendants of the node, excluding the node itself. */
   total: number;
   done: number;
-  /** Claimed but unfinished — a task with `startedAt` and no `doneAt`. */
+  /** Claimed but unfinished — a task or discussion with `startedAt` and no `doneAt`. */
   active: number;
 }
 
@@ -53,10 +53,10 @@ function calculateProgress(tree: Tree, options: ProgressOptions = {}): { byNode:
     let ownActive = 0;
     if (isActionable(node, options)) {
       ownTotal = 1;
-      // A claim on a closed task is spent: closure wins, and a task can carry
-      // both timestamps. Discussions are never claimed (no `kalamu start`).
+      // A claim on a closed item is spent: closure wins, and a node can carry
+      // both timestamps.
       if (shut || node.doneAt !== null) ownDone = 1;
-      else if (node.kind === "task" && node.startedAt !== undefined) ownActive = 1;
+      else if (node.startedAt !== undefined) ownActive = 1;
     }
     let descendants: Progress = { total: 0, done: 0, active: 0 };
     for (const child of tree.children.get(node.id) ?? []) {

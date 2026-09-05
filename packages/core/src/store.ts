@@ -83,6 +83,55 @@ function projectRootAt(dir: string): string | null {
   return isProject(dir) ? dir : null;
 }
 
+/** Does `refs/heads/<branch>` exist, loose or packed? */
+function hasLocalBranch(gitDir: string, branch: string): boolean {
+  try {
+    statSync(join(gitDir, "refs", "heads", branch));
+    return true;
+  } catch {
+    // fall through to packed-refs
+  }
+  try {
+    return readFileSync(join(gitDir, "packed-refs"), "utf8").includes(` refs/heads/${branch}\n`);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * `{ head, expected }` when the checkout at `root` has something other than
+ * its default branch checked out, else null. The outline is a committed file,
+ * so a non-default branch in the main checkout swaps it for that branch's copy
+ * under every reader and writer — linked worktrees included, since they
+ * resolve here (SPEC key decision 20). Read from git's on-disk layout, no git
+ * binary: `.git/HEAD` names the branch (a bare hash is a detached HEAD, reported
+ * as `detached HEAD <short hash>`), and the default is what `origin/HEAD` points
+ * at, else whichever of `main`/`master` exists locally. Null when `root` is not
+ * a git checkout, when no default can be determined, or on the default branch.
+ */
+export function offDefaultBranch(root: string): { head: string; expected: string } | null {
+  const gitDir = join(root, ".git");
+  let headFile: string;
+  try {
+    if (!statSync(gitDir).isDirectory()) return null;
+    headFile = readFileSync(join(gitDir, "HEAD"), "utf8").trim();
+  } catch {
+    return null;
+  }
+  const head = /^ref: refs\/heads\/(.+)$/.exec(headFile)?.[1] ?? `detached HEAD ${headFile.slice(0, 7)}`;
+  let originHead: string | undefined;
+  try {
+    originHead = /^ref: refs\/remotes\/origin\/(.+)$/.exec(
+      readFileSync(join(gitDir, "refs", "remotes", "origin", "HEAD"), "utf8").trim(),
+    )?.[1];
+  } catch {
+    // no remote HEAD recorded; fall back to local convention
+  }
+  const expected = originHead ?? ["main", "master"].find((branch) => hasLocalBranch(gitDir, branch));
+  if (expected === undefined || head === expected) return null;
+  return { head, expected };
+}
+
 /** Walk up from cwd to the nearest project root (see `projectRootAt`). */
 export function findRoot(cwd: string): string | null {
   let current = cwd;

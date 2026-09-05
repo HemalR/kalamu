@@ -48,6 +48,15 @@ describe("kalamu start / end", () => {
     expect(commands.list(cwd, {}).text).toContain("▶ p2 in flight");
   });
 
+  it("claims a discussion and hides it from next --discussion until ended", () => {
+    const id = (commands.add(cwd, { text: "talk it through", kind: "discussion" }).json as { id: string }).id;
+    commands.start(cwd, id);
+    expect(commands.next(cwd, { discussion: true }).exitCode).toBe(2);
+    expect(commands.list(cwd, { started: true }).text).toContain("▶");
+    commands.end(cwd, id);
+    expect((commands.next(cwd, { discussion: true }).json as { id: string }).id).toBe(id);
+  });
+
   it("errors when ending a task that was never started", () => {
     expect(() => commands.end(cwd, addTask("idle"))).toThrow(/never started/);
   });
