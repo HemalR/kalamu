@@ -69,7 +69,8 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+/** fetch with the server's error envelope turned into ApiError; callers pick the body decoding. */
+async function fetchOk(path: string, init?: RequestInit): Promise<Response> {
   let response: Response;
   try {
     response = await fetch(apiBase + path, init);
@@ -88,7 +89,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new ApiError(message, response.status);
   }
-  return (await response.json()) as T;
+  return response;
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  return (await (await fetchOk(path, init)).json()) as T;
 }
 
 function json(method: string, body: unknown): RequestInit {
@@ -131,6 +136,8 @@ export interface Backend {
   getProject(): Promise<ProjectInfo>;
   /** Repo-relative tracked paths for the `@` file picker; `truncated` when capped. */
   getFiles(): Promise<{ files: string[]; truncated: boolean }>;
+  /** Raw Markdown source of a repo-relative `.md` doc reference (the `/docs/*` route). */
+  getDoc(path: string): Promise<string>;
   getMeta(): Promise<KalamuMeta>;
   setTagColor(tag: string, color: string | null): Promise<KalamuMeta>;
   getUiState(): Promise<UiState>;
@@ -214,6 +221,7 @@ const httpBackend: Backend = {
     ),
   getProject: () => request<ProjectInfo>("/api/project"),
   getFiles: () => request<{ files: string[]; truncated: boolean }>("/api/files"),
+  getDoc: async (path) => (await fetchOk(`/docs/${path.split("/").map(encodeURIComponent).join("/")}`)).text(),
   getMeta: () => request<KalamuMeta>("/api/meta"),
   setTagColor: (tag: string, color: string | null) =>
     request<KalamuMeta>(`/api/tags/${encodeURIComponent(tag)}`, json("PUT", { color })),

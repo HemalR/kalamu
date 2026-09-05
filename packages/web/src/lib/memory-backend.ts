@@ -141,6 +141,9 @@ export function createMemoryBackend(seed: KalamuNode[]): Backend {
 
     // The demo has no repo behind it, so the `@` file picker stays empty.
     getFiles: async () => ({ files: [], truncated: false }),
+    getDoc: async (path) => {
+      throw new ApiError(`no repo behind the demo, so ${path} cannot be shown`, 404);
+    },
 
     getMeta: async () => ({ ...meta }),
 

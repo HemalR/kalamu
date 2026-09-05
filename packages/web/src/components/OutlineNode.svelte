@@ -9,6 +9,7 @@
     type KalamuNode,
   } from "@kalamu/core";
   import { tick } from "svelte";
+  import { SvelteSet } from "svelte/reactivity";
   import {
     caretHit,
     caretOffset,
@@ -28,13 +29,14 @@
   import { now } from "../lib/now.svelte";
   import type { FocusTarget, OutlineStore } from "../lib/outline.svelte";
   import { fileRefs } from "../lib/file-refs.svelte";
-  import { assetUrl, docUrl, segmentText, type FileSegment } from "../lib/segments";
+  import { assetUrl, docUrl, segmentText, type DocSegment, type FileSegment } from "../lib/segments";
   import { matches, SHORTCUTS as S } from "../lib/shortcuts";
   import { summarize } from "../lib/summary";
   import { blockedTitle, isStarted, openBlockers } from "../lib/task-state";
   import AssignMenu, { ASSIGNEE_LABELS, assigneeIcon, isAssignee, matchAssignees } from "./AssignMenu.svelte";
   import BlockerMenu from "./BlockerMenu.svelte";
   import ComboMenu from "./ComboMenu.svelte";
+  import DocPeek from "./DocPeek.svelte";
   import Self from "./OutlineNode.svelte";
   import PriorityBars from "./PriorityBars.svelte";
   import PriorityMenu from "./PriorityMenu.svelte";
@@ -127,6 +129,18 @@
   /** The shortened label, or null when the row shows its text in full (see lib/summary.ts). */
   const label = $derived(store.overview ? summarize(body) : null);
   const segments = $derived(segmentText(label ?? body));
+
+  // ---- doc peeks ----------------------------------------------------------------
+  /** Doc references expanded read-only under the row, keyed by `path#anchor`. */
+  const peeks = new SvelteSet<string>();
+  const peekKey = (seg: DocSegment) => `${seg.path}#${seg.anchor ?? ""}`;
+  const openPeeks = $derived(segments.filter((seg): seg is DocSegment => seg.kind === "doc" && peeks.has(peekKey(seg))));
+  function togglePeek(event: MouseEvent, seg: DocSegment) {
+    event.preventDefault();
+    event.stopPropagation();
+    const key = peekKey(seg);
+    if (!peeks.delete(key)) peeks.add(key);
+  }
   /**
    * Tags the summary cut off. They sit at the end of long text more often than
    * not, and are the most scannable thing on a row, so they are re-attached
@@ -1063,6 +1077,19 @@
                   </svg>
                   {basename(docLabel)}
                 </a>
+                <button
+                  type="button"
+                  class={["peek-toggle", { open: peeks.has(peekKey(seg)) }]}
+                  tabindex="-1"
+                  aria-expanded={peeks.has(peekKey(seg))}
+                  aria-label="Peek at {docLabel}"
+                  title="Peek inline"
+                  onclick={(event) => togglePeek(event, seg)}
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="m6 9 6 6 6-6" />
+                  </svg>
+                </button>
               </span>
             {:else if seg.kind === "file"}
               {@const href = fileRefs.editorUrl(seg.path, seg.line)}
@@ -1150,6 +1177,11 @@
       </button>
     </div>
   </div>
+
+  <!-- Doc references the reader expanded in place, read-only. -->
+  {#each openPeeks as seg (peekKey(seg))}
+    <DocPeek path={seg.path} anchor={seg.anchor} />
+  {/each}
 
   <!-- Its own row, under the parent and above the children, carrying whatever
        this node has to say about itself. Rendered for every node whatever the
@@ -1565,6 +1597,26 @@
   }
   .doc svg {
     flex: none;
+  }
+  /* Expands the referenced section under the row; as quiet as the chip it follows. */
+  .peek-toggle {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 2px;
+    border: 0;
+    background: none;
+    color: var(--muted);
+    cursor: pointer;
+    vertical-align: middle;
+  }
+  .peek-toggle:hover {
+    color: var(--fg);
+  }
+  .peek-toggle svg {
+    transition: transform 120ms;
+  }
+  .peek-toggle.open svg {
+    transform: rotate(180deg);
   }
   /* Same chip, rendered as a <button> when no editor is configured. */
   button.doc {

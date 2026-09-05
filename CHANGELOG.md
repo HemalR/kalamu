@@ -41,6 +41,9 @@ under `Added` / `Changed` / `Fixed` / `Removed`.
   reference that opens the file scrolled to that heading (GitHub-style slug
   of the heading text). The `/docs/*` viewer now serves browsers the Markdown
   source with each heading anchored; other clients still get the raw file.
+- **Doc reference peek.** A chevron after a doc chip expands the referenced
+  section (or the whole doc) read-only under the row, as Markdown source,
+  without leaving the outline. Click again to collapse.
 - **Row delete button.** A trashcan appears beside the copy button on row
   hover; it deletes the item with its subtree, undoable like
   Mod+Shift+Backspace, so there is no confirmation prompt.

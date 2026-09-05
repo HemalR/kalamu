@@ -65,3 +65,19 @@ export function markdownHeadings(source: string): MarkdownHeading[] {
   });
   return out;
 }
+
+/**
+ * The part of a doc a reference points at: the whole source without an
+ * anchor, else the heading with that slug through to the next heading of the
+ * same or a higher level. Null when no heading has the slug.
+ */
+export function markdownSection(source: string, anchor?: string): string | null {
+  if (anchor === undefined) return source;
+  const headings = markdownHeadings(source);
+  const index = headings.findIndex((h) => h.slug === anchor);
+  const start = headings[index];
+  if (start === undefined) return null;
+  const end = headings.slice(index + 1).find((h) => h.level <= start.level);
+  const lines = source.split("\n");
+  return lines.slice(start.line, end?.line ?? lines.length).join("\n").trimEnd();
+}

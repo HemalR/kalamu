@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { headingSlug, markdownHeadings, serializeMarkdown } from "../src/markdown.js";
+import { headingSlug, markdownHeadings, markdownSection, serializeMarkdown } from "../src/markdown.js";
 import { buildTree } from "../src/tree.js";
 import { bullet, discussion, task } from "./helpers.js";
 
@@ -52,5 +52,18 @@ describe("headingSlug / markdownHeadings", () => {
       { level: 1, text: "Plan", slug: "plan", line: 0 },
       { level: 2, text: "Phase 2", slug: "phase-2", line: 6 },
     ]);
+  });
+});
+
+describe("markdownSection", () => {
+  const source = "# Plan\nintro\n## Phase 1\none\n### Detail\ndeep\n## Phase 2\ntwo\n";
+  it("slices a heading through to the next heading of the same or higher level", () => {
+    expect(markdownSection(source, "phase-1")).toBe("## Phase 1\none\n### Detail\ndeep");
+    expect(markdownSection(source, "phase-2")).toBe("## Phase 2\ntwo");
+    expect(markdownSection(source, "plan")).toBe(source.trimEnd());
+  });
+  it("returns the whole doc without an anchor and null for an unknown one", () => {
+    expect(markdownSection(source)).toBe(source);
+    expect(markdownSection(source, "nope")).toBeNull();
   });
 });
