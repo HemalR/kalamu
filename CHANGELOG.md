@@ -34,6 +34,9 @@ under `Added` / `Changed` / `Fixed` / `Removed`.
   web UI (and so the hub) shows the same warning as a banner under the
   header, live: the server watches `.git/HEAD`, so a checkout raises or
   clears it without a reload.
+- **`validate` checks doc references.** A `.md` path in node text that no
+  longer exists in the repo (renamed, deleted) is reported as a warning by
+  `kalamu validate` and `/api/validate`. Warnings never fail validation.
 - **Row delete button.** A trashcan appears beside the copy button on row
   hover; it deletes the item with its subtree, undoable like
   Mod+Shift+Backspace, so there is no confirmation prompt.

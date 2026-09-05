@@ -53,6 +53,14 @@ describe("validateOutline", () => {
     expect(result.errors[0]).toMatch(/^line 1:/);
   });
 
+  it("warns about missing docs only when given an existence lookup", () => {
+    const content = serializeJsonl([task("n_001", { text: "Spec: plans/a.md and plans/gone.md" })]);
+    expect(validateOutline(content).warnings).toEqual([]);
+    const result = validateOutline(content, { docExists: (path) => path === "plans/a.md" });
+    expect(result.valid).toBe(true);
+    expect(result.warnings).toEqual(["n_001 references missing doc plans/gone.md"]);
+  });
+
   it("passes the empty file", () => {
     expect(validateOutline("")).toEqual({ valid: true, nodes: 0, errors: [], warnings: [] });
   });

@@ -42,6 +42,11 @@ export function warnIfOffDefaultBranch(root: string): void {
   );
 }
 
+/** Existence lookup for `validate`'s doc-reference check (SPEC key decision 19): paths resolve against the repo root. */
+export function docExistsUnder(repoRoot: string): (path: string) => boolean {
+  return (path) => existsSync(join(repoRoot, path));
+}
+
 export function resolvePaths(cwd: string): KalamuPaths {
   const root = findRoot(cwd);
   if (!root) throw new CliError('not a Kalamu project (no .kalamu directory found) — run "kalamu init"');

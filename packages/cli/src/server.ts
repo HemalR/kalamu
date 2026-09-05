@@ -44,6 +44,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, statSync, watch, write
 import { basename, dirname, extname, join, normalize, sep } from "node:path";
 import { z } from "zod";
 import { editorTemplate } from "./config.js";
+import { docExistsUnder } from "./context.js";
 import { hubAgentInstalled } from "./launch.js";
 import { cachedUpdate, refreshUpdate } from "./update-check.js";
 import { CURRENT_VERSION } from "./version.js";
@@ -377,7 +378,7 @@ export function createServer(
     } catch {
       return c.json({ error: "no outline file" }, 400);
     }
-    return c.json(validateOutline(content));
+    return c.json(validateOutline(content, { docExists: docExistsUnder(dirname(paths.dir)) }));
   });
 
   // Pasted images: content-hashed file in .kalamu/assets/ (committed — assets

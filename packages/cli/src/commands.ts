@@ -35,10 +35,11 @@ import {
 } from "@kalamu/core";
 import { initKalamu, readOutline, withOutline } from "@kalamu/core/store";
 import { readFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { parseActor, resolveActor } from "./actor.js";
 import { ensureAgentDocs } from "./agent-docs.js";
 import { hubBaseUrl } from "./config.js";
-import { CliError, looksLikeRepo, resolvePaths, type CommandResult } from "./context.js";
+import { CliError, docExistsUnder, looksLikeRepo, resolvePaths, type CommandResult } from "./context.js";
 import { ensureGitignore, IGNORE_ENTRIES } from "./gitignore.js";
 import { createNodeLink, type NodeLink } from "./link.js";
 import { readRegistry, registerProject, slugFor } from "./registry.js";
@@ -621,7 +622,7 @@ export function validate(cwd: string): CommandResult {
   } catch {
     throw new CliError(`no outline at ${paths.outline} — run "kalamu init"`);
   }
-  const result = validateOutline(content);
+  const result = validateOutline(content, { docExists: docExistsUnder(dirname(paths.dir)) });
   const lines: string[] = [];
   if (result.valid) lines.push(`Valid: ${result.nodes} nodes`);
   else lines.push(`Invalid: ${result.errors.length} error(s)`);

@@ -12,6 +12,10 @@ import type { Assignee } from "./model.js";
 const PRIORITY_TOKEN = /(?:^|\s)[pP]([1-3])(?=\s|$)/g;
 const TAG_TOKEN = /(?:^|\s)#([a-zA-Z0-9][a-zA-Z0-9-]*)(?=\s|$)/g;
 const ASSIGNEE_TOKEN = /(?:^|\s)@(human|agent)(?=\s|$)/gi;
+// A whole-word repo-relative path ending in `.md` (SPEC key decision 19). A
+// trailing `.` counts as sentence punctuation only when followed by space/end,
+// so `plans/foo.md.` yields `plans/foo.md` but `foo.md.bak` never matches.
+const DOC_TOKEN = /(?<=^|[\s("'[])(?:[\w.-]+\/)*[\w.-]+\.md(?=$|[\s)"'\],;:!?]|\.(?=$|\s))/g;
 
 export interface ParsedTokens {
   /** Input with pN/@human/@agent tokens stripped; #tags remain in place. */
@@ -79,4 +83,19 @@ export function stripTags(text: string, tags: readonly string[]): string {
     out = out.replace(token, " ");
   }
   return out.replace(/\s+/g, " ").trim();
+}
+
+export interface DocReference {
+  /** Repo-relative path as typed, e.g. `plans/admin-console-refresh.md`. */
+  path: string;
+  start: number;
+  length: number;
+}
+
+/**
+ * Every `.md` doc reference in the text, in order. Prose, not metadata: the
+ * path stays in the text; the UI chips it and `validate` checks it exists.
+ */
+export function docReferences(text: string): DocReference[] {
+  return [...text.matchAll(DOC_TOKEN)].map((m) => ({ path: m[0], start: m.index, length: m[0].length }));
 }

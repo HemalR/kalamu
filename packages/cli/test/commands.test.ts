@@ -635,6 +635,17 @@ describe("link echo (SPEC `kalamu link`)", () => {
 });
 
 describe("init --tour", () => {
+  it("validate warns when a referenced .md file is missing from the repo", () => {
+    mkdirSync(join(cwd, "plans"));
+    writeFileSync(join(cwd, "plans", "here.md"), "# here\n");
+    addTask("Spec: plans/here.md, superseded by plans/gone.md");
+    const result = commands.validate(cwd);
+    expect(result.exitCode).toBeFalsy();
+    expect(result.text).toContain("warning: ");
+    expect(result.text).toContain("references missing doc plans/gone.md");
+    expect(result.text).not.toContain("plans/here.md");
+  });
+
   it("seeds the tour: every task is human-assigned, next finds nothing, outline validates", () => {
     const dir = mkdtempSync(join(tmpdir(), "kalamu-tour-"));
     try {

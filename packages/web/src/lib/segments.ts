@@ -9,6 +9,7 @@
  * file tokens are `@`-prefixed repo paths (`@src/lib/caret.ts`) that open in
  * the configured editor.
  */
+import { docReferences } from "@kalamu/core";
 import { apiBase } from "./api";
 
 export interface TextSegment {
@@ -73,10 +74,6 @@ export type Segment = TextSegment | TagSegment | ImageSegment | LinkSegment | Do
 const TAG_TOKEN = /(?:^|\s)#([a-zA-Z0-9][a-zA-Z0-9-]*)(?=\s|$)/g;
 const IMAGE_TOKEN = /!\[([^\]]*)\]\((\.kalamu\/assets\/[^)\s]+)\)/g;
 const LINK_TOKEN = /https?:\/\/\S+/g;
-// A whole-word repo-relative path ending in `.md`. A trailing `.` counts as
-// sentence punctuation only when followed by space/end, so `plans/foo.md.`
-// chips `plans/foo.md` but `foo.md.bak` never chips at all.
-const DOC_TOKEN = /(?<=^|[\s("'[])(?:[\w.-]+\/)*[\w.-]+\.md(?=$|[\s)"'\],;:!?]|\.(?=$|\s))/g;
 // `@`-prefixed repo path. Requiring a `/` or a `.` is what keeps `@human`,
 // `@agent` (assignment tokens, stripped by core) and ordinary `@mentions` out
 // — they carry neither. An optional `:42` names a line.
@@ -159,11 +156,9 @@ export function segmentText(text: string): Segment[] {
     links.some((t) => index >= t.start && index < t.start + t.length);
 
   // Docs parse after links: `https://x.com/notes.md` is a link, not a doc.
-  const docs: DocSegment[] = [];
-  for (const match of text.matchAll(DOC_TOKEN)) {
-    if (insideImage(match.index) || insideLink(match.index)) continue;
-    docs.push({ kind: "doc", path: match[0], start: match.index, length: match[0].length });
-  }
+  const docs: DocSegment[] = docReferences(text)
+    .filter((ref) => !insideImage(ref.start) && !insideLink(ref.start))
+    .map((ref) => ({ kind: "doc", ...ref }));
 
   // Files parse after links so an `@` inside a URL never starts a reference.
   const files: FileSegment[] = [];

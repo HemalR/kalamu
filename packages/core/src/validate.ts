@@ -1,5 +1,6 @@
 import { parseJsonl } from "./jsonl.js";
 import type { KalamuNode } from "./model.js";
+import { docReferences } from "./tokens.js";
 import { buildTree, preorder } from "./tree.js";
 
 export interface ValidationResult {
@@ -9,7 +10,17 @@ export interface ValidationResult {
   warnings: string[];
 }
 
-export function validateOutline(content: string): ValidationResult {
+export interface ValidateOptions {
+  /**
+   * Whether a repo-relative `.md` path referenced in node text exists. Core
+   * never touches the filesystem, so the caller (CLI, server) supplies the
+   * lookup; without it doc references are not checked. A miss is a warning,
+   * not an error: the outline is still well-formed, the doc was renamed.
+   */
+  docExists?: (path: string) => boolean;
+}
+
+export function validateOutline(content: string, options: ValidateOptions = {}): ValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
 
@@ -47,6 +58,15 @@ export function validateOutline(content: string): ValidationResult {
 
   for (const cycleId of findBlockerCycles(parsed.nodes)) {
     errors.push(`${cycleId} is part of a blocker cycle`);
+  }
+
+  const { docExists } = options;
+  if (docExists) {
+    for (const node of parsed.nodes) {
+      for (const { path } of docReferences(node.text)) {
+        if (!docExists(path)) warnings.push(`${node.id} references missing doc ${path}`);
+      }
+    }
   }
 
   // Not-pre-order is a warning, not an error: the next write normalizes it.
