@@ -307,7 +307,9 @@
   main {
     max-width: 760px;
     margin: 0 auto;
-    padding: 0 32px; /* top padding lives on the sticky header */
+    /* Top padding lives on the sticky header. The right side is wider to
+       hold the row's copy and delete buttons (see OutlineNode.svelte). */
+    padding: 0 52px 0 32px;
     min-height: 100vh;
     display: flex;
     flex-direction: column;

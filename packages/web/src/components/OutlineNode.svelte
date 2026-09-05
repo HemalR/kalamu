@@ -476,7 +476,7 @@
    */
   function rowChord(event: MouseEvent): "collapse" | "zoom" | null {
     const target = event.target;
-    if (target instanceof Element && target.closest(".copy-context")) return null;
+    if (target instanceof Element && target.closest(".copy-context, .delete-node")) return null;
     if (event.shiftKey) return null;
     const mod = event.metaKey || event.ctrlKey;
     if (mod === event.altKey) return null; // neither held, or both
@@ -508,6 +508,12 @@
     event.stopPropagation();
     if (chord === "zoom") store.zoomIn(node.id);
     else store.toggleCollapse(node.id);
+  }
+
+  function onDeleteClick(event: MouseEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    store.deleteSubtree(node.id);
   }
 
   function onCopyClick(event: MouseEvent): void {
@@ -1111,7 +1117,9 @@
            row hover/focus. Clicking mid-edit blurs the editable, which commits
            the draft before a normal click reads the tree. A normal click copies
            agent context like Mod+C; Mod+click copies only raw text like
-           Mod+Shift+C. Both mappings are uniform across node kinds. -->
+           Mod+Shift+C. Both mappings are uniform across node kinds. The
+           trashcan to its right deletes the subtree, undoable like
+           Mod+Shift+Backspace, so it asks for no confirmation. -->
       <button
         class="copy-context"
         aria-label="Copy item context; modifier-click copies item text only"
@@ -1122,6 +1130,21 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
           <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+        </svg>
+      </button>
+      <button
+        class="delete-node"
+        aria-label="Delete item with its subtree"
+        title="Delete item (undoable)"
+        tabindex="-1"
+        onclick={onDeleteClick}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 6h18" />
+          <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+          <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+          <line x1="10" x2="10" y1="11" y2="17" />
+          <line x1="14" x2="14" y1="11" y2="17" />
         </svg>
       </button>
     </div>
@@ -1750,12 +1773,13 @@
     background: color-mix(in srgb, var(--tag-color) 15%, transparent);
   }
 
-  /* In the row's right gutter (main's 32px right padding, which every nesting
+  /* In the row's right gutter (main's 52px right padding, which every nesting
      depth keeps — children indent only on the left), anchored to .row like the
-     chevron is on the left. Absolute, so it never reshapes the row. */
-  .copy-context {
+     chevron is on the left. Absolute, so neither reshapes the row. Copy sits
+     nearest the text, delete 4px further out. */
+  .copy-context,
+  .delete-node {
     position: absolute;
-    right: -24px;
     top: 6px;
     width: 16px;
     height: 16px;
@@ -1772,13 +1796,21 @@
     transition: opacity 0.1s;
     z-index: 1;
   }
-  .row:hover .copy-context,
-  .row:focus-within .copy-context,
-  .copy-context:focus-visible {
+  .copy-context {
+    right: -24px;
+  }
+  .delete-node {
+    right: -44px;
+  }
+  .row:hover :is(.copy-context, .delete-node),
+  .row:focus-within :is(.copy-context, .delete-node),
+  .copy-context:focus-visible,
+  .delete-node:focus-visible {
     opacity: 1;
     pointer-events: auto;
   }
-  .copy-context:hover {
+  .copy-context:hover,
+  .delete-node:hover {
     color: var(--fg);
   }
   /* Forgiving hover, left side: approaching a row through the left gutter
@@ -1793,17 +1825,17 @@
     width: 20px;
   }
 
-  /* Forgiving hover, right side: the copy button lives in main's 32px right
-     padding, outside the row box — without this, travelling from the row to
-     the button drops :hover and hides it mid-flight. Painted after the row's
-     children, so the button needs its z-index to stay clickable. */
+  /* Forgiving hover, right side: the copy and delete buttons live in main's
+     52px right padding, outside the row box — without this, travelling from
+     the row to a button drops :hover and hides it mid-flight. Painted after
+     the row's children, so the buttons need their z-index to stay clickable. */
   .row::after {
     content: "";
     position: absolute;
-    right: -32px;
+    right: -52px;
     top: 0;
     bottom: 0;
-    width: 32px;
+    width: 52px;
   }
 
   /* Starts exactly where THIS row's text starts — the meta reads as a footer to
