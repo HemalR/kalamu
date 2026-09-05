@@ -45,6 +45,8 @@ export class OutlineDocument {
    * derived views without racing the outline file.
    */
   outlineChanges = $state(0);
+  /** Bumped on every SSE project-changed event; App refetches /api/project. */
+  projectChanges = $state(0);
 
   tree = $derived(buildTree(this.nodes));
   roots = $derived(this.tree.children.get(null) ?? []);
@@ -85,6 +87,9 @@ export class OutlineDocument {
         void this.refetchNodes();
       },
       onMetaChanged: () => void this.refetchMeta(),
+      onProjectChanged: () => {
+        this.projectChanges++;
+      },
     });
   }
 

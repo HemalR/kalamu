@@ -30,7 +30,13 @@ under `Added` / `Changed` / `Fixed` / `Removed`.
   in the main checkout silently swaps the outline for that branch's copy;
   the warning makes the slip loud and points at the fix: check the default
   branch back out and use a worktree for the other one. Read from `.git/HEAD`
-  and `origin/HEAD` (else a local `main`/`master`) with no git binary.
+  and `origin/HEAD` (else a local `main`/`master`) with no git binary. The
+  web UI (and so the hub) shows the same warning as a banner under the
+  header, live: the server watches `.git/HEAD`, so a checkout raises or
+  clears it without a reload.
+- **Row delete button.** A trashcan appears beside the copy button on row
+  hover; it deletes the item with its subtree, undoable like
+  Mod+Shift+Backspace, so there is no confirmation prompt.
 
 ## [0.13.0] - 2026-09-03
 

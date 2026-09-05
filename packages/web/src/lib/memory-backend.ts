@@ -136,6 +136,7 @@ export function createMemoryBackend(seed: KalamuNode[]): Backend {
       updateAvailable: false,
       repoRoot: "/demo",
       editorTemplate: null,
+      branchDrift: null,
     }),
 
     // The demo has no repo behind it, so the `@` file picker stays empty.

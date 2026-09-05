@@ -25,6 +25,7 @@ import {
   type NodeKind,
 } from "@kalamu/core";
 import {
+  offDefaultBranch,
   readMeta,
   readOutline,
   readUiState,
@@ -202,6 +203,18 @@ export function createServer(
     });
   } catch {
     // watching is best-effort; the UI still works without live reload
+  }
+  // A `git checkout` in the main checkout rewrites .git/HEAD; the UI refetches
+  // /api/project on this event so the off-default-branch banner (SPEC key
+  // decision 20) appears and clears without a reload. Non-recursive: only
+  // HEAD matters, and the index/ORIG_HEAD churn is filtered by name.
+  let headWatcher: FSWatcher | null = null;
+  try {
+    headWatcher = watch(join(dirname(paths.dir), ".git"), (_type, filename) => {
+      if (filename === "HEAD") broadcast("project-changed");
+    });
+  } catch {
+    // not a git checkout (or a worktree's .git file); no banner to keep live
   }
 
   const readNodes = (): KalamuNode[] => preorder(buildTree(readOutline(paths.outline).nodes));
@@ -437,6 +450,8 @@ export function createServer(
       // `@file` chips become editor deep links built from these two.
       repoRoot: dirname(paths.dir),
       editorTemplate: editorTemplate(),
+      // The CLI's stderr warning, surfaced where the human actually looks.
+      branchDrift: offDefaultBranch(dirname(paths.dir)),
     });
   });
 
@@ -491,6 +506,7 @@ export function createServer(
     app,
     close: () => {
       watcher?.close();
+      headWatcher?.close();
       for (const timer of timers.values()) clearTimeout(timer);
       listeners.clear();
     },

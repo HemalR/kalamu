@@ -15,6 +15,7 @@ describe("subscribeToServerEvents", () => {
       onDisconnected: vi.fn(),
       onOutlineChanged: vi.fn(),
       onMetaChanged: vi.fn(),
+      onProjectChanged: vi.fn(),
     };
     const createSource = vi.fn(() => stream);
 
@@ -25,10 +26,12 @@ describe("subscribeToServerEvents", () => {
     stream.dispatchEvent(new Event("error"));
     stream.dispatchEvent(new Event("outline-changed"));
     stream.dispatchEvent(new Event("meta-changed"));
+    stream.dispatchEvent(new Event("project-changed"));
     expect(events.onConnected).toHaveBeenCalledOnce();
     expect(events.onDisconnected).toHaveBeenCalledOnce();
     expect(events.onOutlineChanged).toHaveBeenCalledOnce();
     expect(events.onMetaChanged).toHaveBeenCalledOnce();
+    expect(events.onProjectChanged).toHaveBeenCalledOnce();
 
     stop();
     stop();

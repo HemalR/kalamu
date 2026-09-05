@@ -54,6 +54,9 @@ export interface ProjectInfo {
   /** Editor deep-link template with a `{path}` placeholder (e.g.
       "vscode://file/{path}"); null until `kalamu config editor <name>` runs. */
   editorTemplate: string | null;
+  /** Set when the main checkout is off its default branch, so the outline
+      being served is that branch's copy (SPEC key decision 20). */
+  branchDrift: { head: string; expected: string } | null;
 }
 
 export class ApiError extends Error {
@@ -98,6 +101,8 @@ export interface BackendEvents {
   onDisconnected(): void;
   onOutlineChanged(): void;
   onMetaChanged(): void;
+  /** Something /api/project reports has changed (today: the checked-out branch). */
+  onProjectChanged(): void;
 }
 
 /**
@@ -159,6 +164,7 @@ export function subscribeToServerEvents(
   const onError: EventListener = () => events.onDisconnected();
   const onOutlineChanged: EventListener = () => events.onOutlineChanged();
   const onMetaChanged: EventListener = () => events.onMetaChanged();
+  const onProjectChanged: EventListener = () => events.onProjectChanged();
   let stopped = false;
 
   // EventSource retries on its own: error means the server is gone, and open
@@ -167,6 +173,7 @@ export function subscribeToServerEvents(
   source.addEventListener("error", onError);
   source.addEventListener("outline-changed", onOutlineChanged);
   source.addEventListener("meta-changed", onMetaChanged);
+  source.addEventListener("project-changed", onProjectChanged);
 
   return () => {
     if (stopped) return;
@@ -175,6 +182,7 @@ export function subscribeToServerEvents(
     source.removeEventListener("error", onError);
     source.removeEventListener("outline-changed", onOutlineChanged);
     source.removeEventListener("meta-changed", onMetaChanged);
+    source.removeEventListener("project-changed", onProjectChanged);
     source.close();
   };
 }

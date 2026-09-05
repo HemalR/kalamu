@@ -315,6 +315,18 @@ describe("meta and ui-state API", () => {
     expect(typeof body.hubInstalled).toBe("boolean");
   });
 
+  it("project reports an off-default-branch main checkout for the UI banner", async () => {
+    const drift = async () =>
+      ((await (await server.app.request("/api/project")).json()) as { branchDrift: unknown }).branchDrift;
+    expect(await drift()).toBeNull(); // not a git checkout
+    mkdirSync(join(root, ".git", "refs", "remotes", "origin"), { recursive: true });
+    writeFileSync(join(root, ".git", "refs", "remotes", "origin", "HEAD"), "ref: refs/remotes/origin/main\n");
+    writeFileSync(join(root, ".git", "HEAD"), "ref: refs/heads/feature\n");
+    expect(await drift()).toEqual({ head: "feature", expected: "main" });
+    writeFileSync(join(root, ".git", "HEAD"), "ref: refs/heads/main\n");
+    expect(await drift()).toBeNull();
+  });
+
   it("project reports the update comparison from the cache for the UI chip", async () => {
     // No cache yet → no update known (the startup refresh is opted out here).
     const fresh = (await (await server.app.request("/api/project")).json()) as {

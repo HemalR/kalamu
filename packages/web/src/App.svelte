@@ -54,16 +54,24 @@
   });
 
   /** Project this instance serves (name for the title, platform/hubInstalled
-      for HubHint); null until (and unless) it loads. */
+      for HubHint, branchDrift for the banner); null until (and unless) it
+      loads. Reloaded whenever the server reports a project change. */
   let project = $state<ProjectInfo | null>(null);
-  void api
-    .getProject()
-    .then((info) => {
-      project = info;
-      fileRefs.configure(info); // file chips need repoRoot/editorTemplate on first render
-      document.title = `Kalamu | ${info.name}`;
-    })
-    .catch(() => {});
+  function loadProject(): void {
+    void api
+      .getProject()
+      .then((info) => {
+        project = info;
+        fileRefs.configure(info); // file chips need repoRoot/editorTemplate on first render
+        document.title = `Kalamu | ${info.name}`;
+      })
+      .catch(() => {});
+  }
+  loadProject();
+  $effect(() => {
+    // A branch checkout on the server side bumps projectChanges (SSE); refetch so branchDrift is current.
+    if (store.projectChanges > 0) loadProject();
+  });
 
   /** At most one overlay at a time; Overlay.svelte owns Escape while one is open. */
   let overlay = $state<"palette" | "help" | "cli" | "find" | null>(null);
@@ -207,8 +215,17 @@
   </header>
 
   {#if !store.connected}
-    <div class="offline" role="alert">
+    <div class="warning" role="alert">
       Kalamu server unreachable — editing is paused so you don't lose work. Waiting to reconnect…
+    </div>
+  {/if}
+
+  <!-- The CLI's stderr off-default-branch warning (SPEC key decision 20), surfaced in the UI. -->
+  {#if project?.branchDrift}
+    <div class="warning" role="alert">
+      This checkout is on <code>{project.branchDrift.head}</code>, not <code>{project.branchDrift.expected}</code>, so
+      the outline shown here is that branch's copy. Check out <code>{project.branchDrift.expected}</code> and use a
+      worktree for other branches.
     </div>
   {/if}
 
@@ -391,8 +408,8 @@
     font-size: 14px;
   }
 
-  /* Amber warning tones, local to the banner (app.css has no warn token). */
-  .offline {
+  /* Amber warning tones, shared by the offline and branch-drift banners (app.css has no warn token). */
+  .warning {
     margin-bottom: 16px;
     padding: 8px 12px;
     border: 1px solid light-dark(rgba(154, 103, 0, 0.35), rgba(227, 179, 65, 0.35));
@@ -400,6 +417,11 @@
     background: light-dark(#fff8e5, rgba(227, 179, 65, 0.12));
     color: light-dark(#9a6700, #e3b341);
     font-size: 13px;
+  }
+
+  .warning code {
+    font-family: ui-monospace, monospace;
+    font-size: 12px;
   }
 
   .outline {
