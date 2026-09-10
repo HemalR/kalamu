@@ -18,11 +18,16 @@ under `Added` / `Changed` / `Fixed` / `Removed`.
 
 ### Added
 
-- **Deep links land in one window.** The web manifest now asks the browser to
+- **Discussions can be claimed.** `kalamu start` and `end` now coordinate
+  discussion sessions as well as tasks. A claimed discussion leaves
+  `next --discussion` until ended or done and shows an amber bubble in the UI.
+
+- **Reuse the installed app window for deep links.** The web manifest asks the browser to
   focus the existing Kalamu window (`launch_handler: focus-existing`) instead
   of opening a tab per click. Install the hub as an app and turn on "Open
-  supported links" in its settings; agent links then jump the installed
-  window to the node (or switch project). Plain tabs are unchanged.
+  supported links" if the browser offers it; supported launches jump the
+  installed window to the node (or switch project). Browser and operating
+  system support varies. Plain tabs are unchanged.
 - **Off-default-branch warning.** Every command (and `open`) now warns on
   stderr when the main checkout has a branch other than its default checked
   out — from a worktree too, since worktrees share that checkout's outline.

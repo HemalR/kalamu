@@ -12,7 +12,7 @@ Your outline lives in your repository as one diffable file — `.kalamu/outline.
 
 ## Install
 
-Nothing to install — run it straight from npm (Node ≥ 20):
+Run directly from npm without a global install (Node ≥ 20):
 
 ```bash
 npx kalamu open
@@ -53,6 +53,11 @@ In the UI, everything is a keystroke away:
 - Numbered lists: start an item with `1.` and Enter continues the sequence, renumbering itself as items are added, removed, or moved
 - Mouse shortcuts: **⌘-click** a row to collapse it, **⌥-click** to zoom into it — the whole row is the target, not just the chevron
 
+On Windows and Linux, use Ctrl for ⌘ and Alt for ⌥. Hover a row for its
+delete button; it removes the item and its subtree, and Cmd/Ctrl+Z undoes it.
+The chevron beside a doc chip previews the file (or its anchored section)
+under the row as read-only Markdown source.
+
 Two view controls sit in the header. **Overview mode** shortens every row to a derived one-line label so a long outline stays scannable — nothing is stored, and the full text comes back the moment you edit. The **filter menu** hides items by who wrote them (you or an agent) and who they're assigned to, and holds the show/hide-completed toggle (⌘⇧H). Any item with work beneath it carries a segmented progress bar showing what's done, what's in progress, and what's left, and every row shows how long ago it was created — hover for the exact timestamp.
 
 Commit `.kalamu/` with your code — the outline's line order is the outline, so diffs stay readable.
@@ -65,7 +70,11 @@ kalamu hub
 
 One local server for every Kalamu project on your machine: `http://127.0.0.1:4400` shows them all in a sidebar, and any repo you've run a `kalamu` command in appears there automatically. It runs in the foreground and installs nothing — Ctrl+C and it's gone (or `kalamu stop` if you've lost track of which tab it's in — this also stops a standalone `kalamu open` server for the current project). While a hub is running, `kalamu open` routes your browser to it instead of starting another server — and if you've `hub install`ed but it's not currently running, `open` wakes it first.
 
-Agents cite nodes with deep links into the hub, and every click would normally open a fresh tab. To have links land in one window instead, install the hub as an app (in Chrome or Edge: the install icon in the address bar at `http://localhost:4400`), then turn on "Open supported links" in the app's settings. The installed app focuses its existing window and jumps to the node; no new tabs.
+Agents cite nodes with deep links into the hub. Kalamu requests that supported
+app launches reuse the existing window and navigate to the linked node. If your
+browser offers app installation and supported-link handling, install the hub
+from `http://localhost:4400` and enable that handling. Availability depends on
+the browser and operating system; ordinary browser links may still open tabs.
 
 To remove an old entry without touching that project's files:
 
@@ -101,14 +110,16 @@ In the UI a discussion shows a speech-bubble glyph. Use its copy affordance (or 
 
 ## Claims and blockers
 
-Two agent sessions running `kalamu next` used to receive the same task and both do the work. Now an agent claims a task before starting it, and Kalamu keeps the ordering that used to live in someone's head:
+Claim a task or discussion before starting so other sessions do not receive it
+from the queue. Tasks use `next`; discussions use `next --discussion`.
 
 ```bash
 kalamu start <id>              # claim it — next stops offering it to other sessions
 kalamu end <id>                # abandoned without finishing: back in the queue
-kalamu list --started          # claims still open (--force re-claims a dead one)
+kalamu list --started          # inspect claimed items
+kalamu start <id> --force      # reclaim after the owning session has ended
 kalamu block <id> --by <id2>   # <id> waits on <id2>; next skips it until <id2> is done
-kalamu unblock <id>            # clear one blocker, or all of them
+kalamu unblock <id> --by <id2> # clear one blocker; omit --by to clear all
 ```
 
 Blockers cross the tree freely — dependency order and outline order are different things — and a blocker cycle is a validation error, exactly like a parent cycle. The one exception is an ancestor: a node can't be blocked by its own parent or above, since nesting already says the child lives under that work. Discussions can be blocked as well as tasks, so a conversation that can't usefully happen until other work lands stays out of `kalamu next --discussion` until it can. In the UI, a claimed task shows a pulsing amber dot in its checkbox, and ⌘K offers **Start**, **Block on…**, and **Unblock**. A blocked row carries a **Blocked** badge: click it to jump to what the row is waiting on — the target is revealed wherever it's hiding, whether it's folded away, filtered out, or outside the zoom you're in.
@@ -200,3 +211,23 @@ pnpm build      # web assets + single self-contained CLI bundle
 ```
 
 `SPEC.md` is canonical — read it before making design decisions.
+
+## Releasing
+
+Review the README, tour, distributed skill, generated agent guidance, and
+`CHANGELOG.md` against changes since the latest npm publication. Query
+`npm view kalamu version time --json` for the published version and timestamp;
+local version fields and Git tags alone do not prove publication.
+
+Commit the preparation changes on `main`, then run `pnpm release minor` for
+new capabilities or `pnpm release patch` for fixes and documentation. The script
+requires a clean tree and npm authentication. It bumps the CLI version, updates
+the README and changelog, runs tests and the build, creates a release commit and
+annotated tag, publishes to npm, and pushes to GitHub. Pass `--otp <code>` if
+npm requests a one-time code.
+
+If publication fails after the release commit and tag are created, resolve the
+failure and run `pnpm release --publish-only` (with `--otp <code>` if needed).
+This resumes publication without another version bump. Check npm first if the
+previous publish result was uncertain. Global installations can then be updated
+with `npm install -g kalamu@latest`.

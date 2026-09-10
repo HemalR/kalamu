@@ -20,17 +20,20 @@ pause.
 
 ## 1. Establish what changed since the last publish
 
-- Last published version anchor: `git describe --tags --abbrev=0 --match "v*"`
-  (cross-check against `packages/cli/package.json` version — that field is the
-  source of truth for what's live on npm; a tag may be missing, e.g. v0.5.0 was).
+- Query `npm view kalamu version time --json` for the latest published version
+  and publication time. Find its release commit using the matching tag or
+  release commit message, and verify its package version. Local package fields
+  and tags can describe an unpublished release; missing tags are not evidence
+  that intervening releases never shipped.
 - Gather the change set:
-  - `git log <lastTag>..HEAD --oneline` — committed work since the anchor.
+  - `git log <releaseCommit>..HEAD --oneline` — committed work since the anchor.
   - `git status --porcelain` and `git diff` / `git diff --staged` — uncommitted
     work (there is almost always something).
 - Summarise, grouped by user-facing impact: new features, changes, fixes,
   removals, and internal-only churn (build/tooling/tests). Note which package(s)
-  each touches — only `packages/cli` (the `kalamu` bin) and `packages/web` (the
-  UI it serves) reach users; `core`, `landing`, and tooling do not ship to npm.
+  each touches — CLI and bundled core behavior, plus the web UI, reach npm
+  users. Landing is deployed separately; tooling changes belong in the notes
+  when they affect installation, publishing, or another user workflow.
 
 ## 2. Review README and the onboarding tour — pause for approval
 
@@ -47,8 +50,10 @@ Decide whether the changes require updates to either:
   **svelte-developer agent** only if the change reaches into `.svelte`/`.svelte.ts`
   (tour.ts itself is plain TS — edit directly).
 
-If either needs changes, make them, then **show me the diff and wait for my OK**
-before continuing. If neither needs changes, say so explicitly and continue.
+Also review `skills/kalamu/SKILL.md`, generated agent guidance in
+`packages/cli/src/agent-docs.ts`, and the wayfinder docs and template. Keep
+examples consistent with actual CLI behavior. Make documentation changes
+already authorized by the user; ask only about unresolved product decisions.
 
 ## 3. Update the changelog
 
@@ -71,7 +76,9 @@ matters to users. Follow the tone of the entries already in the file.
 
 ## 5. Sync to origin
 
-`git push` (from `main`). Confirm it succeeded.
+If the user authorized pushing, run `git push` from `main` and confirm success.
+If they requested local preparation ahead of a later release, leave the commits
+local and report that state.
 
 ## 6. Recommend a release type
 
@@ -107,5 +114,7 @@ Then, unless I asked you to `release`, **stop here** — I run the publish.
 4. If npm rejects the code as invalid/expired: the version was already bumped,
    committed, and tagged locally but not published/pushed — do NOT re-run
    `pnpm release` (it would double-bump). Instead recover with a fresh code:
-   `cd packages/cli && npm publish --otp=<fresh>` then `git push --follow-tags`.
+   `pnpm release --publish-only --otp <fresh>`. This uses the script's recovery
+   path without another version bump. If the publication result was uncertain,
+   check npm before retrying.
 5. Report the published version and that main + tags are pushed.

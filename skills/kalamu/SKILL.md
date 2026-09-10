@@ -1,16 +1,19 @@
 ---
 name: kalamu
 description: >-
-  Kalamu is a repo-local task outliner. Use when: (1) Assigning a task/discussion to a human that they don't have to do right away (2) As a durable todo list for humans/agents (3) Any Kalamu related tasks
+  Manage tasks and human-led discussions in a Kalamu repository outline. Use for
+  Kalamu work items, explicitly requested tracking, or deferred work that belongs
+  in the outline. Ordinary repository work does not automatically need a node.
 license: MIT
-compatibility: Requires Node.js >= 20 (commands run via npx kalamu or an installed kalamu binary)
 metadata:
   author: kalamu
 ---
 
 # Kalamu
 
-Kalamu stores a repository's brainstorming and task state in one file: `.kalamu/outline.jsonl`. The human edits it through a web UI; you use the CLI (preferable) or directly editing the jsonl file (where suitable). If `kalamu` is not on PATH, every command below works as `npx kalamu <command>`.
+Requires Node.js 20 or newer.
+
+Kalamu stores a repository's brainstorming and task state in `.kalamu/outline.jsonl`. The human edits it through the web UI; agents use the CLI. Edit JSONL by hand only when the CLI is unavailable, following the repository's data model. If `kalamu` is not on PATH, use `npx kalamu <command>`.
 
 ## When to use and when NOT to use
 
@@ -43,7 +46,7 @@ without `--parent` reports `(top-level)` so you can see the mistake.
 add it as a task rather than leaving TODO comments — in a Kalamu repo, the
 outline is the task system.
 
-We must always be mindful that the Kalamu interface if it were to get too cluttered up will probably overwhelm the human. So we want to keep things as clean and organized as possible
+Keep the outline focused on deferred work; do not add a node for work already underway in the current conversation.
 
 ## Communicating with the human about Kalamu nodes
 
@@ -99,6 +102,11 @@ without completing it, `kalamu end <id>` puts it back in the queue; a claim you
 neither finish nor release leaves the task invisible to `next` until someone
 forces it (`kalamu list --started` shows lingering claims).
 
+Discussions can also be claimed. When the human starts a discussion, run
+`kalamu start <id>` before discussing it; it leaves `next --discussion` until
+ended or done. A claim coordinates sessions; it does not turn a discussion
+into permission to implement code.
+
 ## Recording work
 
 ```bash
@@ -113,8 +121,8 @@ kalamu validate                                    # before finishing (exit 1 = 
 Record real dependencies with `block` (repeatable `--by`, or `--blocked-by` on
 `add`): a blocked task or discussion is skipped by `next` (and `next
 --discussion`) until every blocker is done, so ordering lives in the data
-instead of in your memory. Blockers may point at any node anywhere in the
-outline.
+instead of in your memory. A node cannot block itself or depend on its own
+ancestor, and dependency cycles are invalid.
 
 ### Authorship is recorded for you
 
@@ -146,6 +154,16 @@ to the human (`--assign human`) when you need something from them.
 9. Every node mentioned in a user-facing message gets its Markdown link — reuse the `Link:` line from the `add`/`done`/`start`/`next` output you already have, or run `kalamu link <id>`. Bad: `(n_0JC1YXY9BV)` with no link. See "Communicating with the human" above.
 
 ## Recognising a Kalamu repo
+
+Linked Git worktrees share the main checkout's `.kalamu/`. Keep the main
+checkout on its default branch and use worktrees for other branches; changing
+the main checkout's branch changes the committed outline visible to everyone.
+The CLI and hub warn when the main checkout is off its default branch.
+
+Reference longer prose with repo-relative `.md` paths, optionally followed by
+`#heading-slug`. The UI can open or peek at the referenced section; agents read
+the file directly. `kalamu validate` warns about missing files without failing
+validation. Keep the prose in the file and task state in the outline.
 
 A `.kalamu/` directory at the repository root (specifically `.kalamu/outline.jsonl`). If asked to set one up: `kalamu init`.
 

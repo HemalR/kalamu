@@ -20,6 +20,7 @@ That's the whole integration — the wayfinder skill itself needs no modificatio
 
 ## Notes
 
-- Discussions (grilling/prototype tickets) can be blocked but not claimed — they're human-in-the-loop, so the human driving the session is the claim. Concurrent AFK sessions coordinate through `kalamu start` on task-kind tickets.
+- Tasks and discussions can both be claimed with `kalamu start`. Claim a grilling/prototype ticket when its human-led session begins; it leaves `next --discussion` until ended or done. Claiming a discussion does not authorize coding work.
+- Discussion claims require v0.14.0 or newer.
 - Blockable discussions need a Kalamu release newer than v0.10.0 (SPEC key decision 16, amended 2026-08-10).
 - Tag names allow only `[a-z0-9-]`, so wayfinder's `wayfinder:<type>` labels become `#wf-map`, `#wf-research`, `#wf-prototype`, `#wf-grilling`, `#wf-task`.
