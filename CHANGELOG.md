@@ -48,6 +48,12 @@ under `Added` / `Changed` / `Fixed` / `Removed`.
   hover; it deletes the item with its subtree, undoable like
   Mod+Shift+Backspace, so there is no confirmation prompt.
 
+### Fixed
+
+- **Release tags are pushed to GitHub.** Releases now create annotated version
+  tags, allowing the existing `git push --follow-tags` step to publish them
+  instead of leaving lightweight tags only in the release checkout.
+
 ## [0.13.0] - 2026-09-03
 
 ### Added

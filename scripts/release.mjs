@@ -174,7 +174,9 @@ run("pnpm build");
 verifyBuild(version);
 
 run(`git commit -am "Release v${version}"`);
-run(`git tag v${version}`);
+// --follow-tags only pushes annotated tags. Keep the release tag annotated so
+// the final push publishes it alongside main instead of leaving it local.
+run(`git tag -a v${version} -m "Release v${version}"`);
 run(`npm publish${otp ? ` --otp=${otp}` : ""}`, { cwd: cliDir });
 run("git push --follow-tags");
 
