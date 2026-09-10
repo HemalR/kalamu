@@ -16,6 +16,8 @@ under `Added` / `Changed` / `Fixed` / `Removed`.
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-09-10
+
 ### Added
 
 - **Discussions can be claimed.** `kalamu start` and `end` now coordinate
