@@ -60,6 +60,15 @@ function countOpenTasks(entry: RegistryEntry): number | null {
   }
 }
 
+/** The outline file this entry resolves to, or null when even that cannot be told (a corrupt marker). */
+function outlineOf(entry: RegistryEntry): string | null {
+  try {
+    return pathsFor(entry.path).outline;
+  } catch {
+    return null;
+  }
+}
+
 const byMostRecent = (a: RegistryEntry, b: RegistryEntry): number => b.lastSeenAt.localeCompare(a.lastSeenAt);
 
 export function createHubServer(assetsDir: string | null, options: HubOptions = {}): KalamuServer {
@@ -108,18 +117,22 @@ export function createHubServer(assetsDir: string | null, options: HubOptions = 
   // stable positions keep the palette's ⌘K 1…9 project digits stable. Recency only
   // picks where the hub root lands.
   app.get("/api/projects", (c) => {
-    const projects = readRegistry(options.registryFile).projects.map((entry) => ({
-      slug: entry.slug,
-      name: entry.name ?? projectName(entry.path),
-      path: entry.path,
-      color: projectColor(entry),
-      openTasks: countOpenTasks(entry),
-      lastSeenAt: entry.lastSeenAt,
-      // The outline file is gone (deleted, moved, repo removed). Kept listed
-      // so the path is still findable — silently dropping it once turned a
-      // recoverable loss into "no registered project".
-      missing: !existsSync(pathsFor(entry.path).outline),
-    }));
+    const projects = readRegistry(options.registryFile).projects.map((entry) => {
+      const outline = outlineOf(entry);
+      return {
+        slug: entry.slug,
+        name: entry.name ?? projectName(entry.path),
+        path: entry.path,
+        color: projectColor(entry),
+        openTasks: countOpenTasks(entry),
+        lastSeenAt: entry.lastSeenAt,
+        // The outline file is gone (deleted, moved, repo removed, or a
+        // local-store project whose data is on another machine). Kept listed
+        // so the path is still findable — silently dropping it once turned a
+        // recoverable loss into "no registered project".
+        missing: outline === null || !existsSync(outline),
+      };
+    });
     return c.json({ projects });
   });
 

@@ -204,8 +204,10 @@ describe("assets API", () => {
     const res = await upload(png, "image/png");
     expect(res.status).toBe(201);
     const { path, url } = (await res.json()) as { path: string; url: string };
+    // The token keeps its `.kalamu/assets/` form whichever store holds the file;
+    // the file itself sits beside the outline.
     expect(path).toMatch(/^\.kalamu\/assets\/img-[0-9a-f]{12}\.png$/);
-    expect(existsSync(join(root, path))).toBe(true);
+    expect(existsSync(join(paths.dir, "assets", basename(path)))).toBe(true);
 
     const served = await server.app.request(url);
     expect(served.status).toBe(200);
@@ -324,16 +326,32 @@ describe("meta and ui-state API", () => {
     expect(typeof body.hubInstalled).toBe("boolean");
   });
 
-  it("project reports an off-default-branch main checkout for the UI banner", async () => {
-    const drift = async () =>
-      ((await (await server.app.request("/api/project")).json()) as { branchDrift: unknown }).branchDrift;
-    expect(await drift()).toBeNull(); // not a git checkout
-    mkdirSync(join(root, ".git", "refs", "remotes", "origin"), { recursive: true });
-    writeFileSync(join(root, ".git", "refs", "remotes", "origin", "HEAD"), "ref: refs/remotes/origin/main\n");
-    writeFileSync(join(root, ".git", "HEAD"), "ref: refs/heads/feature\n");
-    expect(await drift()).toEqual({ head: "feature", expected: "main" });
-    writeFileSync(join(root, ".git", "HEAD"), "ref: refs/heads/main\n");
-    expect(await drift()).toBeNull();
+  it("project reports its store, and an off-default-branch main checkout only for a repo-store outline", async () => {
+    const project = async (srv: KalamuServer) =>
+      (await (await srv.app.request("/api/project")).json()) as { store: string; dataDir: string; branchDrift: unknown };
+    const offMain = (dir: string): void => {
+      mkdirSync(join(dir, ".git", "refs", "remotes", "origin"), { recursive: true });
+      writeFileSync(join(dir, ".git", "refs", "remotes", "origin", "HEAD"), "ref: refs/remotes/origin/main\n");
+      writeFileSync(join(dir, ".git", "HEAD"), "ref: refs/heads/feature\n");
+    };
+
+    // The default (local) store lives outside git: no checkout can swap it.
+    expect(await project(server)).toMatchObject({ store: "local", dataDir: paths.dir, branchDrift: null });
+    offMain(root);
+    expect((await project(server)).branchDrift).toBeNull();
+
+    const repoRoot = mkdtempSync(join(tmpdir(), "kalamu-srv-repo-"));
+    const repo = createServer(initKalamu(repoRoot, { store: "repo" }).paths, null);
+    try {
+      expect(await project(repo)).toMatchObject({ store: "repo", branchDrift: null }); // not a git checkout yet
+      offMain(repoRoot);
+      expect((await project(repo)).branchDrift).toEqual({ head: "feature", expected: "main" });
+      writeFileSync(join(repoRoot, ".git", "HEAD"), "ref: refs/heads/main\n");
+      expect((await project(repo)).branchDrift).toBeNull();
+    } finally {
+      repo.close();
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
   });
 
   it("project reports the update comparison from the cache for the UI chip", async () => {

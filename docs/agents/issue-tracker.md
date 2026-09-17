@@ -1,6 +1,6 @@
 # Issue tracker: Kalamu
 
-Issues for this repo live in `.kalamu/outline.jsonl`, managed by the Kalamu CLI. Run it as `node packages/cli/dist/index.js` (or `kalamu` when the bin is linked). The dogfooding rules in `CLAUDE.md` still apply on top of everything here — agents never work human-assigned tasks, and discussions are never coding work.
+Issues for this repo live in the Kalamu outline (the `.kalamu/` directory marks the project), managed by the Kalamu CLI. Run it as `node packages/cli/dist/index.js` (or `kalamu` when the bin is linked). The dogfooding rules in `CLAUDE.md` still apply on top of everything here — agents never work human-assigned tasks, and discussions are never coding work.
 
 ## Conventions
 

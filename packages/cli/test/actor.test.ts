@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { pathsFor } from "@kalamu/core/store";
 import { parseActor, resolveActor } from "../src/actor.js";
 import * as commands from "../src/commands.js";
 import { CliError } from "../src/context.js";
@@ -10,12 +11,13 @@ import { CliError } from "../src/context.js";
 let cwd: string;
 
 function outline(): string {
-  return readFileSync(join(cwd, ".kalamu", "outline.jsonl"), "utf8");
+  return readFileSync(pathsFor(cwd).outline, "utf8");
 }
 
 beforeEach(() => {
   cwd = mkdtempSync(join(tmpdir(), "kalamu-actor-"));
   process.env.KALAMU_REGISTRY = join(cwd, "test-registry.json");
+  process.env.KALAMU_HOME = join(cwd, "kalamu-home");
   delete process.env.KALAMU_ACTOR;
   commands.init(cwd);
 });

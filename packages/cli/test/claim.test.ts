@@ -14,6 +14,7 @@ function addTask(text: string, extra: Partial<commands.AddOptions> = {}): string
 beforeEach(() => {
   cwd = mkdtempSync(join(tmpdir(), "kalamu-claim-"));
   process.env.KALAMU_REGISTRY = join(cwd, "test-registry.json");
+  process.env.KALAMU_HOME = join(cwd, "kalamu-home");
   commands.init(cwd);
 });
 

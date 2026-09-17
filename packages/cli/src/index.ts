@@ -1,6 +1,8 @@
 import { OperationError } from "@kalamu/core";
-import { ConflictError, findRoot, StoreError } from "@kalamu/core/store";
+import { ConflictError, dataHome, findRoot, StoreError, type StoreKind } from "@kalamu/core/store";
 import { Command } from "commander";
+import { resolve } from "node:path";
+import { createInterface } from "node:readline/promises";
 import * as commands from "./commands.js";
 import { normalizeBaseUrl, readConfig, updateCheckEnabled, writeConfig } from "./config.js";
 import { askEditorPreset, EDITOR_PRESETS, resolveEditorTemplate } from "./editor.js";
@@ -29,6 +31,11 @@ function baseUrlStatus(): string {
   const configured = readConfig().baseUrl;
   const normalized = typeof configured === "string" ? normalizeBaseUrl(configured) : null;
   return `base-url ${normalized ?? DEFAULT_HUB_BASE_URL}${normalized === null ? " (default)" : ""}`;
+}
+
+function dataDirStatus(): string {
+  const source = process.env.KALAMU_DATA_DIR ? " (KALAMU_DATA_DIR)" : readConfig().dataDir === undefined ? " (default)" : "";
+  return `data-dir ${dataHome()}${source}`;
 }
 
 function editorStatus(): string {
@@ -72,7 +79,30 @@ interface InitOptions {
   agentDocs?: boolean;
   gitignore?: boolean;
   wayfinder?: boolean;
+  store?: string;
   format?: string;
+}
+
+/**
+ * Where a fresh project's outline lives (SPEC key decision 21). Asked only of
+ * a human, only for a fresh init without `--store`; Enter takes the local
+ * store, the one that survives branches and worktrees.
+ */
+async function askStore(): Promise<StoreKind> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    console.log(
+      "\nWhere should the outline live?\n" +
+        `  1) Outside the repo, under ${dataHome()} — one outline for every branch, worktree and clone on this machine\n` +
+        "  2) Committed in the repo at .kalamu/ — travels with clones, but every branch carries its own copy",
+    );
+    const answer = (await rl.question("Choose [1-2, default 1]: ")).trim();
+    return answer === "2" ? "repo" : "local";
+  } catch {
+    return "local"; // EOF (Ctrl+D) takes the default rather than crashing
+  } finally {
+    rl.close();
+  }
 }
 
 /**
@@ -126,12 +156,14 @@ async function initWithOffers(opts: InitOptions, guard: { skipRepoGuard?: boolea
       return false;
     }
   }
+  const store = opts.store ?? (interactive && findRoot(process.cwd()) === null ? await askStore() : undefined);
   const result = run(
     () =>
       commands.init(process.cwd(), {
         agentDocs: opts.agentDocs,
         gitignore: opts.gitignore,
         wayfinder: opts.wayfinder,
+        store,
       }),
     opts,
   );
@@ -155,6 +187,10 @@ async function initWithOffers(opts: InitOptions, guard: { skipRepoGuard?: boolea
 program
   .command("init")
   .description("initialise Kalamu in the current directory")
+  .option(
+    "--store <store>",
+    "where the outline lives: local (default; outside the repo, shared by every branch and worktree) or repo (committed in .kalamu/)",
+  )
   .option("--tour", "seed a self-guided onboarding outline (fresh outlines only)")
   .option("--no-tour", "never offer the tour")
   .option("--editor <name>", "editor for @file references (preset name or {path} URL template)")
@@ -173,6 +209,14 @@ program
     if (opts.open === true || (opts.open !== false && isInteractive() && opts.format !== "json")) {
       await open(process.cwd(), {});
     }
+  });
+
+program
+  .command("migrate <store>")
+  .description("move this project's outline between stores: local (outside the repo, shared by every branch) or repo (committed in .kalamu/)")
+  .option("--format <format>", "output format (text|json)")
+  .action((store: string, opts: { format?: string }) => {
+    run(() => commands.migrate(process.cwd(), store), opts);
   });
 
 program
@@ -253,13 +297,26 @@ program
 
 program
   .command("config [key] [value]")
-  .description("view or change machine-global settings (update-check, base-url, or editor)")
+  .description("view or change machine-global settings (update-check, base-url, editor, or data-dir)")
   .action((key: string | undefined, value: string | undefined) => {
     if (key === undefined) {
       const enabled = updateCheckEnabled();
       console.log(`update-check ${enabled ? "on" : "off"}${enabled ? "" : " (KALAMU_NO_UPDATE_CHECK, CI, or config)"}`);
       console.log(baseUrlStatus());
       console.log(editorStatus());
+      console.log(dataDirStatus());
+      return;
+    }
+    if (key === "data-dir") {
+      // Where local-store project data lives — a synced folder, say. Existing
+      // projects are not moved: the setting only changes where ids resolve.
+      if (value !== undefined) {
+        const config = readConfig();
+        if (value === "default") delete config.dataDir;
+        else config.dataDir = resolve(value);
+        writeConfig(config);
+      }
+      console.log(dataDirStatus());
       return;
     }
     if (key === "editor") {
@@ -308,7 +365,7 @@ program
       return;
     }
     if (key !== "update-check") {
-      console.error(`kalamu: unknown config key "${key}" (expected update-check, base-url, or editor)`);
+      console.error(`kalamu: unknown config key "${key}" (expected update-check, base-url, editor, or data-dir)`);
       process.exitCode = 1;
       return;
     }

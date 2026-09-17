@@ -4,7 +4,7 @@ Repo-local, keyboard-first outliner for solo developers and coding agents. **SPE
 
 ## Dogfooding rule
 
-This repo uses Kalamu itself — as a parking lot for deferred work, never as a log of the current conversation. Use the CLI: `node packages/cli/dist/index.js add --kind task --text "..."` (or the `kalamu` bin when linked); before the CLI builds, append a line to `.kalamu/outline.jsonl` by hand following SPEC.md's data model exactly.
+This repo uses Kalamu itself — as a parking lot for deferred work, never as a log of the current conversation. Use the CLI: `node packages/cli/dist/index.js add --kind task --text "..."` (or the `kalamu` bin when linked); before the CLI builds, append a line to the outline file by hand following SPEC.md's data model exactly (`.kalamu/outline.jsonl` on the repo store; `~/.kalamu/projects/<id>/outline.jsonl` on the local store, `<id>` from `.kalamu/project.json`).
 
 - Agents add nodes in exactly three cases, always `--kind task`:
   1. Work discovered in this conversation but deliberately not done in it.
@@ -42,4 +42,4 @@ pnpm monorepo:
 
 ### Issue tracker
 
-Issues live in Kalamu (`.kalamu/outline.jsonl`). See `docs/agents/issue-tracker.md` — its "Wayfinding operations" section is what `/wayfinder` consults.
+Issues live in Kalamu (use the `kalamu` CLI). See `docs/agents/issue-tracker.md` — its "Wayfinding operations" section is what `/wayfinder` consults.

@@ -26,18 +26,20 @@ export function looksLikeRepo(dir: string): boolean {
 }
 
 /**
- * The outline is a committed file, so when the main checkout is on a branch
- * other than its default, every command — from any worktree — is reading and
- * writing that branch's copy (SPEC key decision 20). Kalamu cannot stop
- * `git checkout`; this makes the slip loud. stderr keeps it clear of
+ * A repo-store outline is a committed file, so when the main checkout is on a
+ * branch other than its default, every command — from any worktree — is
+ * reading and writing that branch's copy (SPEC key decision 20). Kalamu cannot
+ * stop `git checkout`; this makes the slip loud. stderr keeps it clear of
  * `--format json` stdout, and agents see it too: their writes are the ones
- * that would otherwise strand on the wrong branch.
+ * that would otherwise strand on the wrong branch. A local-store outline is
+ * outside git, so branches cannot swap it and nothing is said.
  */
-export function warnIfOffDefaultBranch(root: string): void {
-  const drift = offDefaultBranch(root);
+export function warnIfOffDefaultBranch(paths: KalamuPaths): void {
+  if (paths.store !== "repo") return;
+  const drift = offDefaultBranch(paths.root);
   if (drift === null) return;
   process.stderr.write(
-    `kalamu: ${root} is on ${drift.head}, not ${drift.expected} — the outline here is that checkout's copy, ` +
+    `kalamu: ${paths.root} is on ${drift.head}, not ${drift.expected} — the outline here is that checkout's copy, ` +
       `not ${drift.expected}'s. Check out ${drift.expected} there and use a worktree for other branches.\n`,
   );
 }
@@ -52,8 +54,9 @@ export function resolvePaths(cwd: string): KalamuPaths {
   if (!root) throw new CliError('not a Kalamu project (no .kalamu directory found) — run "kalamu init"');
   // Hub registration is a side effect of use (SPEC "Hub"); it never throws.
   registerProject(root);
-  warnIfOffDefaultBranch(root);
-  return pathsFor(root);
+  const paths = pathsFor(root);
+  warnIfOffDefaultBranch(paths);
+  return paths;
 }
 
 /** Every command returns this; the wiring decides how to print it. */

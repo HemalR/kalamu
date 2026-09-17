@@ -19,9 +19,11 @@ function makeProject(dir: string, pkgName?: string): string {
 beforeEach(() => {
   base = mkdtempSync(join(tmpdir(), "kalamu-reg-"));
   file = join(base, "registry", "projects.json");
+  process.env.KALAMU_HOME = join(base, "kalamu-home");
 });
 
 afterEach(() => {
+  delete process.env.KALAMU_HOME;
   rmSync(base, { recursive: true, force: true });
 });
 

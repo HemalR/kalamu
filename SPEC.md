@@ -19,7 +19,7 @@ The product should be:
 * Agent-friendly
 * Simple enough to understand by looking at one file
 
-The canonical data source is a JSONL file stored inside the project repository.
+The canonical data source is a JSONL file. Where it lives is the project's *store* (key decision 21): by default outside the repository, in a machine-global data directory keyed by a committed id marker, so every branch, worktree and clone shares one outline; optionally committed inside the repository.
 
 Kalamu's two differentiators — the reasons it beats a `TODO.md` — are:
 
@@ -54,7 +54,8 @@ These were deliberated and are settled. Do not relitigate them during implementa
 17. **In-progress is a timestamp, not a status.** (Added 2026-08-08.) `startedAt` marks a task or discussion an agent has claimed (amended 2026-09-05 to cover discussions; bullets alone cannot be claimed), for the same reason SPEC declines a `done` boolean (see [`doneAt`](#doneat)): timestamps carry when as well as whether, and never accumulate into a status enum. Without it, two agent sessions both call `kalamu next`, both receive the same task, and both do the work. `next` skips claimed tasks; `kalamu start <id> --force` re-claims one whose owner died. State in Kalamu is exactly three timestamps — `createdAt`, `startedAt`, `doneAt` — and never a workflow.
 18. **`handoff` is removed; promoting a task means deleting it.** (Added 2026-08-08.) A task that outgrows Kalamu is created in the external tracker and then deleted here. Recording *where it went* was a mandatory nullable field on every line of every outline, and in ten months of dogfooding not one node ever carried a non-null value — the forwarding address turned out to be a thing nobody looked up. The `handoff` field, the `Handoff` type, `kalamu handoff`/`unhandoff`, `next --include-handed-off`, `list --handoff`, and `POST /api/nodes/:id/handoff` are all gone. The consequence is deliberate: Kalamu keeps no record of promoted work, so an agent that creates a GitHub issue from a task **must** delete the task, or the next agent will do it again. Readers still accept a legacy `handoff` and fold a non-null one into the node's text as the same `→ target:ref` suffix the CLI used to render, so upgrading never silently discards a reference; a null one carried no information and is dropped.
 19. **Doc references are plain repo-relative `.md` paths in text.** (Added 2026-08-17.) Kalamu holds state and structure; prose (specs, decision logs, plans) lives in ordinary repo Markdown, and a node points at it by writing the path in its text — `Spec: plans/admin-console-refresh.md Phase 2`. The two never duplicate the same fact, so there is nothing to keep in sync: the doc doesn't record done-ness, the node doesn't carry the prose. Same rendering model as tags and images: a whole-word token ending in `.md` renders as a quiet chip in unfocused nodes (click opens the file, served read-only by the local server under `/docs/*` — repo files only, `.md` only), the focused node shows raw text, and agents see an ordinary greppable path. Recognition adds no node field and no CLI command; the path is not validated on write (a chip to a missing file 404s on click). (Amended 2026-09-05: the token scanner lives in core — `docReferences` — so `kalamu validate` and `/api/validate` warn, never error, on a reference to a missing `.md` file, catching renames; core stays filesystem-free by taking the existence lookup from the caller. The token may carry a heading anchor, `plans/foo.md#phase-2`, using the GitHub slug of the heading text — `headingSlug` in core; the anchor never reads as a #tag because tags need whitespace before the `#`. `/docs/*` serves a browser the Markdown *source* in a `<pre>` with each heading line id'd by its slug, so the fragment lands on the heading with no Markdown rendering and no HTML from repo files; non-browser clients still get the raw file. A chevron after the chip peeks the reference in place: the section the anchor names — heading through the next heading of the same or a higher level, `markdownSection` in core — or the whole doc without one, shown read-only as Markdown source under the row. Peek state is per page load, never persisted: it is a reading aid, not view state.) A node body/description field was considered and rejected: it would fork prose away from the canonical doc and recreate the sync problem inside the data model. (Amended 2026-08-19: the same idea extends to any repo file via an explicit `@path` token — `@src/lib/caret.ts` — inserted by the editor's `@` picker and rendered as a chip that opens the file in the human's configured editor. Bare `.md` paths keep chipping without the `@` because prose references them in passing; every other file needs the marker, since arbitrary path-shaped text is too easy to match by accident. Requiring a `/` or `.` in the token is what keeps `@human`/`@agent` — still assignment tokens, still stripped by core — and ordinary `@mentions` out. Which editor is a per-developer preference, so it lives in machine-global `~/.kalamu/config.json` (`kalamu config editor <preset|template>`), never in the repo. The completion list comes from `git ls-files`, so ignored files never appear; Kalamu stores paths only, never file contents. Amended 2026-08-23: a token may carry a line, `@src/a.ts:42`, filled into the template's `{line}` placeholder; the delimiter lives in an optional `[...]` group dropped when no line is given, since `:` and `&line=` differ per editor.)
-20. **A linked git worktree is the same project as its main checkout.** (Added 2026-09-02.) The committed `.kalamu/` travels with every checkout, so a worktree left to itself is a second outline that diverges per branch: a task an agent adds on a feature branch is invisible everywhere else until merge, and parallel agents produce merge conflicts in a file whose line order is sibling order. Instead, root resolution (`findRoot`, `init`) treats a linked worktree — a `.git` *file* whose gitdir has a `commondir`, read from disk with no git binary — as its main checkout whenever that checkout is itself a Kalamu project. Every read and write from any branch or worktree lands in the main checkout's `.kalamu/`, the hub shows it live, and feature branches never touch the outline file, so it never conflicts on merge; the worktree's own committed copy goes stale and nothing reads it. The main checkout's working tree is where outline changes accumulate and get committed. The view is per machine, not per clone: a second clone or a plain directory copy stays a separate project and only git syncs them. Submodules (a `.git` file with no `commondir`) and a worktree whose main checkout has no outline keep their own root. Beads reached the same place by moving issues off code branches entirely; Kalamu gets it from git's own layout, with no sync branch and no database. (Amended 2026-09-05: the shared file is the main checkout's *working-tree* copy, so a non-default branch checked out there swaps it for that branch's version under everyone — a committed file in a working tree is per-branch by git's definition, and no attribute, hook, or merge driver changes that. The alternatives were weighed and declined: moving the data into `.git/kalamu/` would give up history and fresh-clone portability, and a Beads-style sync branch is the machinery this decision exists to avoid. So the rule is a habit, made loud rather than enforced: the main checkout stays on its default branch and every other branch lives in a worktree, and every CLI command plus `open` warns on stderr when the main checkout is off its default — read from `.git/HEAD` and `origin/HEAD`, else a local `main`/`master`, again with no git binary. The web UI shows the same warning as a banner: `/api/project` reports the drift, and the server watches `.git/HEAD` so the banner tracks a checkout live.)
+20. **A linked git worktree is the same project as its main checkout.** (Added 2026-09-02.) The committed `.kalamu/` travels with every checkout, so a worktree left to itself is a second outline that diverges per branch: a task an agent adds on a feature branch is invisible everywhere else until merge, and parallel agents produce merge conflicts in a file whose line order is sibling order. Instead, root resolution (`findRoot`, `init`) treats a linked worktree — a `.git` *file* whose gitdir has a `commondir`, read from disk with no git binary — as its main checkout whenever that checkout is itself a Kalamu project. Every read and write from any branch or worktree lands in the main checkout's `.kalamu/`, the hub shows it live, and feature branches never touch the outline file, so it never conflicts on merge; the worktree's own committed copy goes stale and nothing reads it. The main checkout's working tree is where outline changes accumulate and get committed. The view is per machine, not per clone: a second clone or a plain directory copy stays a separate project and only git syncs them. Submodules (a `.git` file with no `commondir`) and a worktree whose main checkout has no outline keep their own root. Beads reached the same place by moving issues off code branches entirely; Kalamu gets it from git's own layout, with no sync branch and no database. (Amended 2026-09-05: the shared file is the main checkout's *working-tree* copy, so a non-default branch checked out there swaps it for that branch's version under everyone — a committed file in a working tree is per-branch by git's definition, and no attribute, hook, or merge driver changes that. The alternatives were weighed and declined: moving the data into `.git/kalamu/` would give up history and fresh-clone portability, and a Beads-style sync branch is the machinery this decision exists to avoid. So the rule is a habit, made loud rather than enforced: the main checkout stays on its default branch and every other branch lives in a worktree, and every CLI command plus `open` warns on stderr when the main checkout is off its default — read from `.git/HEAD` and `origin/HEAD`, else a local `main`/`master`, again with no git binary. The web UI shows the same warning as a banner: `/api/project` reports the drift, and the server watches `.git/HEAD` so the banner tracks a checkout live.) (Amended 2026-09-17: the per-branch problem this decision works around exists only for a repo-store outline. The default local store — key decision 21 — keeps the outline outside git, so the warning, the banner and the `.git/HEAD` watcher apply to repo-store projects only. Worktree resolution stays for both stores: a worktree on a branch that predates the marker still lands on the main checkout, which carries it.)
+21. **The store is independent of git.** (Added 2026-09-17.) Ten months of committing `outline.jsonl` established that a committed file in a working tree is per-branch by git's definition, and every mitigation — decision 20, the off-default warning, the worktree habit — was a workaround for that fact rather than a fix. So where the outline lives is a per-project choice made at `init`, the **store**. `local` (the default) keeps the data under the machine-global data home — `~/.kalamu/projects/<id>/`, overridable with `KALAMU_DATA_DIR` or `kalamu config data-dir` — and commits only a marker, `.kalamu/project.json`, holding an immutable project id. `repo` is the original layout, everything committed under `.kalamu/`. The marker is the same bytes on every branch, worktree and clone, so it never conflicts, and resolution is trivial: a `.kalamu/` with a marker is a project, and the marker wins over any `outline.jsonl` a branch from before the migration still carries. The id is the directory name slugified plus six hex characters — readable in a synced folder, never renamed. Everything the outline owns moves with it (meta, view state, assets; the `.kalamu/assets/` token in node text is unchanged and the server serves the file from wherever the outline lives), and everything repo-relative stays repo-relative (doc and `@file` references resolve against the repo root, which the project still has). The trade-offs are accepted with eyes open: a local-store outline has no git history and does not travel with a clone — the second machine gets it by syncing the data dir, or later by talking to the hub — and Kalamu is a solo tool, so that second machine belongs to the same person. `kalamu migrate <store>` moves a project between the two: it copies everything, reports the node count so the human can see nothing was lost, and switches the marker before deleting the old copy so an interruption never leaves an unreadable project. Sync stays a non-goal — Kalamu writes ordinary files with atomic renames, and whatever syncs the folder (Syncthing, Dropbox) is the user's — and so does a hosted database as canonical source: the hub *is* the server, and running it on another machine is deployment, not architecture.
 
 ---
 
@@ -162,19 +163,34 @@ Kalamu should stay close to:
 
 ## Storage
 
-Canonical storage is JSONL.
+Canonical storage is JSONL. Where it lives is the project's **store** (key decision 21), chosen at `kalamu init --store <local|repo>` (an interactive init asks; Enter takes `local`) and changed later with `kalamu migrate <store>`.
 
-Default location:
+**`local` (default).** The repo commits one marker:
+
+```text
+.kalamu/project.json      {"id": "myrepo-3f9a1c"}
+```
+
+and the data lives under the data home, one directory per id:
+
+```text
+~/.kalamu/projects/<id>/
+  outline.jsonl
+  meta.json
+  ui-state.json
+  assets/
+```
+
+The data home is `KALAMU_DATA_DIR`, else `dataDir` in `~/.kalamu/config.json` (`kalamu config data-dir <path>`; `default` clears it), else `~/.kalamu/projects`. Point it at a synced folder to carry outlines between machines — Kalamu never syncs anything itself, and changing the setting moves nothing: it only changes where ids resolve. The marker is the project test for root resolution and wins over any `outline.jsonl` a pre-migration branch still carries. A clone on a machine without the data errors until `kalamu init` gives it an empty outline. Nothing in this store's `.kalamu/` needs a `.gitignore` entry. `kalamu hub list` prints each local-store project's data dir; `/api/project` reports `store` and `dataDir`.
+
+**`repo`.** Everything committed:
 
 ```text
 .kalamu/outline.jsonl
-```
-
-Additional metadata file:
-
-```text
 .kalamu/meta.json
 ```
+
+The rest of this section describes the files themselves; the layout applies to both stores.
 
 `meta.json` contains this for MVP:
 
@@ -217,7 +233,7 @@ Optional runtime cache, if needed later:
 
 But `cache.sqlite` is never canonical and is gitignored.
 
-`.gitignore` entries:
+`.gitignore` entries (repo store only — the local store leaves nothing in the repo but the marker):
 
 ```gitignore
 .kalamu/cache.sqlite
@@ -660,7 +676,15 @@ kalamu validate
 
 Initialises Kalamu in the current repo.
 
-Creates:
+`--store <local|repo>` picks where the outline lives (see [Storage](#storage)). The default, `local`, creates the committed marker plus an empty outline and meta under the data home:
+
+```text
+.kalamu/project.json
+~/.kalamu/projects/<id>/outline.jsonl
+~/.kalamu/projects/<id>/meta.json
+```
+
+`--store repo` creates the committed layout instead:
 
 ```text
 .kalamu/
@@ -668,7 +692,9 @@ Creates:
   meta.json
 ```
 
-Should not overwrite existing data.
+Interactively (TTY, not JSON mode), a **fresh** init without `--store` asks which; Enter takes `local`. Non-TTY runs never ask and take `local`. An existing project keeps its store whatever the flag says — switching is `kalamu migrate`'s job.
+
+Should not overwrite existing data. A local-store project whose data is missing on this machine (a fresh clone carrying the marker) gets an empty outline.
 
 `init --tour` seeds a self-guided onboarding outline into a **fresh, empty**
 outline only (it refuses otherwise). The tour teaches the UI by being an
@@ -710,9 +736,11 @@ Idempotent (the `<!-- kalamu:agents -->`
 marker is the already-installed check), so it also runs on re-init — existing
 projects adopt it by re-running `kalamu init`. `--no-agent-docs` skips it.
 
-In the same spirit, `init` maintains the repo's `.gitignore`: when the
-directory carries a repo marker it appends the missing `.kalamu` view-state and
-cache entries (see ".gitignore entries" above); `--no-gitignore` skips it.
+In the same spirit, a repo-store `init` maintains the repo's `.gitignore`: when
+the directory carries a repo marker it appends the missing `.kalamu` view-state
+and cache entries (see ".gitignore entries" above); `--no-gitignore` skips it.
+The local store leaves nothing in `.kalamu/` worth ignoring, so it never touches
+`.gitignore`.
 
 Interactively (TTY, not JSON mode), `init` also asks which **editor** `@file`
 references should open in, listing the five most common (VS Code, Cursor, Zed,
@@ -743,6 +771,24 @@ on GitHub, but skills.sh does not crawl: a skill appears in its directory via
 anonymous install telemetry, i.e. only after someone runs
 `npx skills add <owner/repo>`, and ranks by install count. The skill teaches any
 coding agent the CLI workflow and rules; it must never assume a specific agent.
+
+---
+
+### `kalamu migrate <store>`
+
+Moves this project's data between the two stores (key decision 21):
+`kalamu migrate local` takes a committed outline out of the repo, `kalamu
+migrate repo` brings it back. Everything the outline owns comes along —
+`outline.jsonl`, `meta.json`, `ui-state.json`, `assets/` — and the output
+names the node count so the human can see nothing was lost, plus where the
+data now lives and what to commit. Order of operations is copy, switch the
+marker, delete the old copy, so an interruption leaves a project that still
+reads (the marker decides which copy is live). To `local` the data lands under
+a fresh id; to `repo` it overwrites whatever a stale branch left in `.kalamu/`
+(dead by definition while the marker existed), restores the `.gitignore`
+entries, and removes the data-home directory. Migrating to the store the
+project already uses is an error. Runs from a linked worktree act on the main
+checkout, like every other command.
 
 ---
 
@@ -2003,6 +2049,7 @@ Shape:
 Rules:
 
 * Every CLI command that resolves a project (`init`, `open`, `add`, `next`, …) upserts that project's entry — registration is a side effect of use, never a setup step. Existing entry: touch `lastSeenAt` only.
+* Entries are keyed by repo path whichever store the project uses; `kalamu hub list` adds a local-store project's data dir as a third column (`dir` in JSON, with `store`).
 * A linked git worktree never registers on its own path. (Added 2026-09-02.) Root resolution already lands on the main checkout (key decision 20), so a worktree is one sidebar entry and one slug, and `kalamu link` from inside it points at the shared project. Before this, every worktree an agent ran kalamu in became a fresh `<slug>-N` row, dimmed as `missing` once the worktree was removed; `kalamu hub forget` clears any such leftovers.
 * Entries whose `path` no longer contains `.kalamu/outline.jsonl` are **kept** and served with `missing: true`; the sidebar dims them and names the expected path. (Amended 2026-08-23: they used to be pruned silently on read, which turned a deleted outline into "no registered project" with no pointer to where the file had lived — the registry is the only record of that path, and losing it is exactly when the human needs it. `kalamu hub forget` remains the explicit way to drop one.) The outline file — not the bare directory — is still the project test for registration (`findRoot`), so the machine-global `~/.kalamu` (registry, hub log) can never make the home directory masquerade as a project.
 * Writes use the same temp-file + atomic-rename pattern as everything else. Registry failures must never break an unrelated command that triggered registration — a broken registry degrades the hub, not ordinary CLI work. `kalamu link` is the deliberate exception because its result depends on the registered slug; it fails clearly rather than inventing a broken URL. The `Link:` lines that `add`/`done`/`start`/`next` append are back on the never-break side: an unresolvable slug omits the line, since there the link decorates a command that must still succeed.

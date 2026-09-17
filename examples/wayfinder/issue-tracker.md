@@ -1,6 +1,6 @@
 # Issue tracker: Kalamu
 
-Issues for this repo live in `.kalamu/outline.jsonl`, managed by the `kalamu` CLI.
+Issues for this repo live in the Kalamu outline (the `.kalamu/` directory marks the project), managed by the `kalamu` CLI.
 
 ## Conventions
 

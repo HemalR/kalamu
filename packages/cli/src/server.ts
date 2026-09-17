@@ -42,7 +42,7 @@ import { streamSSE } from "hono/streaming";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, watch, writeFileSync, type FSWatcher } from "node:fs";
-import { basename, dirname, extname, join, normalize, sep } from "node:path";
+import { basename, extname, join, normalize, sep } from "node:path";
 import { z } from "zod";
 import { editorTemplate } from "./config.js";
 import { docExistsUnder } from "./context.js";
@@ -230,14 +230,17 @@ export function createServer(
   // A `git checkout` in the main checkout rewrites .git/HEAD; the UI refetches
   // /api/project on this event so the off-default-branch banner (SPEC key
   // decision 20) appears and clears without a reload. Non-recursive: only
-  // HEAD matters, and the index/ORIG_HEAD churn is filtered by name.
+  // HEAD matters, and the index/ORIG_HEAD churn is filtered by name. Only a
+  // repo-store outline is per-branch, so only it needs the watcher.
   let headWatcher: FSWatcher | null = null;
-  try {
-    headWatcher = watch(join(dirname(paths.dir), ".git"), (_type, filename) => {
-      if (filename === "HEAD") broadcast("project-changed");
-    });
-  } catch {
-    // not a git checkout (or a worktree's .git file); no banner to keep live
+  if (paths.store === "repo") {
+    try {
+      headWatcher = watch(join(paths.root, ".git"), (_type, filename) => {
+        if (filename === "HEAD") broadcast("project-changed");
+      });
+    } catch {
+      // not a git checkout (or a worktree's .git file); no banner to keep live
+    }
   }
 
   const readNodes = (): KalamuNode[] => preorder(buildTree(readOutline(paths.outline).nodes));
@@ -400,11 +403,13 @@ export function createServer(
     } catch {
       return c.json({ error: "no outline file" }, 400);
     }
-    return c.json(validateOutline(content, { docExists: docExistsUnder(dirname(paths.dir)) }));
+    return c.json(validateOutline(content, { docExists: docExistsUnder(paths.root) }));
   });
 
-  // Pasted images: content-hashed file in .kalamu/assets/ (committed — assets
-  // are outline content, SPEC key decision 11); identical pastes dedupe.
+  // Pasted images: content-hashed file in the data dir's assets/ (they move
+  // with the outline — assets are outline content, SPEC key decision 11);
+  // identical pastes dedupe. The token in node text keeps the `.kalamu/assets/`
+  // form whichever store holds the file.
   app.post("/api/assets", async (c) => {
     const type = c.req.header("content-type")?.split(";")[0]?.trim() ?? "";
     const ext = IMAGE_TYPES[type];
@@ -438,7 +443,7 @@ export function createServer(
     } catch {
       return c.text("not found", 404);
     }
-    const repoRoot = dirname(paths.dir);
+    const repoRoot = paths.root;
     const full = normalize(join(repoRoot, raw));
     if (!full.startsWith(repoRoot + sep) || extname(full) !== ".md") return c.text("not found", 404);
     if (!existsSync(full) || !statSync(full).isFile()) return c.text("not found", 404);
@@ -457,7 +462,7 @@ export function createServer(
 
   // Completion source for `@file` references (SPEC key decision 19). Paths
   // only — the outline never stores repo file contents.
-  app.get("/api/files", (c) => c.json(repoFiles(dirname(paths.dir))));
+  app.get("/api/files", (c) => c.json(repoFiles(paths.root)));
 
   // platform + hubInstalled drive the UI's hub-discovery hints: install advice
   // is only shown where `hub install` exists and hasn't already been run.
@@ -468,17 +473,21 @@ export function createServer(
     const update = cachedUpdate(CURRENT_VERSION);
     void refreshUpdate(CURRENT_VERSION);
     return c.json({
-      name: displayName?.() ?? projectName(dirname(paths.dir)),
+      name: displayName?.() ?? projectName(paths.root),
       platform: process.platform,
       hubInstalled: hubAgentInstalled(),
       version: CURRENT_VERSION,
       latestVersion: update.latest,
       updateAvailable: update.updateAvailable,
       // `@file` chips become editor deep links built from these two.
-      repoRoot: dirname(paths.dir),
+      repoRoot: paths.root,
       editorTemplate: editorTemplate(),
-      // The CLI's stderr warning, surfaced where the human actually looks.
-      branchDrift: offDefaultBranch(dirname(paths.dir)),
+      // Where the data lives (SPEC key decision 21): `local` keeps it outside git.
+      store: paths.store,
+      dataDir: paths.dir,
+      // The CLI's stderr warning, surfaced where the human actually looks —
+      // only a repo-store outline can be swapped by a checkout.
+      branchDrift: paths.store === "repo" ? offDefaultBranch(paths.root) : null,
     });
   });
 

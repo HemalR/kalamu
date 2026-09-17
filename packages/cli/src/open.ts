@@ -20,8 +20,8 @@ export async function open(cwd: string, options: OpenOptions): Promise<void> {
   const root = findRoot(cwd) ?? cwd;
   initKalamu(root); // ensure .kalamu exists (never overwrites)
   registerProject(root);
-  warnIfOffDefaultBranch(root);
   const paths = pathsFor(root);
+  warnIfOffDefaultBranch(paths);
 
   // A running hub already serves every registered project — reuse it instead
   // of starting one more server, and wake a launchd-installed hub that isn't

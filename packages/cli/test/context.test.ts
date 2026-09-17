@@ -1,4 +1,4 @@
-/** The off-default-branch warning (SPEC key decision 20) reaches stderr from any command. */
+/** The off-default-branch warning (SPEC key decision 20) reaches stderr from any command — for a repo-store outline. */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,7 +10,8 @@ let cwd: string;
 beforeEach(() => {
   cwd = mkdtempSync(join(tmpdir(), "kalamu-context-"));
   process.env.KALAMU_REGISTRY = join(cwd, "test-registry.json");
-  commands.init(cwd);
+  process.env.KALAMU_HOME = join(cwd, "kalamu-home");
+  commands.init(cwd, { store: "repo" });
 });
 
 afterEach(() => {
@@ -32,5 +33,20 @@ describe("off-default-branch warning", () => {
     commands.list(cwd, {});
     expect(stderr).toHaveBeenCalledTimes(1);
     expect(String(stderr.mock.calls[0]?.[0])).toMatch(/is on feature, not main/);
+  });
+
+  it("never fires for a local-store outline, which no checkout can swap", () => {
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const local = mkdtempSync(join(tmpdir(), "kalamu-context-local-"));
+    try {
+      commands.init(local);
+      mkdirSync(join(local, ".git", "refs", "heads"), { recursive: true });
+      writeFileSync(join(local, ".git", "refs", "heads", "main"), "0".repeat(40) + "\n");
+      writeFileSync(join(local, ".git", "HEAD"), "ref: refs/heads/feature\n");
+      commands.list(local, {});
+      expect(stderr).not.toHaveBeenCalled();
+    } finally {
+      rmSync(local, { recursive: true, force: true });
+    }
   });
 });

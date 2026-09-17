@@ -6,7 +6,7 @@
 
 A repo-local, keyboard-first outliner for turning developer thoughts into agent-ready tasks. — [kalamu.dev](https://kalamu.dev)
 
-Your outline lives in your repository as one diffable file — `.kalamu/outline.jsonl` — with no cloud, no account, and no daemon. You brainstorm in a fast keyboard-first web UI; your coding agents consume the same outline through a CLI built for them.
+Your outline is one plain JSONL file with no cloud, no account, and no daemon. By default it lives outside your repository, under `~/.kalamu/projects/`, with a one-line marker committed in `.kalamu/` so every branch, worktree and clone on the machine shares it; `kalamu init --store repo` commits the file itself instead. You brainstorm in a fast keyboard-first web UI; your coding agents consume the same outline through a CLI built for them.
 
 **Current version: v0.14.0**
 
@@ -60,7 +60,7 @@ under the row as read-only Markdown source.
 
 Two view controls sit in the header. **Overview mode** shortens every row to a derived one-line label so a long outline stays scannable — nothing is stored, and the full text comes back the moment you edit. The **filter menu** hides items by who wrote them (you or an agent) and who they're assigned to, and holds the show/hide-completed toggle (⌘⇧H). Any item with work beneath it carries a segmented progress bar showing what's done, what's in progress, and what's left, and every row shows how long ago it was created — hover for the exact timestamp.
 
-Commit `.kalamu/` with your code — the outline's line order is the outline, so diffs stay readable.
+Commit `.kalamu/` with your code. On the default store that is just the project marker; on the repo store it is the outline itself, whose line order is the outline, so diffs stay readable.
 
 ## All your projects on one page
 
@@ -92,9 +92,11 @@ kalamu hub install     # start the hub at login; uninstall fully reverses it
 kalamu restart         # restart the installed hub (e.g. after updating kalamu)
 ```
 
-`install` does exactly one thing: writes a human-readable launchd file to `~/Library/LaunchAgents/dev.kalamu.hub.plist` so the hub starts at login and restarts if it crashes. It stays bound to `127.0.0.1` — nothing ever leaves your machine — and logs to `~/.kalamu/hub.log`.
+`install` does exactly one thing: writes a human-readable launchd file to `~/Library/LaunchAgents/dev.kalamu.hub.plist` so the hub starts at login and restarts if it crashes. It stays bound to `127.0.0.1` — nothing ever leaves your machine — and logs to `~/.kalamu/hub.log`. On Linux, run `kalamu hub --no-browser` from a systemd user unit instead.
 
-No server is ever required for the CLI itself: every command reads and writes `.kalamu/outline.jsonl` directly. Servers exist only to power the browser UI.
+Want the hub from another machine — a laptop looking at the box where your agents run? The hub has no authentication of its own, so put something that does in front of the loopback port. Tailscale is the least work: `tailscale serve --bg 4400` publishes it to your tailnet over HTTPS with no Kalamu configuration at all. Never expose the port to the open internet.
+
+No server is ever required for the CLI itself: every command reads and writes the outline file directly. Servers exist only to power the browser UI.
 
 ## Discussions
 
@@ -136,7 +138,7 @@ npx skills add hemalr/kalamu    # or say yes when `kalamu init` offers it
 
 Kalamu stores repo-local brainstorming and task state. If you are a coding agent working in a repo with a `.kalamu/` directory:
 
-**Use the CLI.** Do not edit `.kalamu/outline.jsonl` by hand unless the CLI is unavailable.
+**Use the CLI.** Do not edit the outline file by hand unless the CLI is unavailable.
 
 This applies to work that originated from Kalamu or that the user explicitly
 asked to track in Kalamu. A direct user request is not automatically a Kalamu
@@ -196,9 +198,11 @@ That writes `docs/agents/issue-tracker.md` (the tracker doc the skill reads) and
 
 ## The data
 
-`.kalamu/outline.jsonl` — one node per line, line order **is** sibling order. Nodes are bullets (thoughts), tasks (agent-executable work), or discussions. Tags live inline in node text as `#tokens`; priority, `assignee`, `createdBy`, `startedAt`, and `blockedBy` are fields, each omitted at its default so lines stay short. `ui-state.json` (collapse state) and `meta.json` (tag colours) are cosmetic and safe to ignore or delete — `kalamu init` adds them, plus the local cache, to your `.gitignore` automatically. See [SPEC.md](SPEC.md) for the full data model.
+`outline.jsonl` — one node per line, line order **is** sibling order. Nodes are bullets (thoughts), tasks (agent-executable work), or discussions. Tags live inline in node text as `#tokens`; priority, `assignee`, `createdBy`, `startedAt`, and `blockedBy` are fields, each omitted at its default so lines stay short. `ui-state.json` (collapse state) and `meta.json` (tag colours) sit beside it and are cosmetic, safe to ignore or delete. See [SPEC.md](SPEC.md) for the full data model.
 
-Running `kalamu` inside a linked git worktree reads and writes the main checkout's `.kalamu/` — so a task added on a feature branch is visible everywhere, and the outline file never conflicts on merge. The flip side: the main checkout should stay on its default branch, because checking out another branch there swaps the committed outline for that branch's copy. Kalamu warns on stderr when that happens; use a worktree for the other branch instead.
+Where those files live is the project's store. The default, `local`, keeps them under `~/.kalamu/projects/<id>/` and commits only `.kalamu/project.json`, the marker that names the id; `kalamu hub list` shows the path, and `kalamu config data-dir <path>` moves the whole data home, to a synced folder say. The `repo` store (`kalamu init --store repo`) commits everything under `.kalamu/` and adds the view-state and cache entries to your `.gitignore`. `kalamu migrate <local|repo>` moves an existing project between the two and tells you how many nodes came along.
+
+Running `kalamu` inside a linked git worktree reads and writes the main checkout's project, so a task added on a feature branch is visible everywhere. On the default store that is the whole story: the outline is outside git, so no branch can swap it. On the repo store the main checkout should stay on its default branch, because checking out another branch there swaps the committed outline for that branch's copy. Kalamu warns on stderr when that happens; use a worktree for the other branch instead.
 
 ## Development
 

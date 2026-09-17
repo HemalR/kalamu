@@ -3,16 +3,13 @@
  * canonical outline data (like the hub registry). A corrupt or missing file
  * always reads as defaults.
  */
+import { kalamuHome } from "@kalamu/core/store";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { resolveEditorTemplate } from "./editor.js";
 import { DEFAULT_HUB_BASE_URL } from "./hub-url.js";
 
-/** ~/.kalamu — machine-global state dir. KALAMU_HOME overrides it for tests. */
-export function kalamuHome(): string {
-  return process.env.KALAMU_HOME ?? join(homedir(), ".kalamu");
-}
+export { kalamuHome };
 
 export interface Config {
   /** false disables the npm update check (default on). */
@@ -23,6 +20,8 @@ export interface Config {
   baseUrl?: string;
   /** Editor preset name or `{path}` URL template for `@file` references. */
   editor?: string;
+  /** Where local-store project data lives (absolute); absent = ~/.kalamu/projects. Read by core's `dataHome`. */
+  dataDir?: string;
 }
 
 function configFile(): string {

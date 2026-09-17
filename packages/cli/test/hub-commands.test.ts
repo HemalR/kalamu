@@ -1,4 +1,4 @@
-import { initKalamu } from "@kalamu/core/store";
+import { initKalamu, pathsFor } from "@kalamu/core/store";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,10 +12,12 @@ let base: string;
 beforeEach(() => {
   base = mkdtempSync(join(tmpdir(), "kalamu-hub-commands-"));
   process.env.KALAMU_REGISTRY = join(base, "projects.json");
+  process.env.KALAMU_HOME = join(base, "kalamu-home");
 });
 
 afterEach(() => {
   delete process.env.KALAMU_REGISTRY;
+  delete process.env.KALAMU_HOME;
   rmSync(base, { recursive: true, force: true });
 });
 
@@ -27,17 +29,20 @@ function makeProject(name: string): string {
 }
 
 describe("hub registry commands", () => {
-  it("lists project slugs and paths in text and JSON output", () => {
+  it("lists project slugs, paths and — for local-store projects — data dirs, in text and JSON output", () => {
     const alpha = makeProject("alpha");
-    const beta = makeProject("beta");
+    const beta = join(base, "beta");
+    initKalamu(beta, { store: "repo" });
+    registerProject(beta);
+    const alphaDir = pathsFor(alpha).dir;
 
     const result = listHubProjects();
 
-    expect(result.text).toBe(`alpha\t${alpha}\nbeta\t${beta}`);
+    expect(result.text).toBe(`alpha\t${alpha}\t${alphaDir}\nbeta\t${beta}`);
     expect(result.json).toEqual({
       projects: [
-        { slug: "alpha", path: alpha },
-        { slug: "beta", path: beta },
+        { slug: "alpha", path: alpha, store: "local", dir: alphaDir },
+        { slug: "beta", path: beta, store: "repo", dir: join(beta, ".kalamu") },
       ],
     });
   });
@@ -45,7 +50,7 @@ describe("hub registry commands", () => {
   it("forgets one project without touching its outline", () => {
     const alpha = makeProject("alpha");
     makeProject("beta");
-    const outline = join(alpha, ".kalamu", "outline.jsonl");
+    const outline = pathsFor(alpha).outline;
     const before = readFileSync(outline, "utf8");
 
     const result = forgetHubProject("alpha");

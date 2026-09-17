@@ -33,9 +33,18 @@ import {
   type NodeKind,
   type Tree,
 } from "@kalamu/core";
-import { initKalamu, readOutline, withOutline } from "@kalamu/core/store";
+import {
+  initKalamu,
+  KALAMU_DIR,
+  migrateStore,
+  OUTLINE_FILE,
+  PROJECT_FILE,
+  readOutline,
+  withOutline,
+  type StoreKind,
+} from "@kalamu/core/store";
 import { readFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { join } from "node:path";
 import { parseActor, resolveActor } from "./actor.js";
 import { ensureAgentDocs } from "./agent-docs.js";
 import { hubBaseUrl } from "./config.js";
@@ -73,34 +82,87 @@ export function parseAssignee(value: string, allowNone: boolean): Assignee | nul
   return value;
 }
 
+export function parseStore(value: string): StoreKind {
+  if (value !== "repo" && value !== "local") {
+    throw new CliError(
+      `invalid store "${value}" — use local (outside the repo, shared by every branch and worktree) or repo (committed in .kalamu/)`,
+    );
+  }
+  return value;
+}
+
+function ignoreEntriesLine(added: string[]): string[] {
+  return added.length ? [`Added ${added.length} .kalamu ignore entr${added.length === 1 ? "y" : "ies"} to .gitignore.`] : [];
+}
+
 export function init(
   cwd: string,
-  options: { agentDocs?: boolean; gitignore?: boolean; wayfinder?: boolean } = {},
+  options: { agentDocs?: boolean; gitignore?: boolean; wayfinder?: boolean; store?: string } = {},
 ): CommandResult {
-  const { created, paths } = initKalamu(cwd);
+  const store = options.store === undefined ? undefined : parseStore(options.store);
+  const { created, paths } = initKalamu(cwd, { store });
   registerProject(paths.root);
   const docs = options.agentDocs === false ? [] : ensureAgentDocs(cwd);
-  // Only write .gitignore where a repo marker exists — elsewhere init just
-  // prints the entries as a suggestion (SPEC ".gitignore entries").
+  // .gitignore entries only matter while the data sits in the repo, and are
+  // only written where a repo marker exists — elsewhere init just prints them
+  // as a suggestion (SPEC ".gitignore entries").
   const inRepo = looksLikeRepo(cwd);
-  const ignores = options.gitignore === false || !inRepo ? [] : ensureGitignore(cwd);
+  const wantIgnores = paths.store === "repo" && options.gitignore !== false;
+  const ignores = wantIgnores && inRepo ? ensureGitignore(cwd) : [];
   const wayfinder = options.wayfinder ? ensureWayfinderDocs(cwd) : { tracker: null, pointers: [] };
   const lines = [
     ...(docs.length ? [`Added the agent standing instruction to ${docs.join(" and ")}.`] : []),
-    ...(ignores.length ? [`Added ${ignores.length} .kalamu ignore entr${ignores.length === 1 ? "y" : "ies"} to .gitignore.`] : []),
+    ...ignoreEntriesLine(ignores),
     ...(wayfinder.tracker ? [`Wrote ${wayfinder.tracker} (wayfinder issue-tracker doc).`] : []),
     ...(wayfinder.pointers.length ? [`Added the issue-tracker pointer to ${wayfinder.pointers.join(" and ")}.`] : []),
   ];
-  const json = { created, dir: paths.dir, agentDocs: docs, gitignore: ignores, wayfinder };
+  const json = { created, store: paths.store, dir: paths.dir, agentDocs: docs, gitignore: ignores, wayfinder };
   if (!created) {
     return { text: [`Already initialised (${paths.dir})`, ...lines].join("\n"), json };
   }
   const suggestion =
-    inRepo || options.gitignore === false
-      ? []
-      : ["", "Suggested .gitignore entries:", ...IGNORE_ENTRIES.map((entry) => `  ${entry}`)];
-  const text = [`Initialised Kalamu in ${paths.dir}`, ...lines, ...suggestion].join("\n");
-  return { text, json };
+    wantIgnores && !inRepo ? ["", "Suggested .gitignore entries:", ...IGNORE_ENTRIES.map((entry) => `  ${entry}`)] : [];
+  const where =
+    paths.store === "local"
+      ? [
+          `Initialised Kalamu — outline at ${paths.dir}`,
+          `  marker: ${join(paths.root, KALAMU_DIR, PROJECT_FILE)} (commit it; every branch, worktree and clone shares this outline)`,
+        ]
+      : [`Initialised Kalamu in ${paths.dir}`];
+  return { text: [...where, ...lines, ...suggestion].join("\n"), json };
+}
+
+/**
+ * `kalamu migrate <store>` — move this project's data between the repo and
+ * the local store (SPEC key decision 21). Everything the outline owns comes
+ * along; the node count in the output is the human's check that nothing was
+ * lost. Moving into the repo restores the .gitignore entries repo mode needs.
+ */
+export function migrate(cwd: string, to: string): CommandResult {
+  const store = parseStore(to);
+  const before = resolvePaths(cwd);
+  const result = migrateStore(before.root, store);
+  const ignores = store === "repo" && looksLikeRepo(before.root) ? ensureGitignore(before.root) : [];
+  const extras = result.moved.filter((entry) => entry !== OUTLINE_FILE);
+  const what = `${result.nodes} node${result.nodes === 1 ? "" : "s"}${extras.length ? ` + ${extras.join(", ")}` : ""}`;
+  const lines =
+    store === "local"
+      ? [
+          `Moved the outline out of the repo (${what}).`,
+          `  data:   ${result.paths.dir}`,
+          `  marker: ${join(before.root, KALAMU_DIR, PROJECT_FILE)}`,
+          "Commit .kalamu/ — the marker replaces the old files, and every branch, worktree and clone now shares this outline.",
+        ]
+      : [
+          `Moved the outline back into the repo (${what}).`,
+          `  data: ${result.paths.dir}`,
+          ...ignoreEntriesLine(ignores),
+          "Commit .kalamu/ with your code.",
+        ];
+  return {
+    text: lines.join("\n"),
+    json: { from: result.from, to: result.to, dir: result.paths.dir, nodes: result.nodes, moved: result.moved, gitignore: ignores },
+  };
 }
 
 export function tour(cwd: string): CommandResult {
@@ -622,7 +684,7 @@ export function validate(cwd: string): CommandResult {
   } catch {
     throw new CliError(`no outline at ${paths.outline} — run "kalamu init"`);
   }
-  const result = validateOutline(content, { docExists: docExistsUnder(dirname(paths.dir)) });
+  const result = validateOutline(content, { docExists: docExistsUnder(paths.root) });
   const lines: string[] = [];
   if (result.valid) lines.push(`Valid: ${result.nodes} nodes`);
   else lines.push(`Invalid: ${result.errors.length} error(s)`);

@@ -1,5 +1,5 @@
 import { tagColor } from "@kalamu/core";
-import { initKalamu } from "@kalamu/core/store";
+import { initKalamu, pathsFor } from "@kalamu/core/store";
 import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -57,7 +57,7 @@ describe("hub", () => {
   });
 
   it("keeps listing a project whose outline file is gone, flagged missing", async () => {
-    rmSync(join(base, "beta", ".kalamu", "outline.jsonl"));
+    rmSync(pathsFor(join(base, "beta")).outline);
     const res = await hub.app.request("/api/projects");
     const { projects } = (await res.json()) as { projects: { slug: string; missing: boolean; openTasks: number | null }[] };
     expect(projects.map((p) => [p.slug, p.missing, p.openTasks])).toEqual([["alpha", false, 0], ["beta", true, null]]);

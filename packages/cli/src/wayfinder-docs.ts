@@ -22,7 +22,7 @@ const OWNERSHIP_LINE =
 export const TRACKER_DOC_BODY = [
   "# Issue tracker: Kalamu",
   "",
-  "Issues for this repo live in `.kalamu/outline.jsonl`, managed by the `kalamu` CLI.",
+  "Issues for this repo live in the Kalamu outline (the `.kalamu/` directory marks the project), managed by the `kalamu` CLI.",
   "",
   "## Conventions",
   "",
@@ -75,7 +75,7 @@ const POINTER_BLOCK = [
   "",
   "### Issue tracker",
   "",
-  'Issues live in Kalamu (`.kalamu/outline.jsonl`). See `docs/agents/issue-tracker.md` — its "Wayfinding operations" section is what `/wayfinder` consults.',
+  'Issues live in Kalamu (use the `kalamu` CLI). See `docs/agents/issue-tracker.md` — its "Wayfinding operations" section is what `/wayfinder` consults.',
   POINTER_END,
   "",
 ].join("\n");

@@ -16,6 +16,27 @@ under `Added` / `Changed` / `Fixed` / `Removed`.
 
 ## [Unreleased]
 
+### Added
+
+- **The outline can live outside the repo, and now does by default.** A committed
+  file in a working tree is per-branch by git's definition, and every worktree
+  and branch workaround was fighting that. `kalamu init` now keeps the data
+  under `~/.kalamu/projects/<id>/` and commits only a one-line marker,
+  `.kalamu/project.json`, so every branch, worktree and clone on the machine
+  shares one outline and nothing ever merges. `--store repo` keeps the old
+  committed layout; an interactive init asks. `kalamu migrate <local|repo>`
+  moves an existing project either way, carrying the outline, tag colours, view
+  state and pasted images, and reports the node count. `kalamu config data-dir
+  <path>` points the data home at a synced folder (`KALAMU_DATA_DIR` overrides
+  it). `kalamu hub list` shows where each project's data lives, and
+  `/api/project` reports `store` and `dataDir`. SPEC key decision 21.
+
+### Changed
+
+- The off-default-branch warning, its UI banner and the `.git/HEAD` watcher now
+  apply to repo-store projects only. A local-store outline is outside git, so no
+  checkout can swap it.
+
 ## [0.14.0] - 2026-09-10
 
 ### Added

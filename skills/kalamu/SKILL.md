@@ -13,7 +13,7 @@ metadata:
 
 Requires Node.js 20 or newer.
 
-Kalamu stores a repository's brainstorming and task state in `.kalamu/outline.jsonl`. The human edits it through the web UI; agents use the CLI. Edit JSONL by hand only when the CLI is unavailable, following the repository's data model. If `kalamu` is not on PATH, use `npx kalamu <command>`.
+Kalamu stores a repository's brainstorming and task state in an outline file, `outline.jsonl`. By default it lives outside the repo under `~/.kalamu/projects/<id>/`, with `.kalamu/project.json` in the repo naming the id; a project on the repo store commits it at `.kalamu/outline.jsonl` instead. The human edits it through the web UI; agents use the CLI. Edit JSONL by hand only when the CLI is unavailable, following the repository's data model. If `kalamu` is not on PATH, use `npx kalamu <command>`.
 
 ## When to use and when NOT to use
 
@@ -155,17 +155,19 @@ to the human (`--assign human`) when you need something from them.
 
 ## Recognising a Kalamu repo
 
-Linked Git worktrees share the main checkout's `.kalamu/`. Keep the main
-checkout on its default branch and use worktrees for other branches; changing
-the main checkout's branch changes the committed outline visible to everyone.
-The CLI and hub warn when the main checkout is off its default branch.
+Linked Git worktrees share the main checkout's project. With the default
+store the outline is outside git, so branches cannot affect it. With the repo
+store, keep the main checkout on its default branch and use worktrees for other
+branches; changing the main checkout's branch changes the committed outline
+visible to everyone. The CLI and hub warn when that main checkout is off its
+default branch.
 
 Reference longer prose with repo-relative `.md` paths, optionally followed by
 `#heading-slug`. The UI can open or peek at the referenced section; agents read
 the file directly. `kalamu validate` warns about missing files without failing
 validation. Keep the prose in the file and task state in the outline.
 
-A `.kalamu/` directory at the repository root (specifically `.kalamu/outline.jsonl`). If asked to set one up: `kalamu init`.
+A `.kalamu/` directory at the repository root holding `project.json` (local store) or `outline.jsonl` (repo store). If asked to set one up: `kalamu init`.
 
 The presence of `.kalamu/` alone does not mean every request must be added to
 or completed in Kalamu. Use the CLI for tasks sourced from Kalamu and for

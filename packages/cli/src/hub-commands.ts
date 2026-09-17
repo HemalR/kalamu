@@ -1,15 +1,20 @@
 /** Human-facing CLI operations for inspecting and pruning the hub registry. */
+import { pathsFor } from "@kalamu/core/store";
 import type { CommandResult } from "./context.js";
 import { CliError } from "./context.js";
 import { readRegistry, unregisterProject } from "./registry.js";
 
+/** Slug, repo path and — for a local-store project — where its data actually lives. */
 export function listHubProjects(): CommandResult {
-  const projects = readRegistry().projects.map(({ slug, path }) => ({ slug, path }));
+  const projects = readRegistry().projects.map(({ slug, path }) => {
+    const { store, dir } = pathsFor(path);
+    return { slug, path, store, dir };
+  });
   return {
     text:
       projects.length === 0
         ? "No projects registered."
-        : projects.map(({ slug, path }) => `${slug}\t${path}`).join("\n"),
+        : projects.map(({ slug, path, store, dir }) => `${slug}\t${path}${store === "local" ? `\t${dir}` : ""}`).join("\n"),
     json: { projects },
   };
 }

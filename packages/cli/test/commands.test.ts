@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { pathsFor, PROJECT_FILE } from "@kalamu/core/store";
 import * as commands from "../src/commands.js";
 import { CliError, looksLikeRepo } from "../src/context.js";
 import { TRACKER_DOC_BODY } from "../src/wayfinder-docs.js";
@@ -52,7 +53,7 @@ describe("acceptance flow (SPEC MVP criteria)", () => {
     expect(validation.json).toMatchObject({ valid: true, nodes: 2, errors: [] });
 
     // Priority stored only when non-default; p1 present in the raw file.
-    const raw = readFileSync(join(cwd, ".kalamu", "outline.jsonl"), "utf8");
+    const raw = readFileSync(pathsFor(cwd).outline, "utf8");
     expect(raw).toContain('"priority":1');
     expect(raw).not.toContain('"priority":2');
   });
@@ -234,7 +235,7 @@ describe("init agent docs", () => {
   });
 });
 
-describe("init gitignore", () => {
+describe("init gitignore (repo store — the only one with files to ignore)", () => {
   /** Fresh dir with a repo marker (package.json) so init writes .gitignore. */
   function repoDir(): string {
     const dir = mkdtempSync(join(tmpdir(), "kalamu-ignore-"));
@@ -245,7 +246,7 @@ describe("init gitignore", () => {
   it("creates .gitignore with the entries when a repo marker exists; re-init adds nothing", () => {
     const dir = repoDir();
     try {
-      const result = commands.init(dir);
+      const result = commands.init(dir, { store: "repo" });
       expect((result.json as { gitignore: string[] }).gitignore).toEqual([
         ".kalamu/cache.sqlite",
         ".kalamu/ui-state.json",
@@ -266,7 +267,7 @@ describe("init gitignore", () => {
     const dir = repoDir();
     try {
       writeFileSync(join(dir, ".gitignore"), "node_modules\n.kalamu/cache.sqlite\n");
-      const result = commands.init(dir);
+      const result = commands.init(dir, { store: "repo" });
       expect((result.json as { gitignore: string[] }).gitignore).toEqual([".kalamu/ui-state.json", ".kalamu/*.lock"]);
       const content = readFileSync(join(dir, ".gitignore"), "utf8");
       expect(content.startsWith("node_modules\n.kalamu/cache.sqlite\n")).toBe(true);
@@ -280,7 +281,7 @@ describe("init gitignore", () => {
     const dir = repoDir();
     try {
       writeFileSync(join(dir, ".gitignore"), ".kalamu/\n");
-      const result = commands.init(dir);
+      const result = commands.init(dir, { store: "repo" });
       expect((result.json as { gitignore: string[] }).gitignore).toEqual([]);
       expect(readFileSync(join(dir, ".gitignore"), "utf8")).toBe(".kalamu/\n");
     } finally {
@@ -292,7 +293,7 @@ describe("init gitignore", () => {
     // The shared beforeEach cwd has no repo marker (AGENTS.md is not one).
     const dir = mkdtempSync(join(tmpdir(), "kalamu-norepo-"));
     try {
-      const result = commands.init(dir);
+      const result = commands.init(dir, { store: "repo" });
       expect(existsSync(join(dir, ".gitignore"))).toBe(false);
       expect(result.text).toContain("Suggested .gitignore entries:");
     } finally {
@@ -627,10 +628,50 @@ describe("link echo (SPEC `kalamu link`)", () => {
 
     // dirname is a file, so the registry can be neither read nor re-created —
     // the link degrades to nothing, never to an error or a guessed URL.
-    process.env.KALAMU_REGISTRY = join(cwd, ".kalamu", "outline.jsonl", "projects.json");
+    process.env.KALAMU_REGISTRY = join(pathsFor(cwd).outline, "projects.json");
     const finished = commands.done(cwd, id);
     expect(finished.text).toBe(`Done ${id}`);
     expect(finished.json).not.toHaveProperty("link");
+  });
+});
+
+describe("stores (SPEC key decision 21)", () => {
+  it("init defaults to the local store and names the marker; --store repo keeps everything in .kalamu/", () => {
+    const local = mkdtempSync(join(tmpdir(), "kalamu-store-"));
+    const repo = mkdtempSync(join(tmpdir(), "kalamu-store-"));
+    try {
+      const a = commands.init(local, { agentDocs: false });
+      expect(a.json).toMatchObject({ created: true, store: "local", gitignore: [] });
+      expect(a.text).toContain(`marker: ${join(local, ".kalamu", PROJECT_FILE)}`);
+      expect(existsSync(join(local, ".kalamu", PROJECT_FILE))).toBe(true);
+
+      const b = commands.init(repo, { agentDocs: false, store: "repo" });
+      expect(b.json).toMatchObject({ created: true, store: "repo", dir: join(repo, ".kalamu") });
+      expect(existsSync(join(repo, ".kalamu", PROJECT_FILE))).toBe(false);
+
+      expect(() => commands.init(repo, { store: "cloud" })).toThrow(CliError);
+    } finally {
+      rmSync(local, { recursive: true, force: true });
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  it("migrate moves the outline both ways without losing a node", () => {
+    const id = addTask("Survive the move");
+
+    const toRepo = commands.migrate(cwd, "repo");
+    expect(toRepo.json).toMatchObject({ from: "local", to: "repo", nodes: 1, dir: join(cwd, ".kalamu") });
+    expect(toRepo.text).toContain("1 node");
+    expect(existsSync(join(cwd, ".kalamu", "outline.jsonl"))).toBe(true);
+    expect(existsSync(join(cwd, ".kalamu", PROJECT_FILE))).toBe(false);
+    expect(commands.show(cwd, id, {}).text).toContain("Survive the move");
+
+    const toLocal = commands.migrate(cwd, "local");
+    expect(toLocal.json).toMatchObject({ from: "repo", to: "local", nodes: 1 });
+    expect(existsSync(join(cwd, ".kalamu", "outline.jsonl"))).toBe(false);
+    expect(commands.list(cwd, {}).text).toContain("Survive the move");
+    expect(() => commands.migrate(cwd, "local")).toThrow(/already/);
+    expect(() => commands.migrate(cwd, "cloud")).toThrow(CliError);
   });
 });
 

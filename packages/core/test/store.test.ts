@@ -1,18 +1,22 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { serializeJsonl } from "../src/jsonl.js";
 import { addNode } from "../src/operations.js";
 import {
+  dataHome,
   findRoot,
   initKalamu,
+  migrateStore,
   offDefaultBranch,
   pathsFor,
+  readMeta,
   readOutline,
   readUiState,
   StoreError,
   withOutline,
+  writeMeta,
   writeUiState,
 } from "../src/store.js";
 import { bullet } from "./helpers.js";
@@ -21,11 +25,26 @@ let root: string;
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "kalamu-test-"));
+  // Local-store data lands under the data home; keep it out of the real ~/.kalamu.
+  process.env.KALAMU_HOME = join(root, "home");
 });
 
 afterEach(() => {
+  delete process.env.KALAMU_HOME;
   rmSync(root, { recursive: true, force: true });
 });
+
+/** Lay out git's linked-worktree files by hand — no git binary needed. */
+function makeWorktree(main: string, location: string, { commondir = true } = {}): string {
+  const gitdir = join(main, ".git", "worktrees", "wt");
+  mkdirSync(gitdir, { recursive: true });
+  if (commondir) writeFileSync(join(gitdir, "commondir"), "../..\n");
+  mkdirSync(location, { recursive: true });
+  writeFileSync(join(location, ".git"), `gitdir: ${gitdir}\n`);
+  return location;
+}
+
+const markerFile = (dir: string): string => join(dir, ".kalamu", "project.json");
 
 describe("initKalamu", () => {
   it("creates outline and meta, never overwrites", () => {
@@ -51,16 +70,6 @@ describe("findRoot", () => {
   });
 
   describe("in a linked git worktree", () => {
-    /** Lay out git's linked-worktree files by hand — no git binary needed. */
-    function makeWorktree(main: string, location: string, { commondir = true } = {}): string {
-      const gitdir = join(main, ".git", "worktrees", "wt");
-      mkdirSync(gitdir, { recursive: true });
-      if (commondir) writeFileSync(join(gitdir, "commondir"), "../..\n");
-      mkdirSync(location, { recursive: true });
-      writeFileSync(join(location, ".git"), `gitdir: ${gitdir}\n`);
-      return location;
-    }
-
     it("resolves to the main checkout, ignoring the worktree's own committed .kalamu", () => {
       initKalamu(root);
       // Outside the main checkout, like ~/.t3/worktrees — a walk-up alone would never find it.
@@ -133,9 +142,8 @@ describe("withOutline", () => {
 
 describe("ui state", () => {
   it("missing or corrupt means everything expanded", () => {
-    const paths = pathsFor(root);
+    const paths = initKalamu(root).paths;
     expect(readUiState(paths.uiState)).toEqual({ collapsed: [] });
-    initKalamu(root);
     writeFileSync(paths.uiState, "not json");
     expect(readUiState(paths.uiState)).toEqual({ collapsed: [] });
     writeUiState(paths.uiState, { collapsed: ["n_001"] });
@@ -146,6 +154,113 @@ describe("ui state", () => {
     const paths = initKalamu(root).paths;
     writeFileSync(paths.uiState, JSON.stringify({ collapsed: [], compact: true }) + "\n");
     expect(readUiState(paths.uiState)).toEqual({ collapsed: [], overview: true });
+  });
+});
+
+describe("stores (SPEC key decision 21)", () => {
+  it("local by default: a committed marker in .kalamu/, the data under the data home", () => {
+    const { paths } = initKalamu(root);
+    expect(paths.store).toBe("local");
+    expect(paths.root).toBe(root);
+    const marker = JSON.parse(readFileSync(markerFile(root), "utf8")) as { id: string };
+    expect(marker.id).toMatch(/^kalamu-test-[a-z0-9]+-[0-9a-f]{6}$/);
+    expect(dataHome()).toBe(join(root, "home", "projects"));
+    expect(paths.dir).toBe(join(dataHome(), marker.id));
+    expect(readdirSync(join(root, ".kalamu"))).toEqual(["project.json"]);
+    expect(readFileSync(paths.outline, "utf8")).toBe("");
+    expect(pathsFor(root)).toEqual(paths);
+  });
+
+  it("repo on request: everything under .kalamu/, no marker; an existing project keeps its store", () => {
+    const { paths } = initKalamu(root, { store: "repo" });
+    expect(paths.store).toBe("repo");
+    expect(paths.dir).toBe(join(root, ".kalamu"));
+    expect(existsSync(markerFile(root))).toBe(false);
+    expect(initKalamu(root, { store: "local" })).toEqual({ created: false, paths });
+  });
+
+  it("a marker whose data is missing on this machine (a fresh clone) gets an empty outline from init", () => {
+    const { paths } = initKalamu(root);
+    writeFileSync(paths.outline, serializeJsonl([bullet("n_001")]));
+    rmSync(paths.dir, { recursive: true });
+    expect(findRoot(root)).toBe(root); // still a project: the marker says so
+    expect(() => readOutline(paths.outline)).toThrow(StoreError);
+    expect(initKalamu(root)).toEqual({ created: true, paths });
+    expect(readOutline(paths.outline).nodes).toEqual([]);
+  });
+
+  it("a linked worktree of a local-store checkout resolves to the same data", () => {
+    const { paths } = initKalamu(root);
+    const worktree = makeWorktree(root, join(root, ".worktrees", "feature"));
+    const resolved = findRoot(worktree);
+    expect(resolved).toBe(root);
+    expect(pathsFor(resolved ?? "")).toEqual(paths);
+  });
+
+  it("rejects a corrupt marker loudly rather than guessing a data dir", () => {
+    mkdirSync(join(root, ".kalamu"));
+    writeFileSync(markerFile(root), '{"id": "../escape"}');
+    expect(findRoot(root)).toBe(root);
+    expect(() => pathsFor(root)).toThrow(/invalid .*project\.json/);
+  });
+
+  it("dataHome: KALAMU_DATA_DIR beats config.json dataDir beats ~/.kalamu/projects", () => {
+    expect(dataHome()).toBe(join(root, "home", "projects"));
+    mkdirSync(join(root, "home"), { recursive: true });
+    writeFileSync(join(root, "home", "config.json"), JSON.stringify({ dataDir: join(root, "synced") }));
+    expect(dataHome()).toBe(join(root, "synced"));
+    process.env.KALAMU_DATA_DIR = join(root, "env");
+    try {
+      expect(dataHome()).toBe(join(root, "env"));
+    } finally {
+      delete process.env.KALAMU_DATA_DIR;
+    }
+  });
+});
+
+describe("migrateStore", () => {
+  it("repo → local → repo carries outline, meta, view state and assets, and leaves no second copy", () => {
+    const repo = initKalamu(root, { store: "repo" }).paths;
+    writeFileSync(repo.outline, serializeJsonl([bullet("n_001"), bullet("n_002")]));
+    writeMeta(repo.meta, { version: 1, tags: { web: "#123456" } });
+    writeUiState(repo.uiState, { collapsed: ["n_001"] });
+    mkdirSync(join(repo.dir, "assets"));
+    writeFileSync(join(repo.dir, "assets", "img-abc.png"), "png");
+    writeFileSync(join(repo.dir, "server.lock"), "{}");
+
+    const out = migrateStore(root, "local");
+    expect(out).toMatchObject({
+      from: "repo",
+      to: "local",
+      nodes: 2,
+      moved: ["outline.jsonl", "meta.json", "ui-state.json", "assets"],
+    });
+    const local = out.paths;
+    expect(local).toEqual(pathsFor(root));
+    expect(local.store).toBe("local");
+    expect(readOutline(local.outline).nodes.map((n) => n.id)).toEqual(["n_001", "n_002"]);
+    expect(readMeta(local.meta).tags).toEqual({ web: "#123456" });
+    expect(readUiState(local.uiState)).toEqual({ collapsed: ["n_001"] });
+    expect(readFileSync(join(local.dir, "assets", "img-abc.png"), "utf8")).toBe("png");
+    expect(readdirSync(join(root, ".kalamu"))).toEqual(["project.json"]);
+    expect(() => migrateStore(root, "local")).toThrow(/already/);
+
+    const back = migrateStore(root, "repo");
+    expect(back).toMatchObject({ from: "local", to: "repo", nodes: 2 });
+    expect(back.paths).toEqual(repo);
+    expect(readOutline(repo.outline).nodes).toHaveLength(2);
+    expect(readFileSync(join(repo.dir, "assets", "img-abc.png"), "utf8")).toBe("png");
+    expect(existsSync(local.dir)).toBe(false);
+    expect(existsSync(markerFile(root))).toBe(false);
+  });
+
+  it("to repo overwrites a stale committed copy an old branch left behind", () => {
+    const { paths } = initKalamu(root);
+    writeFileSync(paths.outline, serializeJsonl([bullet("n_live")]));
+    writeFileSync(join(root, ".kalamu", "outline.jsonl"), serializeJsonl([bullet("n_stale")]));
+    expect(pathsFor(root)).toEqual(paths); // the marker wins while it exists
+    migrateStore(root, "repo");
+    expect(readOutline(join(root, ".kalamu", "outline.jsonl")).nodes.map((n) => n.id)).toEqual(["n_live"]);
   });
 });
 
