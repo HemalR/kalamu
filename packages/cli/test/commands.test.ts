@@ -687,6 +687,19 @@ describe("init --tour", () => {
     expect(result.text).not.toContain("plans/here.md");
   });
 
+  it("validate finds a doc that exists only in a linked worktree", () => {
+    // The shared outline can point at a plan still on a worktree's branch.
+    const worktree = join(cwd, ".worktrees", "feature");
+    const gitdir = join(cwd, ".git", "worktrees", "feature");
+    mkdirSync(join(worktree, "plans"), { recursive: true });
+    mkdirSync(gitdir, { recursive: true });
+    writeFileSync(join(gitdir, "gitdir"), `${join(worktree, ".git")}\n`);
+    writeFileSync(join(worktree, ".git"), `gitdir: ${gitdir}\n`);
+    writeFileSync(join(worktree, "plans", "branch-only.md"), "# plan\n");
+    addTask("Spec: plans/branch-only.md");
+    expect(commands.validate(cwd).text).not.toContain("missing doc");
+  });
+
   it("seeds the tour: every task is human-assigned, next finds nothing, outline validates", () => {
     const dir = mkdtempSync(join(tmpdir(), "kalamu-tour-"));
     try {

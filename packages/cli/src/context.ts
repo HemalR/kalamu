@@ -1,6 +1,6 @@
-import { existsSync } from "node:fs";
-import { join } from "node:path";
-import { findRoot, offDefaultBranch, pathsFor, type KalamuPaths } from "@kalamu/core/store";
+import { existsSync, statSync } from "node:fs";
+import { extname, join, normalize, sep } from "node:path";
+import { checkoutRoots, findRoot, offDefaultBranch, pathsFor, type KalamuPaths } from "@kalamu/core/store";
 import { registerProject } from "./registry.js";
 
 export class CliError extends Error {}
@@ -44,9 +44,22 @@ export function warnIfOffDefaultBranch(paths: KalamuPaths): void {
   );
 }
 
-/** Existence lookup for `validate`'s doc-reference check (SPEC key decision 19): paths resolve against the repo root. */
-export function docExistsUnder(repoRoot: string): (path: string) => boolean {
-  return (path) => existsSync(join(repoRoot, path));
+/**
+ * Where a doc reference (SPEC key decision 19) resolves: the absolute path of
+ * the repo-relative `.md` file in the first checkout that has it, else null.
+ * Every checkout, not just the main one: the outline is shared by all of them,
+ * so a node can point at a plan that exists only on a worktree's branch until
+ * it merges. Backs both `validate`'s missing-doc warning and the `/docs/*`
+ * route, so a reference that validates also opens. Paths escaping a checkout
+ * never resolve.
+ */
+export function findDoc(root: string, path: string): string | null {
+  if (extname(path) !== ".md") return null;
+  for (const checkout of checkoutRoots(root)) {
+    const full = normalize(join(checkout, path));
+    if (full.startsWith(checkout + sep) && statSync(full, { throwIfNoEntry: false })?.isFile()) return full;
+  }
+  return null;
 }
 
 export function resolvePaths(cwd: string): KalamuPaths {

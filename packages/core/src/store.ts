@@ -11,7 +11,7 @@
  * and clone shares one outline.
  */
 import { randomBytes } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { parseJsonl, serializeJsonl } from "./jsonl.js";
@@ -149,6 +149,31 @@ function mainWorktreeRoot(dir: string): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Every checkout of the repo at `root`: `root` itself, then each linked
+ * worktree that still exists on disk. The inverse of `mainWorktreeRoot`, read
+ * the same way, with no git binary: `.git/worktrees/<name>/gitdir` holds the
+ * path of that worktree's `.git` file. Just `[root]` when `root` has none.
+ */
+export function checkoutRoots(root: string): string[] {
+  const worktrees = join(root, ".git", "worktrees");
+  let names: string[];
+  try {
+    names = readdirSync(worktrees);
+  } catch {
+    return [root];
+  }
+  const linked = names.flatMap((name) => {
+    try {
+      const dotGit = resolve(worktrees, name, readFileSync(join(worktrees, name, "gitdir"), "utf8").trim());
+      return existsSync(dotGit) ? [dirname(dotGit)] : [];
+    } catch {
+      return [];
+    }
+  });
+  return [root, ...linked];
 }
 
 /**

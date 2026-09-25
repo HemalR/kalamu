@@ -48,7 +48,7 @@ import { join } from "node:path";
 import { parseActor, resolveActor } from "./actor.js";
 import { ensureAgentDocs } from "./agent-docs.js";
 import { hubBaseUrl } from "./config.js";
-import { CliError, docExistsUnder, looksLikeRepo, resolvePaths, type CommandResult } from "./context.js";
+import { CliError, findDoc, looksLikeRepo, resolvePaths, type CommandResult } from "./context.js";
 import { ensureGitignore, IGNORE_ENTRIES } from "./gitignore.js";
 import { createNodeLink, type NodeLink } from "./link.js";
 import { readRegistry, registerProject, slugFor } from "./registry.js";
@@ -684,7 +684,7 @@ export function validate(cwd: string): CommandResult {
   } catch {
     throw new CliError(`no outline at ${paths.outline} — run "kalamu init"`);
   }
-  const result = validateOutline(content, { docExists: docExistsUnder(paths.root) });
+  const result = validateOutline(content, { docExists: (path) => findDoc(paths.root, path) !== null });
   const lines: string[] = [];
   if (result.valid) lines.push(`Valid: ${result.nodes} nodes`);
   else lines.push(`Invalid: ${result.errors.length} error(s)`);

@@ -41,11 +41,11 @@ import { Hono, type Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, statSync, watch, writeFileSync, type FSWatcher } from "node:fs";
-import { basename, extname, join, normalize, sep } from "node:path";
+import { existsSync, mkdirSync, readFileSync, renameSync, watch, writeFileSync, type FSWatcher } from "node:fs";
+import { basename, extname, join, normalize } from "node:path";
 import { z } from "zod";
 import { editorTemplate } from "./config.js";
-import { docExistsUnder } from "./context.js";
+import { findDoc } from "./context.js";
 import { hubAgentInstalled } from "./launch.js";
 import { cachedUpdate, refreshUpdate } from "./update-check.js";
 import { CURRENT_VERSION } from "./version.js";
@@ -403,7 +403,7 @@ export function createServer(
     } catch {
       return c.json({ error: "no outline file" }, 400);
     }
-    return c.json(validateOutline(content, { docExists: docExistsUnder(paths.root) }));
+    return c.json(validateOutline(content, { docExists: (path) => findDoc(paths.root, path) !== null }));
   });
 
   // Pasted images: content-hashed file in the data dir's assets/ (they move
@@ -432,10 +432,11 @@ export function createServer(
   });
 
   // Doc references: repo-relative `.md` paths in node text (SPEC key decision
-  // 19) open here. Repo files only, `.md` only — this is a doc viewer, never a
-  // general file server. A browser tab (Accept: text/html) gets the source in
-  // a <pre> with every heading carrying its slug as an id, so `#slug` in the
-  // URL lands on that heading; any other client gets the raw file.
+  // 19) open here. Repo files only — from any checkout, see `findDoc` — and
+  // `.md` only: this is a doc viewer, never a general file server. A browser
+  // tab (Accept: text/html) gets the source in a <pre> with every heading
+  // carrying its slug as an id, so `#slug` in the URL lands on that heading;
+  // any other client gets the raw file.
   app.get("/docs/*", (c) => {
     let raw: string;
     try {
@@ -443,10 +444,8 @@ export function createServer(
     } catch {
       return c.text("not found", 404);
     }
-    const repoRoot = paths.root;
-    const full = normalize(join(repoRoot, raw));
-    if (!full.startsWith(repoRoot + sep) || extname(full) !== ".md") return c.text("not found", 404);
-    if (!existsSync(full) || !statSync(full).isFile()) return c.text("not found", 404);
+    const full = findDoc(paths.root, raw);
+    if (full === null) return c.text("not found", 404);
     const source = readFileSync(full, "utf8");
     if (!c.req.header("accept")?.includes("text/html")) return c.text(source);
     return c.html(docPage(raw, source));

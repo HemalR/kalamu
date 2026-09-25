@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { serializeJsonl } from "../src/jsonl.js";
 import { addNode } from "../src/operations.js";
 import {
+  checkoutRoots,
   dataHome,
   findRoot,
   initKalamu,
@@ -35,10 +36,11 @@ afterEach(() => {
 });
 
 /** Lay out git's linked-worktree files by hand — no git binary needed. */
-function makeWorktree(main: string, location: string, { commondir = true } = {}): string {
-  const gitdir = join(main, ".git", "worktrees", "wt");
+function makeWorktree(main: string, location: string, { commondir = true, name = "wt" } = {}): string {
+  const gitdir = join(main, ".git", "worktrees", name);
   mkdirSync(gitdir, { recursive: true });
   if (commondir) writeFileSync(join(gitdir, "commondir"), "../..\n");
+  writeFileSync(join(gitdir, "gitdir"), `${join(location, ".git")}\n`);
   mkdirSync(location, { recursive: true });
   writeFileSync(join(location, ".git"), `gitdir: ${gitdir}\n`);
   return location;
@@ -115,6 +117,16 @@ describe("findRoot", () => {
     writeFileSync(join(root, ".kalamu", "projects.json"), "{}");
     expect(findRoot(root)).toBeNull();
     expect(findRoot(join(root, "somewhere", "deep"))).toBeNull();
+  });
+});
+
+describe("checkoutRoots", () => {
+  it("lists the main checkout, then every linked worktree still on disk", () => {
+    expect(checkoutRoots(root)).toEqual([root]);
+    const feature = makeWorktree(root, join(root, ".worktrees", "feature"), { name: "feature" });
+    const gone = makeWorktree(root, join(root, ".worktrees", "gone"), { name: "gone" });
+    rmSync(gone, { recursive: true }); // deleted without `git worktree remove`: prunable, not a checkout
+    expect(checkoutRoots(root)).toEqual([root, feature]);
   });
 });
 
