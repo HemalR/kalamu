@@ -47,7 +47,7 @@ describe("subscribeToServerEvents", () => {
 describe("OutlineStore event lifecycle", () => {
   it("does not open a stream when initial loading finishes after pagehide", async () => {
     const backend = createMemoryBackend([]);
-    let finishNodes!: (result: { nodes: [] }) => void;
+    let finishNodes!: (result: { nodes: []; version: string }) => void;
     backend.getNodes = () =>
       new Promise((resolve) => {
         finishNodes = resolve;
@@ -59,7 +59,7 @@ describe("OutlineStore event lifecycle", () => {
     const store = new OutlineStore();
     const init = store.init();
     store.pauseEvents();
-    finishNodes({ nodes: [] });
+    finishNodes({ nodes: [], version: "0" });
     await init;
 
     expect(backend.subscribe).not.toHaveBeenCalled();

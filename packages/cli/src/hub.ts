@@ -12,7 +12,9 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { z } from "zod";
 import { kalamuHome } from "./config.js";
+import { handleError, HttpError, jsonBody, requestGuard } from "./http.js";
 import {
   HUB_LAUNCHD_LABEL,
   hubAgentInstalled,
@@ -21,8 +23,9 @@ import {
   portIsFree,
   webAssetsDir,
 } from "./launch.js";
-import { removeLock, writeLock } from "./lock.js";
+import { isAlive, readLock, removeLock, writeLock } from "./lock.js";
 import { HUB_PORT } from "./hub-url.js";
+import { projectName } from "./project-name.js";
 import {
   isHexColor,
   projectColor,
@@ -33,7 +36,7 @@ import {
   unregisterProject,
   type RegistryEntry,
 } from "./registry.js";
-import { createServer, projectName, webAppHandler, type KalamuServer } from "./server.js";
+import { createServer, webAppHandler, type KalamuServer } from "./server.js";
 
 const IDLE_MS = 5 * 60 * 1000;
 
@@ -71,6 +74,22 @@ function outlineOf(entry: RegistryEntry): string | null {
 
 const byMostRecent = (a: RegistryEntry, b: RegistryEntry): number => b.lastSeenAt.localeCompare(a.lastSeenAt);
 
+const patchBody = z
+  .object({
+    name: z.string({ invalid_type_error: `expected {"name": string}` }).optional(),
+    // Blank clears the override.
+    color: z
+      .string()
+      .refine((color) => color.trim() === "" || isHexColor(color.trim()), {
+        message: `expected {"color": "#rrggbb"} (blank clears the override)`,
+      })
+      .optional(),
+    index: z.number().int().nonnegative({ message: `expected {"index": <non-negative integer>}` }).optional(),
+  })
+  .refine((body) => body.name !== undefined || body.color !== undefined || body.index !== undefined, {
+    message: `expected {"name"?: string, "color"?: string, "index"?: number}`,
+  });
+
 export function createHubServer(assetsDir: string | null, options: HubOptions = {}): KalamuServer {
   const app = new Hono();
   const instances = new Map<string, Instance>();
@@ -100,7 +119,7 @@ export function createHubServer(assetsDir: string | null, options: HubOptions = 
     const instance: Instance = {
       // Registry-backed display name so a rename shows up in the project's own
       // /api/project (the "kalamu | name" header) without restarting the instance.
-      server: createServer(pathsFor(entry.path), assetsDir, () => {
+      server: createServer(entry.path, assetsDir, () => {
         return readRegistry(options.registryFile).projects.find((p) => p.slug === slug)?.name ?? null;
       }),
       lastAccess: Date.now(),
@@ -109,6 +128,9 @@ export function createHubServer(assetsDir: string | null, options: HubOptions = 
     instances.set(slug, instance);
     return instance;
   };
+
+  app.use(requestGuard());
+  app.onError(handleError);
 
   // Lets `kalamu open` (and the UI) tell a hub apart from anything else on the port.
   app.get("/api/hub", (c) => c.json({ hub: true }));
@@ -142,34 +164,13 @@ export function createHubServer(assetsDir: string | null, options: HubOptions = 
   // effective values so the UI can show what a clear reverted to.
   app.patch("/api/projects/:slug", async (c) => {
     const slug = c.req.param("slug");
-    let body: unknown;
-    try {
-      body = await c.req.json();
-    } catch {
-      return c.json({ error: "invalid JSON body" }, 400);
-    }
-    const { name, color, index } = body !== null && typeof body === "object" ? (body as Record<string, unknown>) : {};
-    if (name === undefined && color === undefined && index === undefined) {
-      return c.json({ error: `expected {"name"?: string, "color"?: string, "index"?: number}` }, 400);
-    }
-    if (name !== undefined && typeof name !== "string") return c.json({ error: `expected {"name": string}` }, 400);
-    if (color !== undefined && (typeof color !== "string" || (color.trim() !== "" && !isHexColor(color.trim())))) {
-      return c.json({ error: `expected {"color": "#rrggbb"} (blank clears the override)` }, 400);
-    }
-    if (index !== undefined && (typeof index !== "number" || !Number.isInteger(index) || index < 0)) {
-      return c.json({ error: `expected {"index": <non-negative integer>}` }, 400);
-    }
-    if (name !== undefined && renameProject(slug, name, options.registryFile) === null) {
-      return c.json({ error: `no registered project "${slug}"` }, 404);
-    }
-    if (color !== undefined && recolorProject(slug, color, options.registryFile) === null) {
-      return c.json({ error: `no registered project "${slug}"` }, 404);
-    }
-    if (index !== undefined && !reorderProject(slug, index, options.registryFile)) {
-      return c.json({ error: `no registered project "${slug}"` }, 404);
-    }
+    const { name, color, index } = await jsonBody(c, patchBody);
+    const notFound = new HttpError(404, `no registered project "${slug}"`, "not-found");
+    if (name !== undefined && renameProject(slug, name, options.registryFile) === null) throw notFound;
+    if (color !== undefined && recolorProject(slug, color, options.registryFile) === null) throw notFound;
+    if (index !== undefined && !reorderProject(slug, index, options.registryFile)) throw notFound;
     const entry = readRegistry(options.registryFile).projects.find((p) => p.slug === slug);
-    if (!entry) return c.json({ error: `no registered project "${slug}"` }, 404);
+    if (!entry) throw notFound;
     return c.json({ name: entry.name ?? projectName(entry.path), color: projectColor(entry) });
   });
 
@@ -266,13 +267,20 @@ export function createHubServer(assetsDir: string | null, options: HubOptions = 
   };
 }
 
+/**
+ * The port the running hub listens on: its lock's when a live one exists (a
+ * `kalamu hub --port`), else the default. `kalamu open` probes and links here.
+ */
+export function hubPort(): number {
+  const lock = readLock(hubLockPath());
+  return lock !== null && isAlive(lock.pid) ? lock.port : HUB_PORT;
+}
+
 /** True when a Kalamu hub answers on the port (quick probe, never throws). */
 export async function detectHub(port = HUB_PORT): Promise<boolean> {
   try {
     const res = await fetch(`http://127.0.0.1:${port}/api/hub`, { signal: AbortSignal.timeout(400) });
-    if (!res.ok) return false;
-    const body: unknown = await res.json();
-    return body !== null && typeof body === "object" && (body as { hub?: unknown }).hub === true;
+    return res.ok && z.object({ hub: z.literal(true) }).safeParse(await res.json()).success;
   } catch {
     return false;
   }

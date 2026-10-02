@@ -1,8 +1,8 @@
 /**
  * Node-only file access. Every write follows SPEC "Concurrency": read +
- * record mtime, apply in memory, re-check mtime, temp file, atomic rename.
- * On a detected conflict the operation is re-applied once against fresh
- * state, then fails loudly.
+ * record the version token, apply in memory, re-check the token, fsynced temp
+ * file, atomic rename. On a detected conflict the operation is re-applied once
+ * against fresh state, then fails loudly.
  *
  * Where the files live is the project's store (SPEC key decision 21):
  * `repo` keeps everything committed under `<root>/.kalamu/`; `local` keeps a
@@ -11,14 +11,33 @@
  * and clone shares one outline.
  */
 import { randomBytes } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  cpSync,
+  existsSync,
+  fsyncSync,
+  mkdirSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+  type Stats,
+} from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
+import { z } from "zod";
 import { parseJsonl, serializeJsonl } from "./jsonl.js";
 import { metaSchema, uiStateSchema, type KalamuMeta, type KalamuNode, type UiState } from "./model.js";
+import { structuralErrors } from "./validate.js";
 
 export class StoreError extends Error {}
+/** Another writer got in first: retrying (or reloading) is the fix. */
 export class ConflictError extends StoreError {}
+/** The outline on disk has malformed lines or a broken tree; `kalamu validate` names them. */
+export class InvalidOutlineError extends StoreError {}
 
 export const KALAMU_DIR = ".kalamu";
 export const OUTLINE_FILE = "outline.jsonl";
@@ -33,6 +52,8 @@ export const DEFAULT_STORE: StoreKind = "local";
 export interface KalamuPaths {
   /** Project root: where `.kalamu/` sits and what doc/`@file` references resolve against. */
   root: string;
+  /** The local-store project id from the marker; null for a repo-store project. */
+  id: string | null;
   /** Where the outline and its siblings live: `<root>/.kalamu` (repo) or `<data home>/<id>` (local). */
   dir: string;
   outline: string;
@@ -46,27 +67,32 @@ export function kalamuHome(): string {
   return process.env.KALAMU_HOME ?? join(homedir(), ".kalamu");
 }
 
+/** The one config.json key core reads; the rest of the file is CLI plumbing. */
+const dataDirConfig = z.object({ dataDir: z.string().min(1).optional() });
+
 /**
- * Where local-store project data lives, one directory per project id:
- * `KALAMU_DATA_DIR`, else `dataDir` in `~/.kalamu/config.json` (a synced
- * folder, say), else `~/.kalamu/projects`. Only that one config key is read
- * here — the rest of config.json is CLI plumbing.
+ * Where local-store project data lives, one directory per project id, and
+ * which setting decided it: `KALAMU_DATA_DIR`, else `dataDir` in
+ * `~/.kalamu/config.json` (a synced folder, say), else `~/.kalamu/projects`.
  */
-export function dataHome(): string {
+export function dataHomeSetting(): { path: string; source: "KALAMU_DATA_DIR" | "config" | "default" } {
   const env = process.env.KALAMU_DATA_DIR;
-  if (env !== undefined && env !== "") return resolve(env);
+  if (env !== undefined && env !== "") return { path: resolve(env), source: "KALAMU_DATA_DIR" };
   try {
-    const parsed: unknown = JSON.parse(readFileSync(join(kalamuHome(), "config.json"), "utf8"));
-    const configured = parsed !== null && typeof parsed === "object" ? (parsed as { dataDir?: unknown }).dataDir : undefined;
-    if (typeof configured === "string" && configured !== "") return resolve(configured);
+    const { dataDir } = dataDirConfig.parse(JSON.parse(readFileSync(join(kalamuHome(), "config.json"), "utf8")));
+    if (dataDir !== undefined) return { path: resolve(dataDir), source: "config" };
   } catch {
     // missing or corrupt config → default
   }
-  return join(kalamuHome(), "projects");
+  return { path: join(kalamuHome(), "projects"), source: "default" };
+}
+
+export function dataHome(): string {
+  return dataHomeSetting().path;
 }
 
 /** Safe as a directory name and stable across machines; see `newProjectId`. */
-const PROJECT_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
+const markerSchema = z.object({ id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/) });
 
 /** `<directory name, slugified>-<6 hex>`: readable in a synced folder, unique enough, never changes. */
 export function newProjectId(root: string): string {
@@ -94,11 +120,9 @@ export function readProjectMarker(root: string): { id: string } | null {
   } catch {
     throw new StoreError(`invalid ${file}: not JSON`);
   }
-  const id = parsed !== null && typeof parsed === "object" ? (parsed as { id?: unknown }).id : undefined;
-  if (typeof id !== "string" || !PROJECT_ID.test(id)) {
-    throw new StoreError(`invalid ${file}: expected {"id": "<lowercase letters, digits, dashes>"}`);
-  }
-  return { id };
+  const marker = markerSchema.safeParse(parsed);
+  if (!marker.success) throw new StoreError(`invalid ${file}: expected {"id": "<lowercase letters, digits, dashes>"}`);
+  return marker.data;
 }
 
 function writeProjectMarker(root: string, id: string): void {
@@ -111,6 +135,7 @@ export function pathsFor(root: string): KalamuPaths {
   const dir = marker ? join(dataHome(), marker.id) : join(root, KALAMU_DIR);
   return {
     root,
+    id: marker?.id ?? null,
     dir,
     outline: join(dir, OUTLINE_FILE),
     meta: join(dir, META_FILE),
@@ -250,58 +275,86 @@ export function findRoot(cwd: string): string | null {
   }
 }
 
-function mtimeOf(path: string): number | null {
-  try {
-    return statSync(path).mtimeMs;
-  } catch {
-    return null;
-  }
+const versionOf = (stat: Stats): string => `${stat.ino}-${stat.size}-${stat.mtimeMs}`;
+
+/**
+ * An opaque token that changes whenever the file is replaced or rewritten
+ * (inode, size and mtime together — mtime alone can repeat within its
+ * resolution), or null when the file is missing. Writers compare it to detect
+ * a concurrent write; the server hands it to the UI as `X-Kalamu-Version` so a
+ * whole-outline replace can refuse to clobber a newer file.
+ */
+export function outlineVersion(path: string): string | null {
+  const stat = statSync(path, { throwIfNoEntry: false });
+  return stat === undefined ? null : versionOf(stat);
 }
 
-function atomicWrite(path: string, content: string): void {
+/**
+ * Temp file in the same directory, fsynced, renamed over `path`. Returns the
+ * written file's version token, taken from the temp file before the rename
+ * (which keeps inode, size and mtime) so no later writer can leak into it.
+ */
+function atomicWrite(path: string, content: string): string {
   mkdirSync(dirname(path), { recursive: true });
   const temp = `${path}.${process.pid}.${Date.now()}.tmp`;
-  writeFileSync(temp, content, "utf8");
+  const fd = openSync(temp, "w");
+  try {
+    writeFileSync(fd, content, "utf8");
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+  const version = versionOf(statSync(temp));
   renameSync(temp, path);
+  return version;
 }
 
-export function readOutline(outlinePath: string): { nodes: KalamuNode[]; mtimeMs: number | null } {
+/**
+ * Parse the outline, refusing one with malformed lines or a broken tree
+ * (duplicate ids, missing parents, parent cycles): those nodes would vanish
+ * from every view, and the next write would delete them for good. The
+ * version is taken before the read, so a write racing it can only make the
+ * token look stale, never newer than the content.
+ */
+export function readOutline(outlinePath: string): { nodes: KalamuNode[]; version: string } {
+  const missing = new StoreError(`no outline at ${outlinePath}`);
+  const version = outlineVersion(outlinePath);
+  if (version === null) throw missing;
   let content: string;
   try {
     content = readFileSync(outlinePath, "utf8");
   } catch {
-    throw new StoreError(`no outline at ${outlinePath} — run "kalamu init" first`);
+    throw missing; // deleted since the stat
   }
   const { nodes, errors } = parseJsonl(content);
-  if (errors.length) {
-    const first = errors[0];
-    throw new StoreError(
-      `outline has ${errors.length} invalid line(s) (first: line ${first?.line}: ${first?.message}) — run "kalamu validate"`,
+  const problems = errors.length ? errors.map((e) => `line ${e.line}: ${e.message}`) : structuralErrors(nodes);
+  if (problems.length) {
+    throw new InvalidOutlineError(
+      `outline at ${outlinePath} has ${problems.length} error(s) (first: ${problems[0]}) — run "kalamu validate" and fix the file by hand; Kalamu will not write until it is valid`,
     );
   }
-  return { nodes, mtimeMs: mtimeOf(outlinePath) };
+  return { nodes, version };
 }
 
 /**
- * Apply a pure operation to the outline with conflict detection.
- * `operation` must be safe to re-run against fresher state.
+ * Apply a pure operation to the outline with conflict detection and write
+ * its `nodes`. Returns everything the operation returned plus the version
+ * token of the file it wrote, so callers destructure what they need:
+ * `withOutline(path, (nodes) => markDone(nodes, id)).node`. The operation
+ * gets the version it is working from (for a caller-side staleness check)
+ * and must be safe to re-run against fresher state.
  */
-export function withOutline<T>(
+export function withOutline<R extends { nodes: readonly KalamuNode[] }>(
   outlinePath: string,
-  operation: (nodes: KalamuNode[]) => { nodes: KalamuNode[]; result: T },
-): T {
+  operation: (nodes: KalamuNode[], version: string) => R,
+): R & { version: string } {
   for (let attempt = 0; attempt < 2; attempt++) {
-    const { nodes, mtimeMs } = readOutline(outlinePath);
-    const applied = operation(nodes);
-    if (mtimeOf(outlinePath) !== mtimeMs) continue; // someone wrote meanwhile: retry once
-    atomicWrite(outlinePath, serializeJsonl(applied.nodes));
-    return applied.result;
+    const { nodes, version } = readOutline(outlinePath);
+    const applied = operation(nodes, version);
+    if (outlineVersion(outlinePath) !== version) continue; // someone wrote meanwhile: retry once
+    return { ...applied, version: atomicWrite(outlinePath, serializeJsonl(applied.nodes)) };
   }
   throw new ConflictError(`outline at ${outlinePath} keeps changing under us; retry the command`);
-}
-
-export function writeOutline(outlinePath: string, nodes: readonly KalamuNode[]): void {
-  atomicWrite(outlinePath, serializeJsonl(nodes));
 }
 
 export function readMeta(metaPath: string): KalamuMeta {
@@ -341,10 +394,10 @@ export interface InitResult {
 
 /** Empty outline + default meta, only where missing. */
 function ensureDataFiles(paths: KalamuPaths): boolean {
-  const fresh = mtimeOf(paths.outline) === null;
+  const fresh = !existsSync(paths.outline);
   mkdirSync(paths.dir, { recursive: true });
   if (fresh) atomicWrite(paths.outline, "");
-  if (mtimeOf(paths.meta) === null) writeMeta(paths.meta, { version: 1 });
+  if (!existsSync(paths.meta)) writeMeta(paths.meta, { version: 1 });
   return fresh;
 }
 

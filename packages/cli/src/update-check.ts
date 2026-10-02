@@ -11,6 +11,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { get } from "node:https";
 import { dirname, join } from "node:path";
+import { z } from "zod";
 import { kalamuHome, updateCheckEnabled } from "./config.js";
 
 const REGISTRY_URL = "https://registry.npmjs.org/kalamu/latest";
@@ -21,12 +22,16 @@ function cacheFile(): string {
   return join(kalamuHome(), "update-check.json");
 }
 
-interface Cache {
+const cacheSchema = z.object({
   /** epoch ms of the last registry read attempt (success or failure). */
-  checkedAt: number;
+  checkedAt: z.number(),
   /** latest version from npm, or null if never fetched successfully. */
-  latest: string | null;
-}
+  latest: z.string().nullable().catch(null),
+});
+type Cache = z.infer<typeof cacheSchema>;
+
+/** The one field of npm's `/latest` document we read. */
+const latestSchema = z.object({ version: z.string() });
 
 export interface UpdateInfo {
   current: string;
@@ -57,14 +62,10 @@ function toInfo(current: string, latest: string | null): UpdateInfo {
 
 function readCache(file: string): Cache | null {
   try {
-    const parsed = JSON.parse(readFileSync(file, "utf8")) as Partial<Cache>;
-    if (typeof parsed.checkedAt === "number") {
-      return { checkedAt: parsed.checkedAt, latest: typeof parsed.latest === "string" ? parsed.latest : null };
-    }
+    return cacheSchema.parse(JSON.parse(readFileSync(file, "utf8")));
   } catch {
-    // missing or corrupt → no cache
+    return null; // missing or corrupt → no cache
   }
-  return null;
 }
 
 function writeCache(file: string, cache: Cache): void {
@@ -92,8 +93,7 @@ function fetchLatest(): Promise<string | null> {
       res.on("data", (chunk) => (body += chunk));
       res.on("end", () => {
         try {
-          const version = (JSON.parse(body) as { version?: unknown }).version;
-          resolve(typeof version === "string" ? version : null);
+          resolve(latestSchema.parse(JSON.parse(body)).version);
         } catch {
           resolve(null);
         }

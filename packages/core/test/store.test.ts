@@ -6,11 +6,14 @@ import { serializeJsonl } from "../src/jsonl.js";
 import { addNode } from "../src/operations.js";
 import {
   checkoutRoots,
+  ConflictError,
   dataHome,
   findRoot,
   initKalamu,
+  InvalidOutlineError,
   migrateStore,
   offDefaultBranch,
+  outlineVersion,
   pathsFor,
   readMeta,
   readOutline,
@@ -131,18 +134,54 @@ describe("checkoutRoots", () => {
 });
 
 describe("withOutline", () => {
-  it("applies an operation and persists pre-order", () => {
+  it("applies an operation, persists it, and reports the version it wrote", () => {
     const paths = initKalamu(root).paths;
-    const id = withOutline(paths.outline, (nodes) => {
-      const result = addNode(nodes, { text: "hello", now: "2026-07-09T09:00:00.000Z" });
-      return { nodes: result.nodes, result: result.node.id };
-    });
-    expect(readOutline(paths.outline).nodes[0]?.id).toBe(id);
+    const { node, version } = withOutline(paths.outline, (nodes) =>
+      addNode(nodes, { text: "hello", now: "2026-07-09T09:00:00.000Z" }),
+    );
+    expect(readOutline(paths.outline).nodes[0]?.id).toBe(node.id);
+    expect(version).toBe(outlineVersion(paths.outline));
+    expect(readOutline(paths.outline).version).toBe(version);
   });
 
-  it("throws a helpful error when outline is missing", () => {
+  it("re-applies the operation once against a concurrent write, then gives up", () => {
+    const paths = initKalamu(root).paths;
+    let calls = 0;
+    const { node } = withOutline(paths.outline, (nodes) => {
+      // Another writer lands between our read and our write, on the first attempt only.
+      if (++calls === 1) writeFileSync(paths.outline, serializeJsonl([bullet("n_other")]));
+      return addNode(nodes, { text: "mine" });
+    });
+    expect(calls).toBe(2);
+    expect(readOutline(paths.outline).nodes.map((n) => n.id)).toEqual(["n_other", node.id]);
+
+    // Growing ids: an in-place rewrite of the same size within one clock tick
+    // is the one change the token cannot see (Kalamu's own writers rename).
+    let racer = "n_";
+    const racing = (): unknown =>
+      withOutline(paths.outline, (nodes) => {
+        racer += "x";
+        writeFileSync(paths.outline, serializeJsonl([bullet(racer)]));
+        return addNode(nodes, { text: "never written" });
+      });
+    expect(racing).toThrow(ConflictError);
+    expect(readOutline(paths.outline).nodes.map((n) => n.id)).toEqual(["n_xx"]);
+  });
+
+  it("refuses a structurally broken outline instead of dropping the nodes buildTree cannot place", () => {
+    const paths = initKalamu(root).paths;
+    // An orphan (hand edit, bad merge): the tree can't place it, so any write
+    // used to serialize the tree without it — deleting it from the file.
+    const broken = serializeJsonl([bullet("n_001"), bullet("n_orphan", { parentId: "n_gone" })]);
+    writeFileSync(paths.outline, broken);
+    expect(() => withOutline(paths.outline, (nodes) => addNode(nodes, { text: "new" }))).toThrow(InvalidOutlineError);
+    expect(() => readOutline(paths.outline)).toThrow(/n_orphan has missing parent n_gone.*kalamu validate/);
+    expect(readFileSync(paths.outline, "utf8")).toBe(broken);
+  });
+
+  it("names the missing outline", () => {
     expect(() => readOutline(pathsFor(root).outline)).toThrow(StoreError);
-    expect(() => readOutline(pathsFor(root).outline)).toThrow(/kalamu init/);
+    expect(() => readOutline(pathsFor(root).outline)).toThrow(/no outline at/);
   });
 
   it("refuses to operate on an invalid outline", () => {

@@ -6,10 +6,11 @@
  * triggered it.
  */
 import { tagColor } from "@kalamu/core";
+import { kalamuHome } from "@kalamu/core/store";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { projectName } from "./server.js";
+import { z } from "zod";
+import { projectName } from "./project-name.js";
 
 export interface RegistryEntry {
   slug: string;
@@ -27,10 +28,13 @@ export interface Registry {
   projects: RegistryEntry[];
 }
 
-/** KALAMU_REGISTRY exists so tests never touch the real ~/.kalamu. */
+/** `<kalamu home>/projects.json`; KALAMU_REGISTRY overrides the file alone, so tests never touch the real one. */
 export function defaultRegistryFile(): string {
-  return process.env.KALAMU_REGISTRY ?? join(homedir(), ".kalamu", "projects.json");
+  return process.env.KALAMU_REGISTRY ?? join(kalamuHome(), "projects.json");
 }
+
+/** How stale `lastSeenAt` may get before use rewrites it — it only picks where the hub root lands. */
+const TOUCH_INTERVAL_MS = 60 * 60 * 1000;
 
 /** package.json name (scope stripped) or directory name → URL slug; never empty. */
 export function slugify(name: string): string {
@@ -57,6 +61,20 @@ export function projectColor(entry: Pick<RegistryEntry, "slug" | "color">): stri
 }
 
 /**
+ * One registry entry, read leniently: an entry without a slug and path is
+ * dropped, and any other malformed field falls back to its default rather
+ * than losing the entry.
+ */
+const entrySchema = z.object({
+  slug: z.string(),
+  path: z.string(),
+  registeredAt: z.string().catch(""),
+  lastSeenAt: z.string().catch(""),
+  name: z.string().trim().min(1).optional().catch(undefined),
+  color: z.string().refine(isHexColor).optional().catch(undefined),
+});
+
+/**
  * Read the registry. Entries are kept even when the project's outline file is
  * gone: a missing file is a data-loss signal the hub must surface with its
  * path (see `missing` in the hub's /api/projects), never quietly forget — the
@@ -70,21 +88,11 @@ export function readRegistry(file = defaultRegistryFile()): Registry {
   } catch {
     return { version: 1, projects: [] };
   }
-  const projects: RegistryEntry[] = [];
-  const raw = parsed !== null && typeof parsed === "object" ? (parsed as { projects?: unknown }).projects : undefined;
-  for (const entry of Array.isArray(raw) ? raw : []) {
-    if (entry === null || typeof entry !== "object") continue;
-    const e = entry as Record<string, unknown>;
-    if (typeof e.slug !== "string" || typeof e.path !== "string") continue;
-    projects.push({
-      slug: e.slug,
-      path: e.path,
-      registeredAt: typeof e.registeredAt === "string" ? e.registeredAt : "",
-      lastSeenAt: typeof e.lastSeenAt === "string" ? e.lastSeenAt : "",
-      ...(typeof e.name === "string" && e.name.trim() !== "" ? { name: e.name } : {}),
-      ...(typeof e.color === "string" && isHexColor(e.color) ? { color: e.color } : {}),
-    });
-  }
+  const raw = z.object({ projects: z.array(z.unknown()) }).safeParse(parsed);
+  const projects = (raw.success ? raw.data.projects : []).flatMap((entry) => {
+    const result = entrySchema.safeParse(entry);
+    return result.success ? [result.data] : [];
+  });
   return { version: 1, projects };
 }
 
@@ -94,21 +102,22 @@ export function readRegistry(file = defaultRegistryFile()): Registry {
  * New projects get a slug derived from the package.json name (else the
  * directory name), deduplicated with numeric suffixes; existing projects keep
  * their slug forever so hub bookmarks survive renames (SPEC key decision 12).
- * Never throws.
+ * Every CLI command calls this, unlocked, so it writes only when something
+ * changed: a new entry, or a `lastSeenAt` more than an hour old. Never throws.
  */
-export function registerProject(root: string, file = defaultRegistryFile()): void {
+export function registerProject(root: string, file = defaultRegistryFile(), now = new Date()): void {
   try {
     const registry = readRegistry(file);
-    const now = new Date().toISOString();
     const existing = registry.projects.find((p) => p.path === root);
     if (existing) {
-      existing.lastSeenAt = now;
+      if (now.getTime() - Date.parse(existing.lastSeenAt) < TOUCH_INTERVAL_MS) return;
+      existing.lastSeenAt = now.toISOString();
     } else {
       const base = slugify(projectName(root));
       const taken = new Set(registry.projects.map((p) => p.slug));
       let slug = base;
       for (let n = 2; taken.has(slug); n++) slug = `${base}-${n}`;
-      registry.projects.push({ slug, path: root, registeredAt: now, lastSeenAt: now });
+      registry.projects.push({ slug, path: root, registeredAt: now.toISOString(), lastSeenAt: now.toISOString() });
     }
     writeRegistry(registry, file);
   } catch {
@@ -204,7 +213,7 @@ export function reorderProject(slug: string, index: number, file = defaultRegist
 
 function writeRegistry(registry: Registry, file: string): void {
   mkdirSync(dirname(file), { recursive: true });
-  const temp = `${file}.${process.pid}.tmp`;
+  const temp = `${file}.${process.pid}.${Date.now()}.tmp`;
   writeFileSync(temp, `${JSON.stringify(registry, null, 2)}\n`, "utf8");
   renameSync(temp, file);
 }

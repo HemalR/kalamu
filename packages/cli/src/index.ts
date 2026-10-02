@@ -1,12 +1,12 @@
 import { OperationError } from "@kalamu/core";
-import { ConflictError, dataHome, findRoot, StoreError, type StoreKind } from "@kalamu/core/store";
+import { dataHome, dataHomeSetting, findRoot, StoreError, type StoreKind } from "@kalamu/core/store";
 import { Command } from "commander";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import * as commands from "./commands.js";
 import { normalizeBaseUrl, readConfig, updateCheckEnabled, writeConfig } from "./config.js";
 import { askEditorPreset, EDITOR_PRESETS, resolveEditorTemplate } from "./editor.js";
-import { CliError, isInteractive, looksLikeRepo, type CommandResult } from "./context.js";
+import { CliError, errorCode, EXIT_CODES, isInteractive, looksLikeRepo, type CommandResult } from "./context.js";
 import { installHubAgent, restartHub, runHub, uninstallHubAgent } from "./hub.js";
 import { forgetHubProject, listHubProjects } from "./hub-commands.js";
 import { DEFAULT_HUB_BASE_URL } from "./hub-url.js";
@@ -29,47 +29,67 @@ function collect(value: string, previous: string[]): string[] {
 
 function baseUrlStatus(): string {
   const configured = readConfig().baseUrl;
-  const normalized = typeof configured === "string" ? normalizeBaseUrl(configured) : null;
+  const normalized = configured !== undefined ? normalizeBaseUrl(configured) : null;
   return `base-url ${normalized ?? DEFAULT_HUB_BASE_URL}${normalized === null ? " (default)" : ""}`;
 }
 
 function dataDirStatus(): string {
-  const source = process.env.KALAMU_DATA_DIR ? " (KALAMU_DATA_DIR)" : readConfig().dataDir === undefined ? " (default)" : "";
-  return `data-dir ${dataHome()}${source}`;
+  const { path, source } = dataHomeSetting();
+  return `data-dir ${path}${source === "config" ? "" : ` (${source})`}`;
 }
 
 function editorStatus(): string {
   const configured = readConfig().editor;
-  if (typeof configured !== "string") return "editor none (@file chips are not clickable)";
+  if (configured === undefined) return "editor none (@file chips are not clickable)";
   const template = resolveEditorTemplate(configured);
   return template === null ? `editor ${configured} (unrecognised — treated as none)` : `editor ${configured} → ${template}`;
 }
 
-/** Print a CommandResult honouring --format json and the result's exit code. */
-function emit(result: CommandResult, options: { format?: string }): void {
-  if (options.format === "json") console.log(JSON.stringify(result.json));
-  else console.log(result.text);
-  if (result.exitCode) process.exitCode = result.exitCode;
+/** Save `value` as the editor for `@file` chips, or report why it isn't one. */
+function setEditor(value: string): void {
+  if (resolveEditorTemplate(value) === null) {
+    console.error(`kalamu: editor must be a preset (${Object.keys(EDITOR_PRESETS).join(", ")}) or a URL template containing {path}`);
+    process.exitCode = EXIT_CODES.error;
+    return;
+  }
+  writeConfig({ ...readConfig(), editor: value.trim() });
+  console.log(editorStatus());
 }
 
-function run(fn: () => CommandResult, options: { format?: string }): CommandResult | undefined {
+/**
+ * Run a command and print its result, honouring --format json and exit codes
+ * (SPEC "CLI requirements"). A refusal prints `kalamu: <message>` on stderr —
+ * or, under --format json, `{"error":{"message","code"}}` on stdout, so an
+ * agent parsing stdout always gets exactly one JSON document — and exits 1,
+ * or 3 for a write conflict worth simply retrying. Anything else is a bug and
+ * propagates.
+ */
+function run<J>(fn: () => CommandResult<J>, options: { format?: string }): CommandResult<J> | undefined {
   try {
     const result = fn();
-    emit(result, options);
+    console.log(options.format === "json" ? JSON.stringify(result.json) : result.text);
+    if (result.exitCode) process.exitCode = result.exitCode;
     return result;
   } catch (err) {
-    if (
-      err instanceof CliError ||
-      err instanceof OperationError ||
-      err instanceof StoreError ||
-      err instanceof ConflictError
-    ) {
-      console.error(`kalamu: ${err.message}`);
-      process.exitCode = 1;
-      return;
-    }
-    throw err;
+    if (!(err instanceof CliError || err instanceof OperationError || err instanceof StoreError)) throw err;
+    const code = errorCode(err);
+    if (options.format === "json") console.log(JSON.stringify({ error: { message: err.message, code } }));
+    else console.error(`kalamu: ${err.message}`);
+    process.exitCode = code === "conflict" ? EXIT_CODES.conflict : EXIT_CODES.error;
+    return undefined;
   }
+}
+
+/** Wrap a long-running or interactive action (open, hub, stop): any failure is one `kalamu:` line and exit 1. */
+function guarded<A extends unknown[]>(action: (...args: A) => Promise<void>): (...args: A) => Promise<void> {
+  return async (...args) => {
+    try {
+      await action(...args);
+    } catch (err) {
+      console.error(`kalamu: ${err instanceof Error ? err.message : String(err)}`);
+      process.exitCode = EXIT_CODES.error;
+    }
+  };
 }
 
 interface InitOptions {
@@ -113,15 +133,7 @@ async function askStore(): Promise<StoreKind> {
  */
 async function settleEditor(opts: InitOptions, interactive: boolean): Promise<void> {
   if (typeof opts.editor === "string") {
-    if (resolveEditorTemplate(opts.editor) === null) {
-      console.error(
-        `kalamu: editor must be a preset (${Object.keys(EDITOR_PRESETS).join(", ")}) or a URL template containing {path}`,
-      );
-      process.exitCode = 1;
-      return;
-    }
-    writeConfig({ ...readConfig(), editor: opts.editor.trim() });
-    console.log(editorStatus());
+    setEditor(opts.editor);
     return;
   }
   if (opts.editor === false || !interactive) return;
@@ -168,7 +180,7 @@ async function initWithOffers(opts: InitOptions, guard: { skipRepoGuard?: boolea
     opts,
   );
   if (!result || process.exitCode) return false;
-  const fresh = (result.json as { created: boolean }).created;
+  const fresh = result.json.created;
   if (opts.tour === true) {
     run(() => commands.tour(process.cwd()), opts);
   } else if (opts.tour !== false && interactive && fresh) {
@@ -224,8 +236,8 @@ program
   .description("start the local server and open the browser UI (offers to initialise a fresh directory)")
   .option("--port <port>", "port to listen on (default 4242, auto-increments when taken)")
   .option("--no-browser", "do not open a browser")
-  .action(async (opts: { port?: string; browser?: boolean }) => {
-    try {
+  .action(
+    guarded(async (opts: { port?: string; browser?: boolean }) => {
       // Fresh directory + a human at the keyboard: confirm before initialising
       // (the path in the prompt catches wrong-directory accidents), then give
       // them init's full onboarding. No repo marker flips the default to NO —
@@ -242,11 +254,8 @@ program
         if (!(await initWithOffers({}, { skipRepoGuard: true }))) return;
       }
       await open(process.cwd(), opts);
-    } catch (err) {
-      console.error(`kalamu: ${(err as Error).message}`);
-      process.exitCode = 1;
-    }
-  });
+    }),
+  );
 
 program
   .command("hub [action] [slug]")
@@ -254,8 +263,8 @@ program
   .option("--port <port>", "port to listen on (default 4400)")
   .option("--no-browser", "do not open a browser")
   .option("--format <format>", "output format for list/forget (text|json)")
-  .action(async (action: string | undefined, slug: string | undefined, opts: { port?: string; browser?: boolean; format?: string }) => {
-    try {
+  .action(
+    guarded(async (action: string | undefined, slug: string | undefined, opts: { port?: string; browser?: boolean; format?: string }) => {
       if (action === "list") {
         if (slug !== undefined) throw new Error("hub list does not accept a project slug");
         run(listHubProjects, opts);
@@ -265,35 +274,18 @@ program
       else if (action === "uninstall") uninstallHubAgent();
       else if (action === undefined) await runHub(opts);
       else throw new Error(`unknown hub action "${action}" (expected list, forget, install or uninstall)`);
-    } catch (err) {
-      console.error(`kalamu: ${(err as Error).message}`);
-      process.exitCode = 1;
-    }
-  });
+    }),
+  );
 
 program
   .command("restart")
   .description("restart the installed hub (picks up updated code)")
-  .action(async () => {
-    try {
-      await restartHub();
-    } catch (err) {
-      console.error(`kalamu: ${(err as Error).message}`);
-      process.exitCode = 1;
-    }
-  });
+  .action(guarded(restartHub));
 
 program
   .command("stop")
   .description("stop a kalamu server left running in another terminal (this project's, or a foreground hub)")
-  .action(async () => {
-    try {
-      await stopKalamu(process.cwd());
-    } catch (err) {
-      console.error(`kalamu: ${(err as Error).message}`);
-      process.exitCode = 1;
-    }
-  });
+  .action(guarded(() => stopKalamu(process.cwd())));
 
 program
   .command("config [key] [value]")
@@ -324,22 +316,14 @@ program
         console.log(editorStatus());
         return;
       }
-      const config = readConfig();
       if (value === "none") {
+        const config = readConfig();
         delete config.editor;
         writeConfig(config);
         console.log(editorStatus());
         return;
       }
-      if (resolveEditorTemplate(value) === null) {
-        console.error(
-          `kalamu: editor must be a preset (${Object.keys(EDITOR_PRESETS).join(", ")}) or a URL template containing {path}`,
-        );
-        process.exitCode = 1;
-        return;
-      }
-      writeConfig({ ...config, editor: value.trim() });
-      console.log(editorStatus());
+      setEditor(value);
       return;
     }
     if (key === "base-url") {

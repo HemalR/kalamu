@@ -1,9 +1,10 @@
 <!--
-  Shared modal backdrop: centers the caller's panel, closes on a click outside
-  it, and owns Escape for the whole app while mounted. Escape is handled in the
-  window's CAPTURE phase so one press works no matter where focus sits (panel,
-  body after a stray Tab, …) and so exactly one layer interprets it — App's
-  window handler never sees it.
+  Shared modal backdrop: centers the caller's panel (which caps its height at
+  calc(100dvh - var(--overlay-top) - 16px), the room this leaves it), closes
+  on a click outside it, and owns Escape for the whole app while mounted.
+  Escape is handled in the window's CAPTURE phase so one press works no matter
+  where focus sits (panel, body after a stray Tab, …) and so exactly one layer
+  interprets it — App's window handler never sees it.
 
   The overlay also closes when focus LEAVES its subtree while the window stays
   focused. Extensions like Vimium blur focused inputs on Escape and swallow the
@@ -23,7 +24,8 @@
     /** What a focus-leave does instead of closing; `movedTo` is where focus
      * went — null when it fell to the body. */
     onfocusleave?: (movedTo: Element | null) => void;
-    /** Gap between the viewport top and the panel. */
+    /** Gap between the viewport top and the panel; exposed to the panel as
+     * --overlay-top so it can cap its height to what is left of the viewport. */
     top?: string;
   }
 
@@ -63,7 +65,7 @@
 <svelte:window onkeydowncapture={onKeydownCapture} />
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="overlay" style:padding-top={top} onpointerdown={onPointerDown} onfocusout={onFocusOut}>
+<div class="overlay" style:--overlay-top={top} onpointerdown={onPointerDown} onfocusout={onFocusOut}>
   {@render children()}
 </div>
 
@@ -71,11 +73,11 @@
   .overlay {
     position: fixed;
     inset: 0;
-    z-index: 30;
+    z-index: var(--z-overlay);
     display: flex;
     align-items: flex-start;
     justify-content: center;
-    padding: 0 16px 16px;
+    padding: var(--overlay-top) 16px 16px;
     background: rgba(0, 0, 0, 0.35);
   }
 </style>

@@ -94,7 +94,7 @@ kalamu restart         # restart the installed hub (e.g. after updating kalamu)
 
 `install` does exactly one thing: writes a human-readable launchd file to `~/Library/LaunchAgents/dev.kalamu.hub.plist` so the hub starts at login and restarts if it crashes. It stays bound to `127.0.0.1` — nothing ever leaves your machine — and logs to `~/.kalamu/hub.log`. On Linux, run `kalamu hub --no-browser` from a systemd user unit instead.
 
-Want the hub from another machine — a laptop looking at the box where your agents run? The hub has no authentication of its own, so put something that does in front of the loopback port. Tailscale is the least work: `tailscale serve --bg 4400` publishes it to your tailnet over HTTPS with no Kalamu configuration at all. Never expose the port to the open internet.
+Want the hub from another machine — a laptop looking at the box where your agents run? The hub has no authentication of its own, so put something that does in front of the loopback port. Tailscale is the least work: `tailscale serve --bg 4400` publishes it to your tailnet over HTTPS. Then tell Kalamu the address you'll open, `kalamu config base-url https://<machine>.<tailnet>.ts.net`: the hub only answers to loopback names and that one host (a guard against DNS rebinding), and node links point there too. Never expose the port to the open internet.
 
 No server is ever required for the CLI itself: every command reads and writes the outline file directly. Servers exist only to power the browser UI.
 
@@ -162,6 +162,10 @@ kalamu link <id>               # named Markdown deep link for a human
 
 Node links use the registered hub slug and default to `http://localhost:4400`.
 Set a different machine-local address with `kalamu config base-url <url>`.
+
+Exit codes: `0` ok, `1` error, `2` nothing to do (`next`), `3` a concurrent
+writer kept changing the outline — just retry. With `--format json`, errors are
+JSON on stdout too: `{"error": {"message": "...", "code": "not-found"}}`.
 
 **Recording work:**
 

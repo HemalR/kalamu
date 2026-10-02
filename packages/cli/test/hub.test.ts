@@ -110,6 +110,24 @@ describe("hub", () => {
     expect(counts.projects.find((p) => p.slug === "alpha")?.openTasks).toBe(1);
   });
 
+  it("mounts the version-checked outline API and the request guard unchanged", async () => {
+    const loaded = await hub.app.request("/p/alpha/api/nodes");
+    const { version } = (await loaded.json()) as { version: string };
+    expect(loaded.headers.get("X-Kalamu-Version")).toBe(version);
+    const put = async (v: string): Promise<Response> =>
+      hub.app.request("/p/alpha/api/nodes", {
+        method: "PUT",
+        body: JSON.stringify({ nodes: [], version: v }),
+        headers: { "Content-Type": "application/json" },
+      });
+    expect((await put("stale")).status).toBe(409);
+    expect((await put(version)).status).toBe(200);
+
+    const foreign = { headers: { Host: "evil.example:4400" } };
+    expect((await hub.app.request("/api/projects", foreign)).status).toBe(403);
+    expect((await hub.app.request("/p/alpha/api/nodes", foreign)).status).toBe(403);
+  });
+
   it("does not count open tasks beneath a done task in the sidebar badge", async () => {
     const parent = (await (
       await hub.app.request("/p/alpha/api/nodes", {

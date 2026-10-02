@@ -5,32 +5,22 @@
  * longer alive is stale (a crash, a `kill -9`) and is cleaned up on sight.
  */
 import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { z } from "zod";
 
-export interface Lock {
-  pid: number;
-  port: number;
-}
+const lockSchema = z.object({ pid: z.number(), port: z.number() });
+export type Lock = z.infer<typeof lockSchema>;
 
 export function writeLock(path: string, lock: Lock): void {
   writeFileSync(path, JSON.stringify(lock));
 }
 
+/** The lock at `path`, or null when it is missing or unreadable. */
 export function readLock(path: string): Lock | null {
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(readFileSync(path, "utf8"));
+    return lockSchema.parse(JSON.parse(readFileSync(path, "utf8")));
   } catch {
     return null;
   }
-  if (
-    parsed === null ||
-    typeof parsed !== "object" ||
-    typeof (parsed as Lock).pid !== "number" ||
-    typeof (parsed as Lock).port !== "number"
-  ) {
-    return null;
-  }
-  return parsed as Lock;
 }
 
 export function removeLock(path: string): void {

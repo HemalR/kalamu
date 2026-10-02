@@ -40,7 +40,7 @@
   }
   /* Monospace, echoing the outline text; kerned just under the mark's arm. */
   .rest {
-    font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    font-family: var(--font-mono);
     font-weight: 500;
     letter-spacing: -0.01em;
     margin-left: 0.12em;

@@ -1,9 +1,41 @@
-import { existsSync, statSync } from "node:fs";
-import { extname, join, normalize, sep } from "node:path";
-import { checkoutRoots, findRoot, offDefaultBranch, pathsFor, type KalamuPaths } from "@kalamu/core/store";
+import { existsSync, realpathSync, statSync } from "node:fs";
+import { extname, join, sep } from "node:path";
+import { OperationError } from "@kalamu/core";
+import {
+  checkoutRoots,
+  ConflictError,
+  dataHomeSetting,
+  findRoot,
+  InvalidOutlineError,
+  kalamuHome,
+  offDefaultBranch,
+  pathsFor,
+  type KalamuPaths,
+} from "@kalamu/core/store";
 import { registerProject } from "./registry.js";
 
-export class CliError extends Error {}
+/** A refused command; `code` as in OperationError. */
+export class CliError extends Error {
+  constructor(
+    message: string,
+    readonly code?: "not-found",
+  ) {
+    super(message);
+  }
+}
+
+export type ErrorCode = "not-found" | "cycle" | "conflict" | "invalid-outline" | "error";
+
+/**
+ * The stable code agents (`--format json`) and the web UI (the HTTP error
+ * envelope) branch on; everything without one is plain "error".
+ */
+export function errorCode(err: Error): ErrorCode {
+  if (err instanceof ConflictError) return "conflict";
+  if (err instanceof InvalidOutlineError) return "invalid-outline";
+  if (err instanceof OperationError || err instanceof CliError) return err.code ?? "error";
+  return "error";
+}
 
 /**
  * "Is a human at the keyboard?" — gates update banners (SPEC key decision 14),
@@ -56,10 +88,41 @@ export function warnIfOffDefaultBranch(paths: KalamuPaths): void {
 export function findDoc(root: string, path: string): string | null {
   if (extname(path) !== ".md") return null;
   for (const checkout of checkoutRoots(root)) {
-    const full = normalize(join(checkout, path));
-    if (full.startsWith(checkout + sep) && statSync(full, { throwIfNoEntry: false })?.isFile()) return full;
+    // Real paths on both sides, so neither `..` nor a symlink can reach outside.
+    const full = realpathOrNull(join(checkout, path));
+    const base = realpathOrNull(checkout);
+    if (full === null || base === null || !full.startsWith(base + sep) || extname(full) !== ".md") continue;
+    if (statSync(full).isFile()) return full;
   }
   return null;
+}
+
+function realpathOrNull(path: string): string | null {
+  try {
+    return realpathSync(path);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Why a local-store project has no outline on this machine. The likely case
+ * is not a fresh clone but a process with a different data home (an agent
+ * sandbox, another account), where `kalamu init` would silently start a
+ * second, empty outline — so the message says where it looked, and why.
+ */
+function missingDataMessage(paths: KalamuPaths): string {
+  const home = dataHomeSetting();
+  const why = {
+    KALAMU_DATA_DIR: "set by KALAMU_DATA_DIR",
+    config: `set by dataDir in ${join(kalamuHome(), "config.json")}`,
+    default: "the default — neither KALAMU_DATA_DIR nor a configured data-dir is set",
+  }[home.source];
+  return (
+    `no outline for project ${paths.id} in data home ${home.path} (${why}). ` +
+    "If this project's data lives under another data home, point KALAMU_DATA_DIR or `kalamu config data-dir` at it. " +
+    'Run "kalamu init" only for a genuinely fresh project: it creates a new, empty outline.'
+  );
 }
 
 export function resolvePaths(cwd: string): KalamuPaths {
@@ -68,14 +131,18 @@ export function resolvePaths(cwd: string): KalamuPaths {
   // Hub registration is a side effect of use (SPEC "Hub"); it never throws.
   registerProject(root);
   const paths = pathsFor(root);
+  if (paths.store === "local" && !existsSync(paths.outline)) throw new CliError(missingDataMessage(paths));
   warnIfOffDefaultBranch(paths);
   return paths;
 }
 
 /** Every command returns this; the wiring decides how to print it. */
-export interface CommandResult {
+export interface CommandResult<J = unknown> {
   text: string;
-  json: unknown;
-  /** 0 = ok; 1 = error; 2 = "nothing to do" (e.g. next with no eligible task). */
+  json: J;
+  /** See EXIT_CODES; set here only for 2, "nothing to do" (e.g. next with no eligible task). */
   exitCode?: number;
 }
+
+/** Process exit codes agents can branch on (SPEC "CLI requirements"). */
+export const EXIT_CODES = { ok: 0, error: 1, nothing: 2, conflict: 3 } as const;

@@ -60,15 +60,22 @@ describe("registerProject", () => {
     expect(projects[0]?.slug).toBe("gamma");
   });
 
-  it("touches lastSeenAt on re-registration", () => {
+  it("touches lastSeenAt on re-registration, at most hourly (every command registers)", () => {
     const root = makeProject("delta");
-    registerProject(root, file);
-    const before = readRegistry(file).projects[0];
-    registerProject(root, file);
-    const after = readRegistry(file).projects[0];
-    if (!before || !after) throw new Error("expected one registry entry");
-    expect(after.registeredAt).toBe(before.registeredAt);
-    expect(after.lastSeenAt >= before.lastSeenAt).toBe(true);
+    const at = (iso: string): void => registerProject(root, file, new Date(iso));
+    const seen = (): string | undefined => readRegistry(file).projects[0]?.lastSeenAt;
+    at("2026-07-12T09:00:00.000Z");
+    at("2026-07-12T09:30:00.000Z");
+    expect(seen()).toBe("2026-07-12T09:00:00.000Z");
+    at("2026-07-12T10:30:00.000Z");
+    expect(seen()).toBe("2026-07-12T10:30:00.000Z");
+    expect(readRegistry(file).projects[0]?.registeredAt).toBe("2026-07-12T09:00:00.000Z");
+  });
+
+  it("lives under KALAMU_HOME unless KALAMU_REGISTRY names the file", () => {
+    const root = makeProject("epsilon");
+    registerProject(root);
+    expect(readRegistry(join(base, "kalamu-home", "projects.json")).projects.map((p) => p.path)).toEqual([root]);
   });
 
   it("never throws on a corrupt registry file and recovers", () => {

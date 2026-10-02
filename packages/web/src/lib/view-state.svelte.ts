@@ -24,7 +24,6 @@ import {
   toggleAxis,
   type AssigneeFilter,
 } from "./filter";
-import { formatZoomHash } from "./zoom";
 
 const UI_STATE_DEBOUNCE_MS = 400;
 
@@ -183,7 +182,7 @@ export class OutlineViewState extends OutlineDocument {
     this.persistUiStateSoon();
   }
 
-  // ---- zoom (session view state; the URL hash is its only persistence) -------
+  // ---- zoom (session view state; App's URL hash is its only persistence) -----
 
   /** Never written to ui-state.json — that file is shared across tabs/agents. */
   zoomId = $state<string | null>(null);
@@ -201,21 +200,10 @@ export class OutlineViewState extends OutlineDocument {
   /** The zoomed node's ancestors, root→parent — the breadcrumb trail. */
   zoomPath = $derived(this.zoomNode === null ? [] : ancestors(this.tree, this.zoomNode));
 
-  /**
-   * Sets the zoom and syncs the URL hash (server ids, so links survive
-   * reloads). Assigning location.hash pushes a history entry — Back then
-   * unwinds zoom levels; applying an already-current hash (Back itself, or a
-   * hashchange echo) writes nothing, so no loop and no duplicate entry.
-   */
+  /** Sets the zoom and reports it to the host (server ids, so links survive reloads). */
   setZoom(id: string | null): void {
     this.zoomId = id;
-    const hash = formatZoomHash(id === null ? null : this.serverId(id));
-    if (hash === "") {
-      // hash = "" would leave a dangling "#"; pushState keeps Back unwinding.
-      if (location.hash !== "") history.pushState(null, "", location.pathname + location.search);
-    } else if (location.hash !== hash) {
-      location.hash = hash;
-    }
+    this.hooks.onZoom?.(id === null ? null : this.serverId(id));
   }
 
   zoomIn(id: string): void {
@@ -261,8 +249,8 @@ export class OutlineViewState extends OutlineDocument {
    * tree freely (SPEC key decision 16), so the target is routinely outside the
    * zoom, folded away, or filtered out; each obstacle is cleared in turn.
    *
-   * Nothing here is undone afterwards. setZoom pushes a history entry, so the
-   * reader's way back is browser Back.
+   * Nothing here is undone afterwards. In the app setZoom pushes a history
+   * entry, so the reader's way back is browser Back.
    */
   revealNode(id: string): void {
     const target = this.tree.byId.get(id);

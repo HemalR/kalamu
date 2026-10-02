@@ -56,3 +56,31 @@ export function resolveNodeId(
   }
   return null;
 }
+
+/** A Find hit's one-line text with the match split out, for highlighting. */
+export interface Excerpt {
+  before: string;
+  match: string;
+  after: string;
+}
+
+/**
+ * The text around the first case-insensitive occurrence of `needle` (core's
+ * searchNodes matches the same way): at most `lead` characters before it —
+ * cut at a word where one is in reach, marked with "…" — then the match, then
+ * the rest, which the row's CSS ellipsis trims. So the match is always in
+ * view, however deep into a long node it sits. Null when there is no match.
+ */
+export function matchExcerpt(text: string, needle: string, lead = 24): Excerpt | null {
+  const at = needle === "" ? -1 : text.toLowerCase().indexOf(needle.toLowerCase());
+  if (at === -1) return null;
+  let start = Math.max(0, at - lead);
+  const space = text.indexOf(" ", start);
+  if (start > 0 && space !== -1 && space < at) start = space + 1;
+  const flat = (part: string): string => part.replace(/\s+/g, " ");
+  return {
+    before: (start > 0 ? "…" : "") + flat(text.slice(start, at)),
+    match: flat(text.slice(at, at + needle.length)),
+    after: flat(text.slice(at + needle.length)),
+  };
+}

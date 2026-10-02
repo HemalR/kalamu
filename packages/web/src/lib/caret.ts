@@ -52,16 +52,15 @@ export function selectionOffsets(el: HTMLElement): { start: number; end: number 
   return { start, end: probe.toString().length };
 }
 
-/** Character offset of the caret within `el`'s text. */
+/** Character offset of the caret (the selection's end) within `el`'s text; 0 when it is elsewhere. */
 export function caretOffset(el: HTMLElement): number {
-  const selection = window.getSelection();
-  if (!selection || selection.rangeCount === 0) return 0;
-  const range = selection.getRangeAt(0);
-  if (!el.contains(range.endContainer)) return 0;
-  const probe = range.cloneRange();
-  probe.selectNodeContents(el);
-  probe.setEnd(range.endContainer, range.endOffset);
-  return probe.toString().length;
+  return selectionOffsets(el)?.end ?? 0;
+}
+
+/** The caret's offset when the selection is a collapsed caret inside `el`, else null. */
+export function collapsedCaret(el: HTMLElement): number | null {
+  const selection = selectionOffsets(el);
+  return selection !== null && selection.start === selection.end ? selection.end : null;
 }
 
 function caretRect(el: HTMLElement): DOMRect | null {

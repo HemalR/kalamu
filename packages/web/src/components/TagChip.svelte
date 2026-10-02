@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { dismissable } from "../lib/popover";
   import ColorPopover from "./ColorPopover.svelte";
 
   interface Props {
@@ -12,23 +13,9 @@
   let { tag, color, onSetColor, onFilter }: Props = $props();
 
   let open = $state(false);
-  let wrap: HTMLElement | undefined = $state();
-
-  function onWindowPointerDown(event: PointerEvent): void {
-    if (wrap && event.target instanceof Node && !wrap.contains(event.target)) open = false;
-  }
-
-  function onWindowKeydown(event: KeyboardEvent): void {
-    if (event.key === "Escape") open = false;
-  }
 </script>
 
-<svelte:window
-  onpointerdown={open ? onWindowPointerDown : undefined}
-  onkeydown={open ? onWindowKeydown : undefined}
-/>
-
-<span class="wrap" bind:this={wrap}>
+<span class="wrap" {@attach open && dismissable(() => (open = false))}>
   <button
     class="chip"
     style:--tag-color={color}
@@ -71,7 +58,11 @@
     line-height: 1;
     padding: 2.5px 7px;
     border-radius: 999px;
-    color: var(--tag-color);
+    /* The raw palette colour on its own tint is ~1.5:1 for amber in light
+       mode, so the text is the tag colour pulled toward black (light) or
+       white (dark): ≥4.5:1 for the whole palette in both themes, checked by
+       test/contrast.test.ts. The chip recipe everywhere a tag renders. */
+    color: light-dark(color-mix(in oklab, var(--tag-color) 60%, black), color-mix(in oklab, var(--tag-color) 65%, white));
     background: color-mix(in srgb, var(--tag-color) 15%, transparent);
   }
   .chip:hover {

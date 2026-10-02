@@ -1,9 +1,10 @@
 /*
- * Tokens duplicated from @kalamu/web's app.css, so the marketing site and the
- * product read as one brand. The hero demo IS the real product component
- * (@kalamu/web/embed) and consumes these tokens directly; the page-level
- * duplication here stays deliberate — the palette is small enough that
- * keeping it in sync by eye beats importing the app's stylesheet wholesale.
+ * Tokens duplicated from @kalamu/web's tokens.css, so the marketing site and
+ * the product read as one brand. The hero demo IS the real product component
+ * (@kalamu/web/embed) and imports tokens.css itself, so it never depends on
+ * this copy; the page-level duplication stays deliberate — the palette is
+ * small enough that keeping it in sync by eye beats importing the app's
+ * stylesheet before the demo island has loaded.
  */
 
 :root {
