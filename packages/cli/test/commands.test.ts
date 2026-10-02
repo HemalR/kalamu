@@ -58,6 +58,16 @@ describe("acceptance flow (SPEC MVP criteria)", () => {
     expect(raw).not.toContain('"priority":2');
   });
 
+  it("list shows p1 and p3 and hides the default p2", () => {
+    addTask("urgent", { p: "1" });
+    addTask("ordinary");
+    addTask("someday", { p: "3" });
+    const text = commands.list(cwd, {}).text;
+    expect(text).toContain("☐ p1 urgent");
+    expect(text).toContain("☐ ordinary");
+    expect(text).toContain("☐ p3 someday");
+  });
+
   it("init never overwrites, and re-init reports it", () => {
     addTask("keep me");
     const again = commands.init(cwd);
@@ -370,6 +380,12 @@ describe("filters and outputs", () => {
     expect(() => commands.update(cwd, id, { assign: "both" })).toThrow(/none to clear/);
   });
 
+  it("update with nothing to change refuses rather than reporting a no-op as done", () => {
+    const id = addTask("untouched");
+    // Commander hands repeatable flags over as empty arrays.
+    expect(() => commands.update(cwd, id, { addTag: [], removeTag: [] })).toThrow(/nothing to do/);
+  });
+
   it("update --by corrects authorship; an update without it never touches the field", () => {
     const id = addTask("misattributed", { by: "human" });
     expect((commands.show(cwd, id, {}).json as { createdBy?: string }).createdBy).toBeUndefined();
@@ -522,7 +538,7 @@ describe("placement: ls, paths, and add location", () => {
     addTask("Top-level leftover");
     const result = commands.ls(cwd);
     expect(result.text).toContain(`• Auth improvements  (2)`);
-    expect(result.text).toContain("☐ p2 Top-level leftover");
+    expect(result.text).toContain("☐ Top-level leftover");
     expect(result.text).not.toContain("SSO");
     expect(result.text).not.toContain("Investigate");
     const json = result.json as { id: null; children: { id: string; childCount: number }[] };
@@ -620,11 +636,11 @@ describe("link echo (SPEC `kalamu link`)", () => {
     expect(commands.done(cwd, id)).toMatchObject({ text: `Done ${id}\nLink: ${markdown}`, json: { link: markdown } });
   });
 
-  it("batch next carries no links; an unusable registry omits the line without failing", () => {
+  it("batch next links each JSON entry, not the text; an unusable registry omits the line without failing", () => {
     const id = addTask("Queue item");
     const batch = commands.next(cwd, { all: true });
     expect(batch.text).not.toContain("Link:");
-    expect((batch.json as { tasks: object[] }).tasks[0]).not.toHaveProperty("link");
+    expect((batch.json as { tasks: { link?: string }[] }).tasks[0]?.link).toContain(`#z=${id}`);
 
     // dirname is a file, so the registry can be neither read nor re-created —
     // the link degrades to nothing, never to an error or a guessed URL.

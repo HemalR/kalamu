@@ -1,13 +1,11 @@
 <script lang="ts">
-  import { tagColor } from "@kalamu/core";
-  import Breadcrumbs from "./components/Breadcrumbs.svelte";
   import CheatSheet from "./components/CheatSheet.svelte";
   import CliSheet from "./components/CliSheet.svelte";
   import CommandPalette from "./components/CommandPalette.svelte";
   import FilterMenu from "./components/FilterMenu.svelte";
   import Find from "./components/Find.svelte";
   import HubHint from "./components/HubHint.svelte";
-  import OutlineNode from "./components/OutlineNode.svelte";
+  import OutlineBody from "./components/OutlineBody.svelte";
   import Sidebar from "./components/Sidebar.svelte";
   import Toast from "./components/Toast.svelte";
   import UpdateChip from "./components/UpdateChip.svelte";
@@ -15,13 +13,50 @@
   import { api, apiBase, type ProjectInfo } from "./lib/api";
   import { BRAND_BRONZE, setFavicon } from "./lib/favicon";
   import { fileRefs } from "./lib/file-refs.svelte";
+  import { handleGlobalKeys } from "./lib/global-keys";
   import { consumeLaunches, planLaunch } from "./lib/launch";
   import { OutlineStore } from "./lib/outline.svelte";
-  import { matches, SHORTCUTS as S } from "./lib/shortcuts";
   import { theme } from "./lib/theme.svelte";
-  import { parseZoomHash } from "./lib/zoom";
+  import { formatZoomHash, parseZoomHash } from "./lib/zoom";
 
-  const store = new OutlineStore();
+  /** Project this instance serves (name for the title, platform/hubInstalled
+      for HubHint, branchDrift for the banner); null until (and unless) it
+      loads. Reloaded whenever the server reports a project change. */
+  let project = $state<ProjectInfo | null>(null);
+  /** Only the latest request may land: a branch checkout can fire several in a row. */
+  let projectRequest = 0;
+  function loadProject(): void {
+    const request = ++projectRequest;
+    void api
+      .getProject()
+      .then((info) => {
+        if (request !== projectRequest) return;
+        project = info;
+        fileRefs.configure(info); // file chips need repoRoot/editorTemplate on first render
+        document.title = `Kalamu | ${info.name}`;
+      })
+      .catch(() => {});
+  }
+
+  /**
+   * The zoom's only persistence is the URL hash, in server ids so links
+   * survive reloads. Assigning location.hash pushes a history entry — Back
+   * then unwinds zoom levels; an already-current hash (Back itself, or a
+   * hashchange echo) writes nothing, so no loop and no duplicate entry.
+   */
+  function writeZoomHash(serverId: string | null): void {
+    const hash = formatZoomHash(serverId);
+    if (hash === "") {
+      // hash = "" would leave a dangling "#"; pushState keeps Back unwinding.
+      if (location.hash !== "") history.pushState(null, "", location.pathname + location.search);
+    } else if (location.hash !== hash) {
+      location.hash = hash;
+    }
+  }
+
+  // A branch checkout on the server side reports a project change (SSE); refetch so branchDrift is current.
+  const store = new OutlineStore({ onZoom: writeZoomHash, onProjectChanged: loadProject });
+  loadProject();
   void store.init().then(() => {
     // A #z=<id> hash restores zoom across reloads; garbage or a since-deleted
     // id is dropped without polluting history.
@@ -53,30 +88,16 @@
     }
   });
 
-  /** Project this instance serves (name for the title, platform/hubInstalled
-      for HubHint, branchDrift for the banner); null until (and unless) it
-      loads. Reloaded whenever the server reports a project change. */
-  let project = $state<ProjectInfo | null>(null);
-  function loadProject(): void {
-    void api
-      .getProject()
-      .then((info) => {
-        project = info;
-        fileRefs.configure(info); // file chips need repoRoot/editorTemplate on first render
-        document.title = `Kalamu | ${info.name}`;
-      })
-      .catch(() => {});
-  }
-  loadProject();
-  $effect(() => {
-    // A branch checkout on the server side bumps projectChanges (SSE); refetch so branchDrift is current.
-    if (store.projectChanges > 0) loadProject();
-  });
+  /** The stuck header's measured height, so the sticky breadcrumbs stack right
+      beneath it however the header wraps or grows (Breadcrumbs.svelte). */
+  let headerHeight = $state(0);
+
+  const paletteHint = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘K" : "Ctrl+K";
 
   /** At most one overlay at a time; Overlay.svelte owns Escape while one is open. */
   let overlay = $state<"palette" | "help" | "cli" | "find" | null>(null);
 
-  /** Active project's colour (hub only), reported by the Sidebar; null falls
+  /** Active project's colour (hub only), bound from the Sidebar; null falls
       back to the bronze brand. Tints the wordmark and the favicon. */
   let markColor = $state<string | null>(null);
   $effect(() => {
@@ -84,66 +105,17 @@
     // Browser UI / installed-app title bar follows the project colour too.
     document.querySelector('meta[name="theme-color"]')?.setAttribute("content", markColor ?? BRAND_BRONZE);
   });
+
   function onWindowKeydown(event: KeyboardEvent): void {
-    if (event.isComposing) return;
-    // The palette owns the keyboard while open: it stops propagation of the
-    // keys it handles, and Overlay intercepts Escape at the capture phase
-    // (sublevels step back, so Escape must never be interpreted here too).
+    // The palette and Find own the keyboard while open: they stop propagation
+    // of the keys they handle, and Overlay intercepts Escape at the capture
+    // phase (sublevels step back, so Escape must never be interpreted here too).
     if (overlay === "palette" || overlay === "find") return;
-    // Mod+/ toggles the cheat sheet from anywhere, including while editing.
-    if (matches(event, S.help)) {
-      event.preventDefault();
-      overlay = overlay === "help" ? null : "help";
-      return;
-    }
-    // Mod+K opens the palette from anywhere too — it acts on the last-focused node.
-    if (matches(event, S.palette)) {
-      event.preventDefault();
-      overlay = "palette";
-      return;
-    }
-    // Mod+F opens Find from anywhere; pressing it again while Find is open falls
-    // through to the browser's native find (Find stops propagation and nothing
-    // calls preventDefault on it).
-    if (matches(event, S.find)) {
-      event.preventDefault();
-      overlay = "find";
-      return;
-    }
-    // Mod+Shift+H toggles done visibility from anywhere, including while editing.
-    if (matches(event, S.toggleHideDone)) {
-      event.preventDefault();
-      store.toggleHideDone();
-      return;
-    }
-    // Mod+Shift+, zooms out from anywhere too — it needs no focused node.
-    if (matches(event, S.zoomOut)) {
-      event.preventDefault();
-      store.zoomOut();
-      return;
-    }
-    if (event.target instanceof HTMLElement && event.target.isContentEditable) return;
-    // From here on: no node is being edited.
-    if (event.key === "Escape") {
-      // Escape cascade: clear the tag filter first, then the zoom.
-      if (store.filterTag !== null) store.setFilter(null);
-      else if (store.zoomNode !== null) store.setZoom(null);
-      return;
-    }
-    if (event.key === "?" && !event.metaKey && !event.ctrlKey) {
-      event.preventDefault();
-      overlay = "help";
-      return;
-    }
-    if (matches(event, S.redo)) {
-      event.preventDefault();
-      store.redo();
-      return;
-    }
-    if (matches(event, S.undo)) {
-      event.preventDefault();
-      store.undo();
-    }
+    handleGlobalKeys(event, store, {
+      palette: () => (overlay = "palette"),
+      help: (toggle) => (overlay = toggle && overlay === "help" ? null : "help"),
+      find: () => (overlay = "find"),
+    });
   }
 </script>
 
@@ -155,12 +127,15 @@
 />
 
 {#snippet app()}
-<main>
-  <header>
-    <span class="brandline"><Wordmark />{#if project !== null}<span class="project">| {project.name}</span>{/if}</span>
+<main style:--header-height="{headerHeight}px">
+  <header bind:clientHeight={headerHeight}>
+    <span class="brandline">
+      <span class="brand"><Wordmark />{#if project !== null}<span class="sep" aria-hidden="true">|</span>{/if}</span>
+      {#if project !== null}<span class="project" title={project.name}>{project.name}</span>{/if}
+    </span>
     <div class="actions">
       <button
-        class="find-toggle"
+        class="ghost-button"
         aria-label="Find"
         title="Find — search text or jump to a node id"
         onclick={() => (overlay = "find")}
@@ -172,14 +147,26 @@
         </svg>
       </button>
       <FilterMenu {store} />
-      <button class="clean-up" title="Delete completed tasks and their subtrees" onclick={() => store.clean()}>
-        Clean up
+      <!-- A word on wide screens, an icon on phones (the header must stay one line). -->
+      <button
+        class="ghost-button clean-up"
+        aria-label="Clean up"
+        title="Clean up — delete completed tasks and their subtrees (undoable)"
+        onclick={() => store.clean()}
+      >
+        <!-- lucide eraser -->
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21" />
+          <path d="M22 21H7" />
+          <path d="m5 11 9 9" />
+        </svg>
+        <span class="word" aria-hidden="true">Clean up</span>
       </button>
       <!-- Overview mode: rows show a short derived label instead of their full
            text. Purely a view toggle, so aria-pressed carries the state and the
            accessible name stays put; the icon and tooltip say what a click does. -->
       <button
-        class={["overview-toggle", { on: store.overview }]}
+        class={["ghost-button", "overview-toggle", { on: store.overview }]}
         aria-label="Overview mode"
         aria-pressed={store.overview}
         title={store.overview ? "Show the full text of every item" : "Overview mode — show short labels"}
@@ -193,7 +180,7 @@
         </svg>
       </button>
       <button
-        class="theme-toggle"
+        class="ghost-button"
         aria-label={theme.mode === "dark" ? "Switch to light mode" : "Switch to dark mode"}
         title={theme.mode === "dark" ? "Switch to light mode" : "Switch to dark mode"}
         onclick={() => theme.toggle()}
@@ -211,8 +198,27 @@
           </svg>
         {/if}
       </button>
+      <!-- The palette is the whole command set; on a touch screen this button
+           is the only way in, since there is no ⌘K to press. -->
+      <button
+        class="ghost-button"
+        aria-label="Command palette"
+        title="Command palette ({paletteHint})"
+        onclick={() => (overlay = "palette")}
+      >
+        <!-- lucide command -->
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3" />
+        </svg>
+      </button>
     </div>
   </header>
+
+  {#if store.outlineError !== null}
+    <div class="warning" role="alert">
+      The outline file can't be read, so this view may be out of date and changes won't save: {store.outlineError}
+    </div>
+  {/if}
 
   {#if !store.connected}
     <div class="warning" role="alert">
@@ -229,41 +235,15 @@
     </div>
   {/if}
 
-  {#if store.loadError !== null}
-    <p class="notice">Couldn't load the outline: {store.loadError}</p>
-  {:else if !store.loaded}
-    <p class="notice">Loading…</p>
-  {:else}
-    {#if store.filterTag !== null}
-      <div class="filter-bar">
-        <button
-          class="filter-pill"
-          style:--tag-color={tagColor(store.filterTag, store.meta.tags)}
-          title="Clear filter (Esc)"
-          onclick={() => store.setFilter(null)}
-        >
-          #{store.filterTag} <span class="x" aria-hidden="true">×</span>
-        </button>
-      </div>
-    {/if}
-    <Breadcrumbs {store} rootLabel={project?.name ?? "Home"} />
-    <div class="outline">
-      {#each store.displayRoots as node (node.id)}
-        <OutlineNode {node} {store} />
-      {/each}
-    </div>
-    <button class="tail" onclick={() => store.focusTail()} aria-label="Continue the outline">
-      {#if store.displayRoots.length === 0 && store.filterTag === null}
-        <span>Click here (or press Enter) to start your outline</span>
-      {/if}
-    </button>
-  {/if}
+  <OutlineBody {store} rootLabel={project?.name ?? "Home"} />
 </main>
 
 <!-- In flow after <main>, so under the hub they stay inside the content column. -->
 <HubHint {store} {project} />
 <UpdateChip {store} {project} />
 
+<!-- Keyboard help; hidden on touch screens (see the style), where it covered
+     text and opened a sheet of keys nobody there can press. -->
 <button class="help-button" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)" onclick={() => (overlay = "help")}>?</button>
 
 {#if overlay === "help"}
@@ -282,7 +262,7 @@
   />
 {/if}
 
-<Toast message={store.toast} />
+<Toast toast={store.toast} ondismiss={() => store.dismissToast()} />
 {/snippet}
 
 {#if apiBase !== ""}
@@ -293,7 +273,7 @@
         if (project !== null) project.name = name;
         document.title = `Kalamu | ${name}`;
       }}
-      oncolor={(color) => (markColor = color)}
+      bind:color={markColor}
       refresh={store.outlineChanges}
     />
     <div class="hub-main">{@render app()}</div>
@@ -314,8 +294,9 @@
   }
 
   /* Below the sidebar breakpoint a fixed toggle (Sidebar.svelte) sits in
-     the top-left; keep the wordmark clear of it at narrow widths. */
-  @media (max-width: 999.98px) {
+     the top-left; keep the wordmark clear of it at narrow widths.
+     (Literal breakpoints: see lib/breakpoints.ts.) */
+  @media (max-width: 799.98px) {
     .hub main {
       padding-left: 56px;
     }
@@ -324,69 +305,101 @@
   main {
     max-width: 760px;
     margin: 0 auto;
-    /* Top padding lives on the sticky header. The right side is wider to
-       hold the row's copy and delete buttons (see OutlineNode.svelte). */
-    padding: 0 52px 0 32px;
+    /* Top padding lives on the sticky header. The right side holds the
+       rows' copy and delete buttons (see OutlineNode.svelte). */
+    padding: 0 var(--row-gutter-right) 0 32px;
     min-height: 100vh;
     display: flex;
     flex-direction: column;
-    /* The stuck header's full height (28px + 23px action row + 20px), so the
-       sticky .crumbs in Breadcrumbs.svelte can stack right beneath it. */
-    --header-height: 71px;
   }
 
   header {
     /* Sticks while the outline scrolls. main's old 28px top padding and the
        old 20px margin below both live here as padding, so the opaque
        background reaches the viewport edge with no see-through strips.
-       Sits one above .crumbs (z-index 10 in Breadcrumbs.svelte) so the header's
-       dropdowns cover the trail's progress bar, and below every overlay. */
+       Sits above the breadcrumbs so the header's dropdowns cover the trail's
+       progress bar, and below every overlay. */
     position: sticky;
     top: 0;
-    z-index: 11;
+    z-index: var(--z-header);
     background: var(--bg);
     padding: 28px 0 20px;
+    /* Out into the rows' right gutter as far as their delete buttons reach
+       (OutlineNode.svelte), so the last header action and the row buttons
+       share one right edge. */
+    margin-right: calc(8px - var(--row-gutter-right));
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 12px;
     user-select: none;
+  }
+
+  /* On phones only the header has to clear the toggle; the outline beneath it
+     takes the width back (the outline's own chevron gutter still holds the
+     chevrons). */
+  @media (max-width: 639.98px) {
+    main,
+    .hub main {
+      padding-left: 12px;
+    }
+    /* One line, whatever the project is called: the gutter's row buttons
+       moved into the rows, the name truncates, Clean up is its icon, and the
+       hub drops the wordmark (its drawer carries one). */
+    header {
+      margin-right: 0;
+    }
+    .hub header {
+      padding-left: 44px;
+    }
+    .hub .brand,
+    .clean-up .word {
+      display: none;
+    }
+    /* header-qualified to beat the word-mode rules further down */
+    header button.clean-up {
+      padding: 4px;
+    }
+    header .clean-up svg {
+      display: block;
+    }
   }
 
   .brandline {
     display: flex;
     align-items: center;
+    min-width: 0;
+  }
+
+  .brand {
+    flex: none;
+    display: flex;
+    align-items: center;
+  }
+
+  .sep {
+    margin: 0 0.4em;
+    font-size: 12px;
+    color: var(--muted);
   }
 
   /* Project name stays in the wordmark's muted tone, just less bold. */
   .brandline .project {
-    margin-left: 0.5em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: 12px;
     font-weight: 400;
     letter-spacing: 0.02em;
     color: var(--muted);
   }
 
-  /* Right-aligned header actions; more buttons will land here later. */
+  /* Right-aligned header actions (app.css's .ghost-button). */
   .actions {
+    flex: none;
     display: flex;
     align-items: center;
     gap: 6px;
-  }
-
-  /* Quiet ghost buttons, matching the wordmark's tone. */
-  .actions > button {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 4px;
-    border: none;
-    border-radius: 6px;
-    background: none;
-    color: var(--muted);
-    cursor: pointer;
-  }
-  .actions > button:hover {
-    color: var(--fg);
   }
 
   /* Toggled on: the same soft fill the palette uses for an active row, so the
@@ -396,84 +409,38 @@
     background: color-mix(in srgb, var(--fg) 9%, transparent);
   }
 
+  /* The word, until phones swap it for the icon. */
   button.clean-up {
     font: inherit;
     font-size: 12px;
-    line-height: 1;
+    line-height: 15px;
     padding: 4px 7px;
   }
-
-  .notice {
-    color: var(--muted);
-    font-size: 14px;
+  .clean-up svg {
+    display: none;
   }
 
-  /* Amber warning tones, shared by the offline and branch-drift banners (app.css has no warn token). */
+  /* Amber notices: the offline and branch-drift banners. */
   .warning {
     margin-bottom: 16px;
     padding: 8px 12px;
-    border: 1px solid light-dark(rgba(154, 103, 0, 0.35), rgba(227, 179, 65, 0.35));
+    border: 1px solid var(--warn-border);
     border-radius: 6px;
-    background: light-dark(#fff8e5, rgba(227, 179, 65, 0.12));
-    color: light-dark(#9a6700, #e3b341);
+    background: var(--warn-bg);
+    color: var(--warn-fg);
     font-size: 13px;
   }
 
   .warning code {
-    font-family: ui-monospace, monospace;
+    font-family: var(--font-mono);
     font-size: 12px;
-  }
-
-  .outline {
-    padding-left: 18px; /* gutter for chevrons */
-  }
-
-  .filter-bar {
-    margin: -6px 0 12px;
-  }
-
-  .filter-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    border: none;
-    cursor: pointer;
-    font: inherit;
-    font-size: 12.5px;
-    font-weight: 500;
-    line-height: 1;
-    padding: 5px 10px;
-    border-radius: 999px;
-    color: var(--tag-color);
-    background: color-mix(in srgb, var(--tag-color) 15%, transparent);
-  }
-  .filter-pill:hover {
-    background: color-mix(in srgb, var(--tag-color) 24%, transparent);
-  }
-  .filter-pill .x {
-    font-size: 14px;
-    opacity: 0.7;
-  }
-
-  .tail {
-    flex: 1;
-    min-height: 30vh;
-    display: block;
-    width: 100%;
-    padding: 8px 0 0 36px;
-    border: none;
-    background: none;
-    cursor: text;
-    text-align: left;
-    font: inherit;
-    color: var(--muted);
   }
 
   .help-button {
     position: fixed;
     right: 18px;
     bottom: 18px;
-    z-index: 15;
+    z-index: var(--z-help);
     width: 28px;
     height: 28px;
     border: 1px solid var(--guide);
@@ -488,5 +455,10 @@
   }
   .help-button:hover {
     color: var(--fg);
+  }
+  @media (hover: none) {
+    .help-button {
+      display: none;
+    }
   }
 </style>

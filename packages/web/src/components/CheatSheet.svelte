@@ -57,13 +57,13 @@
   .panel {
     width: 560px;
     max-width: 100%;
-    max-height: 88vh;
+    max-height: calc(100dvh - var(--overlay-top) - 16px);
     overflow-y: auto;
     padding: 18px 22px 22px;
     border-radius: 12px;
     background: var(--panel);
     border: 1px solid var(--guide);
-    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.3);
+    box-shadow: var(--dialog-shadow);
   }
 
   header {
@@ -131,7 +131,7 @@
     border-radius: 4px;
     background: color-mix(in srgb, var(--fg) 7%, transparent);
     border: 1px solid var(--guide);
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-family: var(--font-mono);
     font-size: 11.5px;
     color: var(--fg);
   }

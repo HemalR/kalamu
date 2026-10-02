@@ -33,7 +33,7 @@ afterAll(() => hub.close());
 
 describe("hub install identity", () => {
   it("serves a root-scoped Kalamu manifest in the project's colour", async () => {
-    const res = await hub.app.fetch(new Request("http://h/p/acme/manifest.webmanifest"));
+    const res = await hub.app.fetch(new Request("http://localhost/p/acme/manifest.webmanifest"));
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("application/manifest+json");
     const manifest = (await res.json()) as Record<string, unknown>;
@@ -50,7 +50,7 @@ describe("hub install identity", () => {
   });
 
   it("serves the icon SVG in the project's colour", async () => {
-    const res = await hub.app.fetch(new Request("http://h/p/acme/icon.svg"));
+    const res = await hub.app.fetch(new Request("http://localhost/p/acme/icon.svg"));
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("image/svg+xml");
     const svg = await res.text();
@@ -59,8 +59,8 @@ describe("hub install identity", () => {
   });
 
   it("404s for an unregistered project", async () => {
-    const manifest = await hub.app.fetch(new Request("http://h/p/ghost/manifest.webmanifest"));
-    const icon = await hub.app.fetch(new Request("http://h/p/ghost/icon.svg"));
+    const manifest = await hub.app.fetch(new Request("http://localhost/p/ghost/manifest.webmanifest"));
+    const icon = await hub.app.fetch(new Request("http://localhost/p/ghost/icon.svg"));
     expect(manifest.status).toBe(404);
     expect(icon.status).toBe(404);
   });

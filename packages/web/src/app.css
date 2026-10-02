@@ -1,60 +1,5 @@
-/*
- * Theme + base styles. Light and dark follow the system by default;
- * lib/theme.svelte.ts sets data-theme on the root element to override
- * (SPEC "UI principles").
- */
-
-:root {
-  color-scheme: light dark;
-  --bg: light-dark(#ffffff, #17191d);
-  --panel: light-dark(#ffffff, #24272d);
-  --fg: light-dark(#24292f, #e3e6ea);
-  --muted: light-dark(#8b939c, #757e88);
-  --done: light-dark(#a8afb8, #5f6771);
-  --bullet: light-dark(#b7bec7, #5c646e);
-  --ring: light-dark(rgba(70, 80, 90, 0.18), rgba(190, 200, 210, 0.2));
-  /* Tint for the one row holding the text caret, so "where am I" stays visible.
-     Deliberately lighter than --ring: it must not read as a selection. */
-  --caret-row: light-dark(rgba(70, 80, 90, 0.07), rgba(190, 200, 210, 0.075));
-  --check-border: light-dark(#aab2bb, #5c646e);
-  --guide: light-dark(rgba(20, 30, 40, 0.09), rgba(220, 230, 240, 0.09));
-  /* Brand accent (bronze ink) — the wordmark's k and the favicon. Lightened
-     in dark mode for contrast. */
-  --brand: light-dark(#9a6a2e, #d0a256);
-  /* Task state beyond done: a claimed task in progress (startedAt) and one
-     waiting on an open blocker (blockedBy). Started is the same amber as
-     --progress-active below, because both mean "claimed but unfinished" — the
-     checkbox's pulsing dot and the active progress dash should speak one
-     colour, not two. That amber does sit close to the brand bronze; what keeps
-     it from reading as chrome is that it only ever appears on a work item's own
-     glyph, and on the started checkbox it breathes. Blocked stays well clear of
-     both. */
-  --started: light-dark(#c08a3e, #c99a4f);
-  --blocked: light-dark(#b04b3c, #e0897c);
-  /* Human-assigned work is what the reader scans a long outline *for* — agents
-     skip those rows, so they are the only ones they must find — which is why it
-     gets a hue nothing else in the app uses: clear of the blocked red, the
-     started amber, the brand bronze and the done green, and still legible as
-     badge text at 11.5px. Lightened in dark mode, where the light-mode blue
-     sinks into the ground. */
-  --assigned-human: light-dark(#2f6fd0, #8ab4f8);
-  /* Segmented progress dashes. Done reads at full saturation — at this size a
-     muted green disappeared into the row it was meant to report on. Lifted in
-     dark mode, where the same hue sits duller against the ground. Active stays
-     quieter: it is the transient state, and two loud colours in one strip read
-     as an alarm. Unfilled dashes reuse --ring. */
-  --progress-done: light-dark(#00bd7d, #12ce8c);
-  --progress-active: light-dark(#c08a3e, #c99a4f);
-  --toast-bg: light-dark(#24292f, #e3e6ea);
-  --toast-fg: light-dark(#f6f8fa, #17191d);
-}
-
-:root[data-theme="light"] {
-  color-scheme: light;
-}
-:root[data-theme="dark"] {
-  color-scheme: dark;
-}
+/* Base styles for the app shell; the tokens live in tokens.css. */
+@import "./tokens.css";
 
 * {
   margin: 0;
@@ -80,9 +25,48 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Experiment: monospace for the outline text only (editing and display —
-   chips, badges, and the rest of the chrome keep the UI font). */
-.node .text {
-  font-family: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
-  font-size: 13.5px;
+/* Quiet icon button in the wordmark's tone: the header actions, the filter
+   trigger and the hub's drawer toggle. */
+.ghost-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.ghost-button:hover {
+  color: var(--fg);
+}
+
+/* Touch: a 33px hit area around the 23px icon, drawn past the button so the
+   header keeps its spacing. Positioned only here — the hub's drawer toggle
+   is position: fixed, and its own (more specific) rule keeps it that way. */
+@media (pointer: coarse) {
+  .ghost-button {
+    position: relative;
+  }
+  .ghost-button::after {
+    content: "";
+    position: absolute;
+    inset: -5px;
+  }
+}
+
+/* Reduced motion: every transition and animation collapses to an instant
+   change — the rotations, the toast's rise, swatch scaling. A claimed task's
+   pulsing dot simply holds still (NodeGlyph also stops it for the embed, which
+   has no app.css). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

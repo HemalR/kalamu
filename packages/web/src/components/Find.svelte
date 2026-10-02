@@ -1,6 +1,6 @@
 <script lang="ts">
   import { pathOf, searchNodes } from "@kalamu/core";
-  import { parseFindIntent, resolveNodeId } from "../lib/find";
+  import { matchExcerpt, parseFindIntent, resolveNodeId, type Excerpt } from "../lib/find";
   import type { OutlineStore } from "../lib/outline.svelte";
   import { candidateLabel } from "../lib/task-state";
   import Overlay from "./Overlay.svelte";
@@ -26,6 +26,8 @@
   interface Hit {
     id: string;
     label: string;
+    /** Text hits: the node text around the match, for highlighting. */
+    excerpt?: Excerpt;
     path: string;
     /** An id query zooms (follows the kalamu link); text search reveals in place. */
     via: "id" | "text";
@@ -48,6 +50,7 @@
       hits: searchNodes(store.nodes, intent.needle).map((node) => ({
         id: node.id,
         label: candidateLabel(node),
+        excerpt: matchExcerpt(node.text, intent.needle) ?? undefined,
         path: pathOf(store.tree, node).join(" › "),
         via: "text" as const,
       })),
@@ -159,7 +162,9 @@
             tabindex="-1"
             onclick={() => go(hit)}
           >
-            <span class="label">{hit.label}</span>
+            <span class="label">
+              {#if hit.excerpt}{hit.excerpt.before}<mark>{hit.excerpt.match}</mark>{hit.excerpt.after}{:else}{hit.label}{/if}
+            </span>
             {#if hit.path !== ""}<span class="path">{hit.path}</span>{/if}
           </button>
         {/each}
@@ -172,14 +177,14 @@
   .panel {
     width: 460px;
     max-width: 100%;
-    max-height: 70vh;
+    max-height: calc(100dvh - var(--overlay-top) - 16px);
     display: flex;
     flex-direction: column;
     padding: 10px;
     border-radius: 12px;
     background: var(--panel);
     border: 1px solid var(--guide);
-    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.3);
+    box-shadow: var(--dialog-shadow);
     outline: none;
   }
 
@@ -232,6 +237,14 @@
     white-space: nowrap;
     max-width: 100%;
     font-size: 14.5px;
+  }
+
+  /* The matched substring: the brand ink at a tint, so it reads as "here"
+     without shouting over the row. */
+  mark {
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--brand) 22%, transparent);
+    color: inherit;
   }
 
   .path {

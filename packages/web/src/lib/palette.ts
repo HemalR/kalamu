@@ -19,6 +19,7 @@ export const LEADER_KEYS = {
 /** Keys held as their `event.key` name print as the glyph they are. */
 const KEY_BADGES: Readonly<Record<string, string>> = {
   ArrowUp: "↑",
+  ArrowDown: "↓",
   ArrowLeft: "←",
   ArrowRight: "→",
 };

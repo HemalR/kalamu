@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseFindIntent, resolveNodeId } from "../src/lib/find";
+import { matchExcerpt, parseFindIntent, resolveNodeId } from "../src/lib/find";
 
 describe("parseFindIntent", () => {
   it("treats whitespace-only as empty", () => {
@@ -53,5 +53,20 @@ describe("resolveNodeId", () => {
 
   it("returns null when the token is not in the tree", () => {
     expect(resolveNodeId("n_404", ids)).toBeNull();
+  });
+});
+
+describe("matchExcerpt", () => {
+  it("keeps short text whole and splits out the match case-insensitively", () => {
+    expect(matchExcerpt("Fix the Login bug", "login")).toEqual({ before: "Fix the ", match: "Login", after: " bug" });
+  });
+
+  it("starts a long text's window shortly before the match, at a word", () => {
+    const text = "A very long preamble that goes on and on before the needle finally appears";
+    expect(matchExcerpt(text, "needle")).toEqual({ before: "…on and on before the ", match: "needle", after: " finally appears" });
+  });
+
+  it("is null without a match", () => {
+    expect(matchExcerpt("Fix the login bug", "signup")).toBeNull();
   });
 });

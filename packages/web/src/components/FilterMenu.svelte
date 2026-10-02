@@ -1,6 +1,8 @@
 <script lang="ts">
-  import { ASSIGNEE_VALUES, CREATED_BY_VALUES, type AssigneeFilter } from "../lib/filter";
+  import { ASSIGNEE_VALUES, CREATED_BY_VALUES } from "../lib/filter";
   import type { OutlineStore } from "../lib/outline.svelte";
+  import { dismissable, takeFocus } from "../lib/popover";
+  import { ASSIGNEE_NAMES } from "../lib/vocab";
 
   interface Props {
     store: OutlineStore;
@@ -8,57 +10,28 @@
 
   let { store }: Props = $props();
 
-  /** Same wording as the palette's Assign level, so all the surfaces read alike. */
-  const LABELS: Record<AssigneeFilter, string> = {
-    human: "Human",
-    agent: "Agent",
-    unassigned: "Unassigned",
-  };
-
   let open = $state(false);
-  let wrap = $state<HTMLElement>();
-  let trigger = $state<HTMLButtonElement>();
-
-  /** Closing on purpose (Escape, or the trigger again) hands focus back to the button. */
-  function dismiss(): void {
-    open = false;
-    trigger?.focus();
-  }
-
-  /** Outside click: close, and let the click land wherever it was aimed. */
-  function onWindowPointerDown(event: PointerEvent): void {
-    if (wrap && event.target instanceof Node && !wrap.contains(event.target)) open = false;
-  }
-
-  /**
-   * Escape closes the menu and nothing else: App's window handler would
-   * otherwise read the same keypress as "clear the tag filter, then zoom out".
-   */
-  function onMenuKeydown(event: KeyboardEvent): void {
-    if (event.key !== "Escape" || event.isComposing) return;
-    event.stopPropagation();
-    dismiss();
-  }
 
   /** Tabbing (or clicking) out of the menu closes it, without stealing focus back. */
-  function onFocusOut(event: FocusEvent): void {
+  function onFocusOut(event: FocusEvent & { currentTarget: HTMLElement }): void {
     const next = event.relatedTarget;
-    if (next instanceof Node && wrap?.contains(next)) return;
+    if (next instanceof Node && event.currentTarget.contains(next)) return;
     open = false;
   }
 </script>
 
-<svelte:window onpointerdown={open ? onWindowPointerDown : undefined} />
-
-<div class="wrap" bind:this={wrap} onfocusout={open ? onFocusOut : undefined}>
+<div
+  class="wrap"
+  onfocusout={open ? onFocusOut : undefined}
+  {@attach open && dismissable(() => (open = false))}
+>
   <button
-    class={["trigger", { filtering: store.filtering }]}
+    class={["ghost-button", "trigger", { filtering: store.filtering }]}
     aria-label={store.filtering ? "Filters (active)" : "Filters"}
     aria-haspopup="dialog"
     aria-expanded={open}
     title={store.filtering ? "Filters — some items are hidden" : "Filter items"}
-    bind:this={trigger}
-    onclick={() => (open ? dismiss() : (open = true))}
+    onclick={() => (open = !open)}
   >
     <!-- funnel -->
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -68,18 +41,10 @@
   </button>
 
   {#if open}
-    <!-- Escape is handled here rather than on window so it can be swallowed
-         before App's global handler reads it as "clear filter / zoom out".
-         The panel itself takes focus on open, which both makes that work and
-         keeps a click on a label's text from blurring out of the menu. -->
-    <div
-      class="menu"
-      role="dialog"
-      aria-label="Filters"
-      tabindex="-1"
-      onkeydown={onMenuKeydown}
-      {@attach (element: HTMLElement) => element.focus()}
-    >
+    <!-- The panel itself takes focus on open (and hands it back to the
+         trigger on close), which keeps a click on a label's text from blurring
+         out of the menu. -->
+    <div class="menu" role="dialog" aria-label="Filters" tabindex="-1" {@attach takeFocus()}>
       <fieldset>
         <legend>Created by</legend>
         {#each CREATED_BY_VALUES as value (value)}
@@ -88,11 +53,11 @@
                  accessible names distinct without repeating the words on screen. -->
             <input
               type="checkbox"
-              aria-label="Created by {LABELS[value]}"
+              aria-label="Created by {ASSIGNEE_NAMES[value]}"
               checked={store.showsCreatedBy(value)}
               onchange={() => store.toggleCreatedByFilter(value)}
             />
-            <span>{LABELS[value]}</span>
+            <span>{ASSIGNEE_NAMES[value]}</span>
           </label>
         {/each}
       </fieldset>
@@ -103,11 +68,11 @@
           <label>
             <input
               type="checkbox"
-              aria-label="Assigned to {LABELS[value]}"
+              aria-label="Assigned to {ASSIGNEE_NAMES[value]}"
               checked={store.showsAssignee(value)}
               onchange={() => store.toggleAssigneeFilter(value)}
             />
-            <span>{LABELS[value]}</span>
+            <span>{ASSIGNEE_NAMES[value]}</span>
           </label>
         {/each}
         <p class="note">Only tasks are assigned, so this never hides bullets or discussions.</p>
@@ -134,20 +99,10 @@
     display: flex;
   }
 
-  /* Matches App's quiet ghost header buttons (scoped styles can't reach here). */
+  /* app.css's .ghost-button, lit while filtering. */
   .trigger {
     position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 4px;
-    border: none;
-    border-radius: 6px;
-    background: none;
-    color: var(--muted);
-    cursor: pointer;
   }
-  .trigger:hover,
   .trigger.filtering {
     color: var(--fg);
   }
@@ -168,13 +123,13 @@
     position: absolute;
     top: calc(100% + 6px);
     right: 0;
-    z-index: 10;
+    z-index: var(--z-menu);
     min-width: 200px;
     padding: 8px;
     border-radius: 8px;
     background: var(--panel);
     border: 1px solid var(--guide);
-    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.16);
+    box-shadow: var(--menu-shadow);
     text-align: left;
   }
   /* The panel takes focus on open purely as a keyboard anchor — no ring. */
@@ -212,7 +167,17 @@
     white-space: nowrap;
   }
   label:hover {
-    background: color-mix(in srgb, var(--fg) 7%, transparent);
+    background: var(--hover-tint);
+  }
+
+  /* Touch: rows tall enough to hit (≥32px). */
+  @media (pointer: coarse) {
+    label {
+      padding-block: 8px;
+    }
+    .reset {
+      padding-block: 10px;
+    }
   }
 
   input {

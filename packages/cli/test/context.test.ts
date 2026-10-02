@@ -1,8 +1,9 @@
-/** The off-default-branch warning (SPEC key decision 20) reaches stderr from any command — for a repo-store outline. */
+/** Project resolution as every command sees it: the off-default-branch warning, a local store's missing data. */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { pathsFor } from "@kalamu/core/store";
 import * as commands from "../src/commands.js";
 
 let cwd: string;
@@ -46,6 +47,24 @@ describe("off-default-branch warning", () => {
       commands.list(local, {});
       expect(stderr).not.toHaveBeenCalled();
     } finally {
+      rmSync(local, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("a local-store project whose data is missing here", () => {
+  it("names the project id, the data home and where that came from, and warns off a reflexive init", () => {
+    const local = mkdtempSync(join(tmpdir(), "kalamu-context-local-"));
+    process.env.KALAMU_DATA_DIR = join(local, "sandbox-data");
+    try {
+      commands.init(local);
+      const { id, dir } = pathsFor(local);
+      rmSync(dir, { recursive: true });
+      expect(() => commands.list(local, {})).toThrow(
+        new RegExp(`project ${id} in data home ${join(local, "sandbox-data")} \\(set by KALAMU_DATA_DIR\\).*only for a genuinely fresh project`),
+      );
+    } finally {
+      delete process.env.KALAMU_DATA_DIR;
       rmSync(local, { recursive: true, force: true });
     }
   });

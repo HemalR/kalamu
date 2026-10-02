@@ -44,9 +44,9 @@ describe("kalamu start / end", () => {
 
   it("renders a distinct glyph for a claimed task", () => {
     const id = addTask("in flight");
-    expect(commands.list(cwd, {}).text).toContain("☐ p2 in flight");
+    expect(commands.list(cwd, {}).text).toContain("☐ in flight");
     commands.start(cwd, id);
-    expect(commands.list(cwd, {}).text).toContain("▶ p2 in flight");
+    expect(commands.list(cwd, {}).text).toContain("▶ in flight");
   });
 
   it("claims a discussion and hides it from next --discussion until ended", () => {

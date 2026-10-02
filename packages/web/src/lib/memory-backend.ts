@@ -3,6 +3,11 @@
  * same pure @kalamu/core operations the CLI server runs (see
  * packages/cli/src/server.ts), but against a private nodes array — no server,
  * no persistence, resets on reload. Plain TS, no Svelte.
+ *
+ * Versions mimic the server's (SPEC "Outline version"): a counter bumped by
+ * every write, which replaceNodes checks, so the store's conflict handling
+ * runs here exactly as it does against a real file. Tests play an outside
+ * writer by calling a backend method directly.
  */
 import {
   addBlocker,
@@ -23,11 +28,18 @@ import {
   type KalamuMeta,
   type KalamuNode,
 } from "@kalamu/core";
-import { ApiError, type Backend } from "./api";
+import { ApiError, type Backend, type WrittenVersion } from "./api";
 
 export function createMemoryBackend(seed: KalamuNode[]): Backend {
   let nodes: KalamuNode[] = preorder(buildTree(structuredClone(seed)));
   let meta: KalamuMeta = { version: 1 };
+  let version = 0;
+  let written: WrittenVersion | null = null;
+  /** Every outline write lands here: new nodes, a new version for the store to take. */
+  const commit = (next: KalamuNode[]): void => {
+    nodes = next;
+    written = { base: String(version), version: String(++version) };
+  };
   // Deterministic ids, distinct from core's random n_<time><random> ones —
   // the store adopts the returned id, so it must be the node's final id.
   let counter = 0;
@@ -39,15 +51,22 @@ export function createMemoryBackend(seed: KalamuNode[]): Backend {
   };
 
   return {
-    getNodes: async () => ({ nodes: structuredClone(nodes) }),
+    getNodes: async () => ({ nodes: structuredClone(nodes), version: String(version) }),
 
     // Whole-outline replace (undo/redo, split/merge, clean). Like the server:
-    // validate first, then store canonical pre-order.
-    replaceNodes: async (next) => {
+    // validate, refuse a stale version, then store canonical pre-order.
+    replaceNodes: async (next, expected) => {
       const validation = validateOutline(serializeJsonl(next));
       if (!validation.valid) throw new ApiError(validation.errors[0] ?? "invalid outline", 400);
-      nodes = preorder(buildTree(structuredClone(next)));
-      return { nodes: structuredClone(nodes) };
+      if (expected !== String(version)) throw new ApiError("outline changed since it was loaded", 409, "conflict");
+      commit(preorder(buildTree(structuredClone(next))));
+      return { nodes: structuredClone(nodes), version: String(version) };
+    },
+
+    takeVersion: () => {
+      const taken = written;
+      written = null;
+      return taken;
     },
 
     createNode: async (body) => {
@@ -56,7 +75,6 @@ export function createMemoryBackend(seed: KalamuNode[]): Backend {
         kind: body.kind,
         text: body.text,
         priority: body.priority,
-        tags: body.tags,
         assignee: body.assignee,
         afterId: body.afterId,
         beforeId: body.beforeId,
@@ -64,37 +82,37 @@ export function createMemoryBackend(seed: KalamuNode[]): Backend {
       // addNode mints its own id; rename to the demo counter id (the new node
       // has no children yet, so only the node itself needs the swap).
       const node: KalamuNode = { ...added.node, id: nextId() };
-      nodes = added.nodes.map((n) => (n.id === added.node.id ? node : n));
+      commit(added.nodes.map((n) => (n.id === added.node.id ? node : n)));
       return node;
     },
 
     patchNode: async (id, body) => {
       const result = updateNode(nodes, id, body);
-      nodes = result.nodes;
+      commit(result.nodes);
       return result.node;
     },
 
     deleteNode: async (id, recursive) => {
       const result = deleteNode(nodes, id, { recursive });
-      nodes = result.nodes;
+      commit(result.nodes);
       return { id, deleted: result.deletedCount };
     },
 
     moveNode: async (id, body) => {
       const result = moveNode(nodes, id, body);
-      nodes = result.nodes;
+      commit(result.nodes);
       return result.node;
     },
 
     markDone: async (id) => {
       const result = markDone(nodes, id);
-      nodes = result.nodes;
+      commit(result.nodes);
       return result.node;
     },
 
     reopen: async (id) => {
       const result = reopen(nodes, id);
-      nodes = result.nodes;
+      commit(result.nodes);
       return result.node;
     },
 
@@ -103,25 +121,25 @@ export function createMemoryBackend(seed: KalamuNode[]): Backend {
     // the store's queue turns the message into a toast.
     startTask: async (id, force) => {
       const result = startTask(nodes, id, { force });
-      nodes = result.nodes;
+      commit(result.nodes);
       return result.node;
     },
 
     endTask: async (id) => {
       const result = endTask(nodes, id);
-      nodes = result.nodes;
+      commit(result.nodes);
       return result.node;
     },
 
     addBlocker: async (id, blockerId) => {
       const result = addBlocker(nodes, id, blockerId);
-      nodes = result.nodes;
+      commit(result.nodes);
       return result.node;
     },
 
     removeBlocker: async (id, blockerId) => {
       const result = removeBlocker(nodes, id, blockerId);
-      nodes = result.nodes;
+      commit(result.nodes);
       return result.node;
     },
 

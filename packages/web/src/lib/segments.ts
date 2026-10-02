@@ -108,6 +108,11 @@ function trimUrl(url: string): string {
   }
 }
 
+/** Chip and menu labels show a path's file name; the full path lives in the title. */
+export function basename(path: string): string {
+  return path.slice(path.lastIndexOf("/") + 1);
+}
+
 /** The browser-visible URL for an asset path stored in node text. */
 export function assetUrl(path: string): string {
   return path.replace(/^\.kalamu\/assets\//, `${apiBase}/assets/`);

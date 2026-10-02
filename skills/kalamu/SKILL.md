@@ -87,6 +87,22 @@ kalamu link <id>               # copy-ready named deep link for a human
 
 `next --format json` returns the task plus its full context: `ancestors` (the direct chain above it, root-first) and `descendants` (the task's own subtree — often repro notes or sub-steps left by the developer). Read them before starting.
 
+### Exit codes and errors
+
+`0` ok · `1` error · `2` nothing to do (`next`) · `3` conflict: another writer
+kept changing the outline — rerun the same command. With `--format json` an
+error is still one JSON document on stdout:
+`{"error": {"message": "...", "code": "..."}}`, where `code` is `not-found`,
+`cycle`, `conflict`, `invalid-outline`, or `error`.
+
+- `invalid-outline`: the file has broken lines or a broken tree, and Kalamu
+  refuses to write until it is fixed. Run `kalamu validate`, then tell the
+  human; do not hand-edit the file unless they ask you to.
+- "no outline for project … in data home …": this project keeps its outline
+  outside the repo, and your process is looking in a different data home (a
+  sandbox, another account). Never run `kalamu init` to make the error go away
+  — that starts a second, empty outline. Tell the human what the message says.
+
 ### Claim before you work
 
 ```bash

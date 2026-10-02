@@ -46,6 +46,7 @@ export class OutlineStore extends OutlineViewState {
     try {
       const [nodesResult, meta, uiState] = await Promise.all([api.getNodes(), api.getMeta(), api.getUiState()]);
       this.nodes = nodesResult.nodes;
+      this.version = nodesResult.version;
       this.meta = meta;
       for (const id of uiState.collapsed) this.collapsed.add(id);
       this.hideDone = uiState.hideDone ?? false;
@@ -155,7 +156,7 @@ export class OutlineStore extends OutlineViewState {
       },
       // Whole-outline replace (like undo/clean): the server keeps client ids,
       // so the new node needs no adoption.
-      () => api.replaceNodes(this.serverize(next)),
+      () => this.replaceAll(next),
     );
     if (applied) this.revealNewNode(localId);
   }
@@ -188,7 +189,7 @@ export class OutlineStore extends OutlineViewState {
       },
       // Whole-outline replace (like splitNode): the server keeps client ids,
       // so the new nodes need no adoption.
-      () => api.replaceNodes(this.serverize(next)),
+      () => this.replaceAll(next),
     );
     if (!applied) return;
     if (asZoomRoot) this.unfold(id);
@@ -210,7 +211,7 @@ export class OutlineStore extends OutlineViewState {
         return next;
       },
       // Whole-outline replace (like splitNode): the server keeps client ids.
-      () => api.replaceNodes(this.serverize(next)),
+      () => this.replaceAll(next),
     );
     if (!applied) return;
     this.unfold(node.id);
@@ -250,7 +251,7 @@ export class OutlineStore extends OutlineViewState {
         return next;
       },
       // Whole-outline replace (like splitNode): the server keeps client ids.
-      () => api.replaceNodes(this.serverize(next)),
+      () => this.replaceAll(next),
     );
     if (!applied) return;
     // Expand the target so adopted children don't vanish into a fold.
@@ -406,13 +407,42 @@ export class OutlineStore extends OutlineViewState {
     );
   }
 
+  // ---- structure: each move has a target finder, shared by the move and the
+  // palette's Move… level (which greys a row whose move would be inert) ------
+
+  /** The sibling `id` would swap with (delta -1 = previous); undefined when the move is inert. */
+  private siblingOf(id: string, delta: -1 | 1): KalamuNode | undefined {
+    if (this.zoomNode?.id === id) return undefined; // its siblings aren't rendered
+    const node = this.tree.byId.get(id);
+    if (!node) return undefined;
+    const siblings = this.tree.children.get(node.parentId) ?? [];
+    return siblings[siblings.findIndex((s) => s.id === id) + delta];
+  }
+
+  /** The parent `id` would outdent past; undefined when outdent is inert. */
+  private outdentParent(id: string): KalamuNode | undefined {
+    const node = this.tree.byId.get(id);
+    if (!node || node.parentId === null) return undefined;
+    // Refuse when the move would leave the zoomed subtree.
+    if (this.zoomNode !== null && (id === this.zoomNode.id || node.parentId === this.zoomNode.id)) return undefined;
+    return this.tree.byId.get(node.parentId);
+  }
+
+  canIndent(id: string): boolean {
+    return this.siblingOf(id, -1) !== undefined;
+  }
+
+  canOutdent(id: string): boolean {
+    return this.outdentParent(id) !== undefined;
+  }
+
+  canMoveBySibling(id: string, delta: -1 | 1): boolean {
+    return this.siblingOf(id, delta) !== undefined;
+  }
+
   /** Tab: become the last child of the previous sibling. */
   indent(id: string): boolean {
-    if (this.zoomNode?.id === id) return false; // its siblings aren't rendered
-    const node = this.tree.byId.get(id);
-    if (!node) return false;
-    const siblings = this.tree.children.get(node.parentId) ?? [];
-    const target = siblings[siblings.findIndex((s) => s.id === id) - 1];
+    const target = this.siblingOf(id, -1);
     if (!target) return false;
     const applied = this.mutate(
       (nodes) => moveNode(nodes, id, { parentId: target.id }).nodes,
@@ -425,11 +455,7 @@ export class OutlineStore extends OutlineViewState {
 
   /** Shift+Tab: become the sibling immediately after the current parent. */
   outdent(id: string): boolean {
-    const node = this.tree.byId.get(id);
-    if (!node || node.parentId === null) return false;
-    // Refuse when the move would leave the zoomed subtree.
-    if (this.zoomNode !== null && (id === this.zoomNode.id || node.parentId === this.zoomNode.id)) return false;
-    const parent = this.tree.byId.get(node.parentId);
+    const parent = this.outdentParent(id);
     if (!parent) return false;
     return this.mutate(
       (nodes) => moveNode(nodes, id, { parentId: parent.parentId, afterId: parent.id }).nodes,
@@ -443,11 +469,7 @@ export class OutlineStore extends OutlineViewState {
 
   /** Cmd/Ctrl+ArrowUp/Down: swap with the previous/next sibling. */
   moveBySibling(id: string, delta: -1 | 1): boolean {
-    if (this.zoomNode?.id === id) return false; // its siblings aren't rendered
-    const node = this.tree.byId.get(id);
-    if (!node) return false;
-    const siblings = this.tree.children.get(node.parentId) ?? [];
-    const target = siblings[siblings.findIndex((s) => s.id === id) + delta];
+    const target = this.siblingOf(id, delta);
     if (!target) return false;
     return this.mutate(
       (nodes) => moveNode(nodes, id, delta === -1 ? { beforeId: target.id } : { afterId: target.id }).nodes,
@@ -465,8 +487,13 @@ export class OutlineStore extends OutlineViewState {
     this.deleteAndRefocus(id, false);
   }
 
+  /** The explicit delete (row button, Mod+Shift+Backspace): toasts what went, with an Undo. */
   deleteSubtree(id: string): void {
-    this.deleteAndRefocus(id, true);
+    if (!this.tree.byId.has(id)) return;
+    const count = subtreeIds(this.tree, id).size;
+    if (this.deleteAndRefocus(id, true)) {
+      this.showToast(count === 1 ? "Deleted 1 item" : `Deleted ${count} items`, this.undoAction());
+    }
   }
 
   /** Mod+C or the row button: copy the node's ancestor path and subtree for an agent chat. */
@@ -489,8 +516,9 @@ export class OutlineStore extends OutlineViewState {
     );
   }
 
-  private deleteAndRefocus(id: string, recursive: boolean): void {
-    if (!this.tree.byId.has(id)) return;
+  /** False when nothing was deleted. */
+  private deleteAndRefocus(id: string, recursive: boolean): boolean {
+    if (!this.tree.byId.has(id)) return false;
     const fallback = this.neighborOf(id);
     // Deleting the zoom root must not leave the view zoomed on a ghost:
     // capture its parent before the mutate and land the zoom there.
@@ -500,13 +528,12 @@ export class OutlineStore extends OutlineViewState {
       (nodes) => deleteNode(nodes, id, { recursive }).nodes,
       () => api.deleteNode(this.serverId(id), recursive),
     );
-    if (!applied) return;
+    if (!applied) return false;
     if (wasZoomRoot) {
       this.setZoom(zoomParent);
       if (zoomParent !== null) void this.focus(zoomParent, "end");
-      return;
-    }
-    if (fallback !== null) void this.focus(fallback, "end");
+    } else if (fallback !== null) void this.focus(fallback, "end");
+    return true;
   }
 
   /**
@@ -536,7 +563,7 @@ export class OutlineStore extends OutlineViewState {
       // mutate runs the callback synchronously, so the guard's result is still current.
       () => result.nodes,
       // Whole-outline replace, exactly like undo/redo's restore.
-      () => api.replaceNodes(this.serverize(result.nodes)),
+      () => this.replaceAll(result.nodes),
     );
     const { removed, doneTasks, doneBullets, doneDiscussions, blankNodes } = result;
     // Same wording as the CLI's clean output (SPEC), with proper plurals.
@@ -546,7 +573,7 @@ export class OutlineStore extends OutlineViewState {
       doneDiscussions > 0 ? `${doneDiscussions} done discussion${doneDiscussions === 1 ? "" : "s"}` : "",
       blankNodes > 0 ? `${blankNodes} blank node${blankNodes === 1 ? "" : "s"}` : "",
     ].filter(Boolean).join(", ");
-    this.showToast(`Deleted ${removed.length} node${removed.length === 1 ? "" : "s"} (${detail})`);
+    this.showToast(`Deleted ${removed.length} node${removed.length === 1 ? "" : "s"} (${detail})`, this.undoAction());
   }
 
   // ---- tags -------------------------------------------------------------------

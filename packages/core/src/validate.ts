@@ -29,23 +29,9 @@ export function validateOutline(content: string, options: ValidateOptions = {}):
     errors.push(`line ${err.line}: ${err.message}`);
   }
 
-  const seen = new Set<string>();
-  for (const node of parsed.nodes) {
-    if (seen.has(node.id)) errors.push(`duplicate id ${node.id}`);
-    seen.add(node.id);
-  }
+  errors.push(...structuralErrors(parsed.nodes));
 
   const byId = new Map(parsed.nodes.map((n) => [n.id, n]));
-  for (const node of parsed.nodes) {
-    if (node.parentId !== null && !byId.has(node.parentId)) {
-      errors.push(`${node.id} has missing parent ${node.parentId}`);
-    }
-  }
-
-  for (const cycleId of findCycles(parsed.nodes)) {
-    errors.push(`${cycleId} is part of a parent cycle`);
-  }
-
   for (const node of parsed.nodes) {
     for (const blockerId of node.blockedBy ?? []) {
       if (blockerId === node.id) errors.push(`${node.id} is blocked by itself`);
@@ -82,6 +68,31 @@ export function validateOutline(content: string, options: ValidateOptions = {}):
     errors,
     warnings,
   };
+}
+
+/**
+ * The errors that make `buildTree` silently drop nodes — duplicate ids,
+ * missing parents, parent cycles. The store refuses to read an outline that
+ * has any (SPEC "Concurrency"): the next write would serialize the tree and
+ * delete the dropped nodes. Blocker errors are not structural; they never
+ * lose data, and the commands that fix them must still be able to write.
+ */
+export function structuralErrors(nodes: readonly KalamuNode[]): string[] {
+  const errors: string[] = [];
+  const seen = new Set<string>();
+  for (const node of nodes) {
+    if (seen.has(node.id)) errors.push(`duplicate id ${node.id}`);
+    seen.add(node.id);
+  }
+  for (const node of nodes) {
+    if (node.parentId !== null && !seen.has(node.parentId)) {
+      errors.push(`${node.id} has missing parent ${node.parentId}`);
+    }
+  }
+  for (const cycleId of findCycles(nodes)) {
+    errors.push(`${cycleId} is part of a parent cycle`);
+  }
+  return errors;
 }
 
 /**

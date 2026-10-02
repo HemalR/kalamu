@@ -50,21 +50,22 @@ import { ensureAgentDocs } from "./agent-docs.js";
 import { hubBaseUrl } from "./config.js";
 import { CliError, findDoc, looksLikeRepo, resolvePaths, type CommandResult } from "./context.js";
 import { ensureGitignore, IGNORE_ENTRIES } from "./gitignore.js";
-import { createNodeLink, type NodeLink } from "./link.js";
-import { readRegistry, registerProject, slugFor } from "./registry.js";
+import { createNodeLink } from "./link.js";
+import { registerProject, slugFor } from "./registry.js";
 import { glyphFor, prefixFor, renderOutline, suffixFor } from "./render.js";
 import { seedTour } from "./tour.js";
 import { ensureWayfinderDocs } from "./wayfinder-docs.js";
 
 export type Priority = 1 | 2 | 3;
 
+/** `--p`: 1-3, plus "default" where clearing is allowed (`update`). */
+export function parsePriority(value: string, allowDefault: true): Priority | "default";
+export function parsePriority(value: string, allowDefault: false): Priority;
 export function parsePriority(value: string, allowDefault: boolean): Priority | "default" {
   if (allowDefault && value === "default") return "default";
   const n = Number(value);
-  if (!Number.isInteger(n) || n < 1 || n > 3) {
-    throw new CliError(`invalid priority "${value}" — use 1 (high), 2 (medium) or 3 (low)${allowDefault ? ' or "default"' : ""}`);
-  }
-  return n as Priority;
+  if (n === 1 || n === 2 || n === 3) return n;
+  throw new CliError(`invalid priority "${value}" — use 1 (high), 2 (medium) or 3 (low)${allowDefault ? ' or "default"' : ""}`);
 }
 
 export function parseKind(value: string): NodeKind {
@@ -74,6 +75,9 @@ export function parseKind(value: string): NodeKind {
   return value;
 }
 
+/** `--assign`/`--assignee`: human or agent, plus "none" (null) where clearing is allowed (`update`). */
+export function parseAssignee(value: string, allowNone: true): Assignee | null;
+export function parseAssignee(value: string, allowNone: false): Assignee;
 export function parseAssignee(value: string, allowNone: boolean): Assignee | null {
   if (allowNone && value === "none") return null;
   if (value !== "human" && value !== "agent") {
@@ -95,10 +99,11 @@ function ignoreEntriesLine(added: string[]): string[] {
   return added.length ? [`Added ${added.length} .kalamu ignore entr${added.length === 1 ? "y" : "ies"} to .gitignore.`] : [];
 }
 
+/** `kalamu init`. The result type is inferred so the CLI wiring reads `json.created` without a cast. */
 export function init(
   cwd: string,
   options: { agentDocs?: boolean; gitignore?: boolean; wayfinder?: boolean; store?: string } = {},
-): CommandResult {
+) {
   const store = options.store === undefined ? undefined : parseStore(options.store);
   const { created, paths } = initKalamu(cwd, { store });
   registerProject(paths.root);
@@ -170,7 +175,7 @@ export function tour(cwd: string): CommandResult {
   withOutline(paths.outline, (nodes) => {
     // Never mix demo content into a real outline.
     if (nodes.length > 0) throw new CliError("--tour only seeds a fresh, empty outline");
-    return { nodes: seedTour(nodes), result: undefined };
+    return { nodes: seedTour(nodes) };
   });
   return {
     text: "Seeded the onboarding tour — run `kalamu open` to take it.",
@@ -179,15 +184,28 @@ export function tour(cwd: string): CommandResult {
 }
 
 /**
- * Best-effort link for the `Link:` line that add/done/start/next append, so
- * the copy-ready reference is already in the tool result an agent is reading.
- * Unlike `kalamu link` — which fails loudly rather than invent a broken URL —
- * an unresolvable slug here just omits the line: registry failures never break
- * the command that triggered them (SPEC "Hub").
+ * Best-effort markdown links for the `Link:` line and `link` field that
+ * add/done/start/next carry, so the copy-ready reference is already in the
+ * tool result an agent is reading. Unlike `kalamu link` — which fails loudly
+ * rather than invent a broken URL — an unresolvable slug yields undefined:
+ * registry failures never break the command that triggered them (SPEC "Hub").
+ * The slug resolves once, so a batch links every entry cheaply.
  */
-function tryNodeLink(root: string, node: Pick<KalamuNode, "id" | "text">): NodeLink | undefined {
+function nodeLinker(root: string): (node: Pick<KalamuNode, "id" | "text">) => string | undefined {
   const slug = slugFor(root);
-  return slug !== undefined ? createNodeLink(node, slug, hubBaseUrl()) : undefined;
+  const base = hubBaseUrl();
+  return (node) => (slug !== undefined ? createNodeLink(node, slug, base).markdown : undefined);
+}
+
+/** A node command's result with the node's best-effort `Link:` line and `link` field appended. */
+function withLink(
+  root: string,
+  node: Pick<KalamuNode, "id" | "text">,
+  text: string,
+  json: Record<string, unknown>,
+): CommandResult<Record<string, unknown>> {
+  const link = nodeLinker(root)(node);
+  return link === undefined ? { text, json } : { text: `${text}\nLink: ${link}`, json: { ...json, link } };
 }
 
 export interface AddOptions {
@@ -205,26 +223,21 @@ export interface AddOptions {
 
 export function add(cwd: string, options: AddOptions): CommandResult {
   const paths = resolvePaths(cwd);
-  const created = withOutline(paths.outline, (nodes) => {
+  const { node, nodes } = withOutline(paths.outline, (nodes) => {
     const result = addNode(nodes, {
       parentId: options.parent,
       kind: options.kind !== undefined ? parseKind(options.kind) : undefined,
       text: options.text,
-      priority: options.p !== undefined ? (parsePriority(options.p, false) as Priority) : undefined,
+      priority: options.p !== undefined ? parsePriority(options.p, false) : undefined,
       tags: options.tag,
-      assignee: options.assign !== undefined ? (parseAssignee(options.assign, false) as Assignee) : undefined,
+      assignee: options.assign !== undefined ? parseAssignee(options.assign, false) : undefined,
       createdBy: resolveActor(options.by),
       afterId: options.after,
       beforeId: options.before,
     });
-    const blocked = applyBlockers(result.nodes, result.node, options.blockedBy ?? []);
-    const tree = buildTree(blocked.nodes);
-    return {
-      nodes: blocked.nodes,
-      result: { node: blocked.node, path: pathOf(tree, blocked.node) },
-    };
+    return applyBlockers(result.nodes, result.node, options.blockedBy ?? []);
   });
-  const { node, path } = created;
+  const path = pathOf(buildTree(nodes), node);
   const location = path.length ? ` under ${path.join(" > ")}` : " (top-level)";
   // Agents (and non-TTY scripts) get a nudge when they omit --parent: that is
   // the failure mode the placement rule exists to stop. Humans adding a new
@@ -233,22 +246,9 @@ export function add(cwd: string, options: AddOptions): CommandResult {
     node.parentId === null && node.createdBy === "agent"
       ? "pass --parent <id> to nest; `kalamu ls` walks the tree one level at a time"
       : undefined;
-  const link = tryNodeLink(paths.root, node);
-  const lines = [
-    `Created ${node.id}${location}`,
-    ...(link !== undefined ? [`Link: ${link.markdown}`] : []),
-    ...(warning !== undefined ? [`Note: ${warning}`] : []),
-  ];
-  return {
-    text: lines.join("\n"),
-    json: {
-      id: node.id,
-      parentId: node.parentId,
-      path,
-      ...(link !== undefined ? { link: link.markdown } : {}),
-      ...(warning !== undefined ? { warning } : {}),
-    },
-  };
+  const created = withLink(paths.root, node, `Created ${node.id}${location}`, { id: node.id, parentId: node.parentId, path });
+  if (warning === undefined) return created;
+  return { text: `${created.text}\nNote: ${warning}`, json: { ...created.json, warning } };
 }
 
 /**
@@ -275,21 +275,24 @@ export interface UpdateOptions {
 }
 
 export function update(cwd: string, id: string, options: UpdateOptions): CommandResult {
+  const { text, kind, p, addTag, removeTag, assign, by } = options;
+  if ([text, kind, p, assign, by].every((flag) => flag === undefined) && !addTag?.length && !removeTag?.length) {
+    throw new CliError("nothing to do — pass --text, --kind, --p, --add-tag, --remove-tag, --assign, or --by");
+  }
   const paths = resolvePaths(cwd);
-  const node = withOutline(paths.outline, (nodes) => {
-    const result = updateNode(nodes, id, {
-      text: options.text,
-      kind: options.kind !== undefined ? parseKind(options.kind) : undefined,
-      priority: options.p !== undefined ? parsePriority(options.p, true) : undefined,
-      addTags: options.addTag,
-      removeTags: options.removeTag,
-      assignee: options.assign !== undefined ? parseAssignee(options.assign, true) : undefined,
+  const { node } = withOutline(paths.outline, (nodes) =>
+    updateNode(nodes, id, {
+      text,
+      kind: kind !== undefined ? parseKind(kind) : undefined,
+      priority: p !== undefined ? parsePriority(p, true) : undefined,
+      addTags: addTag,
+      removeTags: removeTag,
+      assignee: assign !== undefined ? parseAssignee(assign, true) : undefined,
       // Unlike add, update never resolves an actor: provenance only changes
       // on an explicit --by (key decision 15's correction path).
-      createdBy: options.by !== undefined ? parseActor(options.by) : undefined,
-    });
-    return { nodes: result.nodes, result: result.node };
-  });
+      createdBy: by !== undefined ? parseActor(by) : undefined,
+    }),
+  );
   return { text: `Updated ${node.id}`, json: { id: node.id } };
 }
 
@@ -304,69 +307,47 @@ export function move(cwd: string, id: string, options: MoveOptions): CommandResu
     throw new CliError("nothing to do — pass --parent, --after, or --before");
   }
   const paths = resolvePaths(cwd);
-  const node = withOutline(paths.outline, (nodes) => {
-    const result = moveNode(nodes, id, {
+  const { node } = withOutline(paths.outline, (nodes) =>
+    moveNode(nodes, id, {
       // "--parent root" moves to top level.
       parentId: options.parent === undefined ? undefined : options.parent === "root" ? null : options.parent,
       afterId: options.after,
       beforeId: options.before,
-    });
-    return { nodes: result.nodes, result: result.node };
-  });
+    }),
+  );
   return { text: `Moved ${node.id}`, json: { id: node.id, parentId: node.parentId } };
 }
 
 export function del(cwd: string, id: string, options: { recursive?: boolean }): CommandResult {
   const paths = resolvePaths(cwd);
-  const deleted = withOutline(paths.outline, (nodes) => {
-    const result = deleteNode(nodes, id, { recursive: options.recursive });
-    return { nodes: result.nodes, result: result.deletedCount };
-  });
+  const { deletedCount: deleted } = withOutline(paths.outline, (nodes) =>
+    deleteNode(nodes, id, { recursive: options.recursive }),
+  );
   const suffix = deleted === 1 ? "" : ` (${deleted} nodes)`;
   return { text: `Deleted ${id}${suffix}`, json: { id, deleted } };
 }
 
 export function done(cwd: string, id: string): CommandResult {
   const paths = resolvePaths(cwd);
-  const node = withOutline(paths.outline, (nodes) => {
-    const result = markDone(nodes, id);
-    return { nodes: result.nodes, result: result.node };
-  });
-  const link = tryNodeLink(paths.root, node);
-  return {
-    text: link !== undefined ? `Done ${node.id}\nLink: ${link.markdown}` : `Done ${node.id}`,
-    json: { id: node.id, doneAt: node.doneAt, ...(link !== undefined ? { link: link.markdown } : {}) },
-  };
+  const { node } = withOutline(paths.outline, (nodes) => markDone(nodes, id));
+  return withLink(paths.root, node, `Done ${node.id}`, { id: node.id, doneAt: node.doneAt });
 }
 
 export function reopen(cwd: string, id: string): CommandResult {
   const paths = resolvePaths(cwd);
-  const node = withOutline(paths.outline, (nodes) => {
-    const result = reopenOp(nodes, id);
-    return { nodes: result.nodes, result: result.node };
-  });
+  const { node } = withOutline(paths.outline, (nodes) => reopenOp(nodes, id));
   return { text: `Reopened ${node.id}`, json: { id: node.id } };
 }
 
 export function start(cwd: string, id: string, options: { force?: boolean } = {}): CommandResult {
   const paths = resolvePaths(cwd);
-  const node = withOutline(paths.outline, (nodes) => {
-    const result = startTask(nodes, id, { force: options.force });
-    return { nodes: result.nodes, result: result.node };
-  });
-  const link = tryNodeLink(paths.root, node);
-  return {
-    text: link !== undefined ? `Started ${node.id}\nLink: ${link.markdown}` : `Started ${node.id}`,
-    json: { id: node.id, startedAt: node.startedAt, ...(link !== undefined ? { link: link.markdown } : {}) },
-  };
+  const { node } = withOutline(paths.outline, (nodes) => startTask(nodes, id, { force: options.force }));
+  return withLink(paths.root, node, `Started ${node.id}`, { id: node.id, startedAt: node.startedAt });
 }
 
 export function end(cwd: string, id: string): CommandResult {
   const paths = resolvePaths(cwd);
-  const node = withOutline(paths.outline, (nodes) => {
-    const result = endTask(nodes, id);
-    return { nodes: result.nodes, result: result.node };
-  });
+  const { node } = withOutline(paths.outline, (nodes) => endTask(nodes, id));
   return { text: `Ended ${node.id} — back in the queue`, json: { id: node.id } };
 }
 
@@ -374,11 +355,10 @@ export function block(cwd: string, id: string, options: { by?: string[] }): Comm
   const blockers = options.by ?? [];
   if (blockers.length === 0) throw new CliError("--by <id> is required (repeatable)");
   const paths = resolvePaths(cwd);
-  const node = withOutline(paths.outline, (nodes) => {
+  const { node } = withOutline(paths.outline, (nodes) => {
     const target = nodes.find((n) => n.id === id);
-    if (target === undefined) throw new CliError(`no node with id ${id}`);
-    const result = applyBlockers(nodes, target, blockers);
-    return { nodes: result.nodes, result: result.node };
+    if (target === undefined) throw new CliError(`no node with id ${id}`, "not-found");
+    return applyBlockers(nodes, target, blockers);
   });
   return {
     text: `Blocked ${node.id} by ${blockers.join(", ")}`,
@@ -388,10 +368,7 @@ export function block(cwd: string, id: string, options: { by?: string[] }): Comm
 
 export function unblock(cwd: string, id: string, options: { by?: string }): CommandResult {
   const paths = resolvePaths(cwd);
-  const node = withOutline(paths.outline, (nodes) => {
-    const result = removeBlocker(nodes, id, options.by);
-    return { nodes: result.nodes, result: result.node };
-  });
+  const { node } = withOutline(paths.outline, (nodes) => removeBlocker(nodes, id, options.by));
   const what = options.by !== undefined ? options.by : "all blockers";
   return { text: `Unblocked ${node.id} (${what})`, json: { id: node.id, blockedBy: node.blockedBy ?? [] } };
 }
@@ -442,7 +419,7 @@ export function list(cwd: string, options: ListOptions): CommandResult {
   const tree = buildTree(nodes);
   const origin = options.under !== undefined ? tree.byId.get(options.under) : undefined;
   if (options.under !== undefined && origin === undefined) {
-    throw new CliError(`no node with id ${options.under}`);
+    throw new CliError(`no node with id ${options.under}`, "not-found");
   }
   const scope = origin !== undefined ? subtreeIds(tree, origin.id) : null;
   const originDepth = origin !== undefined ? depthOf(tree, origin) : 0;
@@ -471,7 +448,7 @@ export function show(cwd: string, id: string, options: ShowOptions): CommandResu
   const { nodes } = readOutline(paths.outline);
   const tree = buildTree(nodes);
   const node = tree.byId.get(id);
-  if (!node) throw new CliError(`no node with id ${id}`);
+  if (!node) throw new CliError(`no node with id ${id}`, "not-found");
 
   // --depth N: the node plus descendants up to N levels below it (implies --children).
   const maxDepth = options.depth !== undefined ? parsePositiveInt(options.depth) : undefined;
@@ -503,7 +480,7 @@ export function link(cwd: string, id: string, options: LinkOptions = {}): Comman
   const paths = resolvePaths(cwd);
   const { nodes } = readOutline(paths.outline);
   const node = nodes.find((candidate) => candidate.id === id);
-  if (!node) throw new CliError(`no node with id ${id}`);
+  if (!node) throw new CliError(`no node with id ${id}`, "not-found");
   const slug = slugFor(paths.root);
   if (slug === undefined) {
     throw new CliError("could not resolve this project's hub slug — check that ~/.kalamu is writable");
@@ -535,7 +512,7 @@ export function ls(cwd: string, id?: string): CommandResult {
   const { nodes } = readOutline(paths.outline);
   const tree = buildTree(nodes);
   const parent = id !== undefined ? tree.byId.get(id) : undefined;
-  if (id !== undefined && parent === undefined) throw new CliError(`no node with id ${id}`);
+  if (id !== undefined && parent === undefined) throw new CliError(`no node with id ${id}`, "not-found");
 
   const children = tree.children.get(parent?.id ?? null) ?? [];
   const json = {
@@ -585,12 +562,11 @@ export function next(cwd: string, options: NextCommandOptions = {}): CommandResu
     const limit = options.limit !== undefined ? parsePositiveInt(options.limit) : undefined;
     const queue = eligibleTasks(nodes, scope).slice(0, options.all ? undefined : limit);
     if (!queue.length) return { text: `No eligible ${kind}s.`, json: { count: 0, tasks: [] }, exitCode: 2 };
-    const entry = ({ node, path }: (typeof queue)[number]): Record<string, unknown> => ({
-      id: node.id,
-      text: node.text,
-      priority: effectivePriority(node),
-      path,
-    });
+    const linkTo = nodeLinker(paths.root);
+    const entry = ({ node, path }: (typeof queue)[number]): Record<string, unknown> => {
+      const link = linkTo(node);
+      return { id: node.id, text: node.text, priority: effectivePriority(node), path, ...(link !== undefined ? { link } : {}) };
+    };
     const text = queue
       .map(({ node, path }) => {
         const pathLine = path.length ? `\n${" ".repeat(node.id.length + 2)}Path: ${path.join(" > ")}` : "";
@@ -623,21 +599,15 @@ export function next(cwd: string, options: NextCommandOptions = {}): CommandResu
     lines.push(`${indent}${glyphFor(child)} ${prefixFor(child)}${child.text}  (${child.id})`);
   }
   lines.push(`Reason: ${result.reason}`);
-  const link = tryNodeLink(paths.root, result.node);
-  if (link !== undefined) lines.push(`Link: ${link.markdown}`);
-  return {
-    text: lines.join("\n"),
-    json: {
-      id: result.node.id,
-      text: result.node.text,
-      priority,
-      path: result.path,
-      ancestors: chain.map((n) => ({ id: n.id, text: n.text, kind: n.kind })),
-      descendants,
-      reason: result.reason,
-      ...(link !== undefined ? { link: link.markdown } : {}),
-    },
-  };
+  return withLink(paths.root, result.node, lines.join("\n"), {
+    id: result.node.id,
+    text: result.node.text,
+    priority,
+    path: result.path,
+    ancestors: chain.map((n) => ({ id: n.id, text: n.text, kind: n.kind })),
+    descendants,
+    reason: result.reason,
+  });
 }
 
 export function clean(cwd: string, options: { dryRun?: boolean }): CommandResult {
@@ -670,10 +640,7 @@ export function clean(cwd: string, options: { dryRun?: boolean }): CommandResult
   if (options.dryRun) {
     return report(cleanDone(readOutline(paths.outline).nodes), true);
   }
-  return withOutline(paths.outline, (nodes) => {
-    const result = cleanDone(nodes);
-    return { nodes: result.nodes, result: report(result, false) };
-  });
+  return report(withOutline(paths.outline, cleanDone), false);
 }
 
 export function validate(cwd: string): CommandResult {

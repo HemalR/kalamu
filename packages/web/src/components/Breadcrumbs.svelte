@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { deriveTags, stripTags } from "@kalamu/core";
   import type { OutlineStore } from "../lib/outline.svelte";
   import ProgressBar from "./ProgressBar.svelte";
 
@@ -10,9 +11,10 @@
 
   let { store, rootLabel }: Props = $props();
 
-  /** A blank node still needs a visible crumb. */
+  /** A crumb names its node: the text without its #tag tokens (raw `#tag`
+      noise in a trail). A blank — or tags-only — node still needs a crumb. */
   function crumbLabel(text: string): string {
-    return text.trim() === "" ? "…" : text;
+    return stripTags(text, deriveTags(text)) || "…";
   }
 </script>
 
@@ -40,15 +42,15 @@
   .crumbs {
     position: sticky;
     top: var(--header-height, 0px); /* stack below the sticky header (App.svelte) */
-    z-index: 10; /* above the outline rows (combo menus sit at the row level), below
-                    the sticky header at 11 so its dropdowns cover this trail */
+    z-index: var(--z-crumbs); /* above the outline rows, below the sticky header's dropdowns */
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 2px;
     margin: -6px 0 10px;
     padding: 8px 0;
-    background: var(--bg);
+    /* Opaque so rows scroll under it; the embed's card sets --surface. */
+    background: var(--surface, var(--bg));
     font-size: 12.5px;
     user-select: none;
   }

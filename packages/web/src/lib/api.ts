@@ -20,7 +20,6 @@ export interface CreateNodeBody {
   kind?: NodeKind;
   text: string;
   priority?: Priority;
-  tags?: string[];
   assignee?: Assignee;
   afterId?: string;
   beforeId?: string;
@@ -63,11 +62,26 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    /** The envelope's machine-readable code: "conflict", "cycle", "invalid-outline", … */
+    readonly code?: string,
   ) {
     super(message);
     this.name = "ApiError";
   }
 }
+
+/** Response header carrying the outline's version token after a read or write (SPEC "Outline version"). */
+const VERSION_HEADER = "X-Kalamu-Version";
+const BASE_VERSION_HEADER = "X-Kalamu-Base-Version";
+
+/** One outline write's version token, and the version it was applied on top of. */
+export interface WrittenVersion {
+  base: string;
+  version: string;
+}
+
+/** The newest outline write not yet taken (see Backend.takeVersion). */
+let writtenVersion: WrittenVersion | null = null;
 
 /** fetch with the server's error envelope turned into ApiError; callers pick the body decoding. */
 async function fetchOk(path: string, init?: RequestInit): Promise<Response> {
@@ -79,25 +93,44 @@ async function fetchOk(path: string, init?: RequestInit): Promise<Response> {
   }
   if (!response.ok) {
     let message = `request failed (${response.status})`;
+    let code: string | undefined;
     try {
       const body: unknown = await response.json();
-      if (body !== null && typeof body === "object" && "error" in body && typeof body.error === "string") {
-        message = body.error;
+      if (body !== null && typeof body === "object") {
+        if ("error" in body && typeof body.error === "string") message = body.error;
+        if ("code" in body && typeof body.code === "string") code = body.code;
       }
     } catch {
       // non-JSON error body; keep the status message
     }
-    throw new ApiError(message, response.status);
+    throw new ApiError(message, response.status, code);
   }
   return response;
 }
 
+/**
+ * Every request but the nodes read. Writes to the outline answer with the
+ * version they produced, recorded here for the store's write queue to take.
+ * GET /api/nodes carries the header too but deliberately bypasses this: its
+ * version belongs to the nodes in its body, and a read the store discards
+ * must not move the store's version on.
+ */
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  return (await (await fetchOk(path, init)).json()) as T;
+  const response = await fetchOk(path, init);
+  const version = response.headers.get(VERSION_HEADER);
+  const base = response.headers.get(BASE_VERSION_HEADER);
+  if (version !== null && base !== null) writtenVersion = { base, version };
+  return (await response.json()) as T;
 }
 
 function json(method: string, body: unknown): RequestInit {
   return { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) };
+}
+
+/** The whole outline and the version token it was read (or written) at. */
+export interface OutlineSnapshot {
+  nodes: KalamuNode[];
+  version: string;
 }
 
 /** Server-push notifications the store reacts to (SSE over HTTP; no-op in-memory). */
@@ -116,9 +149,20 @@ export interface BackendEvents {
  * setBackend() so the identical UI runs with no server at all.
  */
 export interface Backend {
-  getNodes(): Promise<{ nodes: KalamuNode[] }>;
-  /** Whole-outline replace; exists for undo/redo snapshot-restore. */
-  replaceNodes(nodes: KalamuNode[]): Promise<{ nodes: KalamuNode[] }>;
+  getNodes(): Promise<OutlineSnapshot>;
+  /**
+   * Whole-outline replace (undo/redo, split, merge, paste, clean), refused
+   * with a 409 `conflict` ApiError when the outline is no longer at `version`
+   * — so a stale snapshot can never revert a write made elsewhere.
+   */
+  replaceNodes(nodes: KalamuNode[], version: string): Promise<OutlineSnapshot>;
+  /**
+   * The version token the newest outline write answered with, or null when
+   * none has landed since the last call (taking it clears it). The store's
+   * serialized write queue calls this after each write, which is what ties
+   * the token to that write.
+   */
+  takeVersion(): WrittenVersion | null;
   createNode(body: CreateNodeBody): Promise<KalamuNode>;
   patchNode(id: string, body: PatchNodeBody): Promise<KalamuNode>;
   deleteNode(id: string, recursive: boolean): Promise<{ id: string; deleted: number }>;
@@ -195,8 +239,13 @@ export function subscribeToServerEvents(
 }
 
 const httpBackend: Backend = {
-  getNodes: () => request<{ nodes: KalamuNode[] }>("/api/nodes"),
-  replaceNodes: (nodes: KalamuNode[]) => request<{ nodes: KalamuNode[] }>("/api/nodes", json("PUT", { nodes })),
+  getNodes: async () => (await (await fetchOk("/api/nodes")).json()) as OutlineSnapshot,
+  replaceNodes: (nodes, version) => request<OutlineSnapshot>("/api/nodes", json("PUT", { nodes, version })),
+  takeVersion: () => {
+    const version = writtenVersion;
+    writtenVersion = null;
+    return version;
+  },
   createNode: (body: CreateNodeBody) => request<KalamuNode>("/api/nodes", json("POST", body)),
   patchNode: (id: string, body: PatchNodeBody) =>
     request<KalamuNode>(`/api/nodes/${encodeURIComponent(id)}`, json("PATCH", body)),

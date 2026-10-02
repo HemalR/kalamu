@@ -1,47 +1,54 @@
+<!--
+  One outline node and, recursively, its visible children. Owns editing: the
+  text swaps between two renderings (SPEC key decisions 7 and 9) — while
+  editing, a contenteditable shows the raw source text; otherwise NodeText
+  renders #tokens as inline chips. The component (keyed by node.id) persists
+  across the swap, and external updates (SSE refetch) never touch the draft or
+  caret while editing. The row's furniture lives in NodeGlyph, PriorityPicker
+  and NodeMeta.
+-->
+<script module lang="ts">
+  import { MediaQuery } from "svelte/reactivity";
+  import { PHONE_QUERY } from "../lib/breakpoints";
+
+  /** One query for every row: phones move the row's copy/delete buttons into its meta row. */
+  const phone = new MediaQuery(PHONE_QUERY);
+</script>
+
 <script lang="ts">
-  import {
-    DEFAULT_PRIORITY,
-    deriveTags,
-    formatRelativeTime,
-    parseNumbering,
-    tagColor,
-    withNumbering,
-    type KalamuNode,
-  } from "@kalamu/core";
+  import { parseNumbering, tagColor, withNumbering, type KalamuNode } from "@kalamu/core";
   import { tick } from "svelte";
   import { SvelteSet } from "svelte/reactivity";
+  import { api } from "../lib/api";
   import {
-    caretHit,
     caretOffset,
     caretOnFirstLine,
     caretOnLastLine,
     caretScreenX,
+    collapsedCaret,
     placeCaret,
     placeCaretAtPoint,
     placeCaretAtX,
     selectionOffsets,
-    type CaretPosition,
   } from "../lib/caret";
-  import { api } from "../lib/api";
+  import { CaretCombo, COMBO_LABELS, COMBO_TRIGGERS, type ComboKind, type ComboOption } from "../lib/caret-combo.svelte";
   import { tokenBeforeCaret } from "../lib/commit";
-  import { splitPasteLines } from "../lib/paste";
-  import { clearTagHighlights, updateTagHighlights } from "../lib/highlight";
-  import { now } from "../lib/now.svelte";
-  import type { FocusTarget, OutlineStore } from "../lib/outline.svelte";
   import { fileRefs } from "../lib/file-refs.svelte";
-  import { assetUrl, docUrl, segmentText, type DocSegment, type FileSegment } from "../lib/segments";
+  import { clearTagHighlights, updateTagHighlights } from "../lib/highlight";
+  import type { FocusTarget, OutlineStore } from "../lib/outline.svelte";
+  import { splitPasteLines } from "../lib/paste";
+  import { basename, segmentText, type DocSegment } from "../lib/segments";
   import { matches, SHORTCUTS as S } from "../lib/shortcuts";
   import { summarize } from "../lib/summary";
-  import { blockedTitle, isStarted, openBlockers } from "../lib/task-state";
-  import AssignMenu, { ASSIGNEE_LABELS, assigneeIcon, isAssignee, matchAssignees } from "./AssignMenu.svelte";
-  import BlockerMenu from "./BlockerMenu.svelte";
-  import ComboMenu from "./ComboMenu.svelte";
+  import { ASSIGN_LABELS, matchAssignees } from "../lib/vocab";
+  import AssigneeIcon from "./AssigneeIcon.svelte";
   import DocPeek from "./DocPeek.svelte";
+  import Menu from "./Menu.svelte";
+  import NodeGlyph from "./NodeGlyph.svelte";
+  import NodeMeta from "./NodeMeta.svelte";
+  import NodeText, { peekKey, sourceOffsetAt } from "./NodeText.svelte";
   import Self from "./OutlineNode.svelte";
-  import PriorityBars from "./PriorityBars.svelte";
-  import PriorityMenu from "./PriorityMenu.svelte";
-  import ProgressBar from "./ProgressBar.svelte";
-  import TagChip from "./TagChip.svelte";
+  import PriorityPicker from "./PriorityPicker.svelte";
 
   interface Props {
     node: KalamuNode;
@@ -50,11 +57,6 @@
 
   let { node, store }: Props = $props();
 
-  // The text swaps between two renderings (SPEC key decisions 7 and 9):
-  // while editing, a contenteditable shows the raw source text; otherwise a
-  // display element renders #tokens as inline chips. The component (keyed by
-  // node.id) persists across the swap, and external updates (SSE refetch)
-  // never touch the draft or caret while editing.
   let editing = $state(false);
   let draft = $state("");
 
@@ -70,7 +72,8 @@
     return numbering === null ? text : withNumbering(text, numbering.ordinal);
   }
   let el: HTMLElement | undefined;
-  let displayEl: HTMLElement | undefined;
+  let displayEl = $state<HTMLElement>();
+  let rowEl: HTMLElement | undefined;
 
   // Losing the server drops the node back to the display rendering (the
   // editable unmounts, so typing is impossible); focusAt refuses to re-enter
@@ -78,118 +81,36 @@
   // it could not have been saved anyway.
   $effect(() => {
     if (!store.connected && editing) {
-      closeCombo();
+      combo.close();
       editing = false;
       clearTagHighlights();
     }
   });
 
-  let prioOpen = $state(false);
-  let prioWrap: HTMLElement | undefined = $state();
-
-  let assignOpen = $state(false);
-  let assignWrap: HTMLElement | undefined = $state();
-
-  let blockOpen = $state(false);
-  let blockWrap: HTMLElement | undefined = $state();
-
-  /** Any anchored popover on this row — what the window-level dismissals key off. */
-  const menuOpen = $derived(prioOpen || assignOpen || blockOpen);
-
-  let rowEl: HTMLElement | undefined;
-
   const children = $derived(store.visibleChildren(node.id));
   const hasChildren = $derived(children.length > 0);
   const isCollapsed = $derived(store.collapsed.has(node.id));
-  // core's effectivePriority widens to number; the field is already 1|2|3, so
-  // defaulting it here keeps the Priority type the badge and menu ask for.
-  const priority = $derived(node.priority ?? DEFAULT_PRIORITY);
   // Done bullets are visual only (strikethrough) — they stay non-work-items.
   const isDone = $derived(node.doneAt !== null);
-  // An agent's claim (SPEC key decision 17): the checkbox holds a slowly pulsing
-  // amber dot — the UI's equivalent of the `▶` the CLI prints — so an in-progress
-  // task or discussion never reads as merely open.
-  const started = $derived(isStarted(node));
-  // Tasks and discussions can both be blocked, so the badge is not kind-gated.
-  // Only OPEN blockers hold a node up — a fully-done blocker list looks normal
-  // (SPEC key decision 16).
-  const blockers = $derived(openBlockers(store.tree, node));
-  /** When the claim was made — the checkbox's tooltip while in progress. */
-  const startedTitle = $derived(
-    started && node.startedAt !== undefined
-      ? `In progress since ${new Date(node.startedAt).toLocaleString()}`
-      : undefined,
+  const textLabel = $derived(
+    node.kind === "task" ? "Task text" : node.kind === "discussion" ? "Discussion text" : "Bullet text",
   );
+  /** The meta row describes the text to assistive tech: state, progress, blockers, owner, age. */
+  const metaId = $derived(`meta-${node.id}`);
+  const comboId = $derived(`combo-${node.id}`);
 
-  // ---- overview mode ----------------------------------------------------------
-  // Display-only. The editable below always binds the raw node.text — nobody
-  // ever edits a summary — and the store, copy, filters and the CLI never see
-  // any of this.
-
+  // Overview mode is display-only: the editable always binds the raw text —
+  // nobody ever edits a summary — and the store, copy, filters and the CLI
+  // never see the label.
   /** The shortened label, or null when the row shows its text in full (see lib/summary.ts). */
   const label = $derived(store.overview ? summarize(body) : null);
   const segments = $derived(segmentText(label ?? body));
 
-  // ---- doc peeks ----------------------------------------------------------------
-  /** Doc references expanded read-only under the row, keyed by `path#anchor`. */
+  /** Doc references expanded read-only under the row (NodeText toggles them). */
   const peeks = new SvelteSet<string>();
-  const peekKey = (seg: DocSegment) => `${seg.path}#${seg.anchor ?? ""}`;
-  const openPeeks = $derived(segments.filter((seg): seg is DocSegment => seg.kind === "doc" && peeks.has(peekKey(seg))));
-  function togglePeek(event: MouseEvent, seg: DocSegment) {
-    event.preventDefault();
-    event.stopPropagation();
-    const key = peekKey(seg);
-    if (!peeks.delete(key)) peeks.add(key);
-  }
-  /**
-   * Tags the summary cut off. They sit at the end of long text more often than
-   * not, and are the most scannable thing on a row, so they are re-attached
-   * after the clamped text rather than lost with the tail.
-   */
-  const droppedTags = $derived.by(() => {
-    if (label === null) return [];
-    const shown = new Set(deriveTags(label));
-    return deriveTags(node.text).filter((tag) => !shown.has(tag));
-  });
-  const textLabel = $derived(
-    node.kind === "task" ? "Task text" : node.kind === "discussion" ? "Discussion text" : "Bullet text",
+  const openPeeks = $derived(
+    segments.filter((seg): seg is DocSegment => seg.kind === "doc" && peeks.has(peekKey(seg))),
   );
-
-  const ringed = $derived(hasChildren && isCollapsed);
-
-  // ---- subtree progress ------------------------------------------------------
-  // Counts come from the store's single derived pass and describe the REAL
-  // tree, so a filter or hide-done never rewrites them (see @kalamu/core's
-  // progress.ts). The bar lives on its own row under this one.
-
-  const progress = $derived(store.progress.get(node.id) ?? { total: 0, done: 0, active: 0 });
-  /**
-   * One actionable descendant is enough — including a direct leaf child. The
-   * store count already covers the node's full REAL subtree, excluding the
-   * node itself, so filters and hide-done never change whether the bar renders.
-   */
-  const showBar = $derived(progress.total > 0);
-  /** Exact numbers only where attention is — see the store's captionIds. */
-  const showCaption = $derived(store.captionIds.has(node.id));
-
-  // ---- created time ----------------------------------------------------------
-
-  /* Off the app's shared clock, not `new Date()`: a derived that closed over
-     the current time would never re-run, so a row would still read "now" hours
-     later in a window nobody reloads. */
-  const createdAgo = $derived(formatRelativeTime(node.createdAt, { now: now.current }));
-  const createdTitle = $derived(`Created ${new Date(node.createdAt).toLocaleString()}`);
-
-  /**
-   * Tell the store where the caret is, for the caption rule. The cleanup also
-   * covers unmount; clearCaret only clears a claim this node still owns — when
-   * focus moves, the new owner may register before this one tears down.
-   */
-  $effect(() => {
-    if (!editing) return;
-    store.setCaret(node.id);
-    return () => store.clearCaret(node.id);
-  });
 
   /** Mount the editable (if needed), then place the caret. */
   async function focusAt(target: FocusTarget): Promise<void> {
@@ -214,17 +135,18 @@
     };
   }
 
+  /**
+   * The editable is mounted exactly while editing, so its lifetime is also the
+   * caret claim the store's caption rule reads. clearCaret only clears a claim
+   * this node still owns — when focus moves, the new owner may register before
+   * this one tears down.
+   */
   function registerEditable(element: HTMLElement) {
     el = element;
+    store.setCaret(node.id);
     return () => {
       if (el === element) el = undefined;
-    };
-  }
-
-  function registerDisplay(element: HTMLElement) {
-    displayEl = element;
-    return () => {
-      if (displayEl === element) displayEl = undefined;
+      store.clearCaret(node.id);
     };
   }
 
@@ -247,151 +169,60 @@
   }
 
   function onEditableBlur(): void {
-    closeCombo();
+    combo.close();
     commit();
     editing = false;
     clearTagHighlights();
   }
 
+  /** Put the caret at `offset` once a draft change has reached the DOM. */
+  async function caretAfterUpdate(offset: number): Promise<void> {
+    const element = el;
+    await tick();
+    if (element) placeCaret(element, offset);
+  }
+
   // ---- caret combobox: @ repo files, / assignees (tasks only), # tags --------
-  // Opens when the trigger is typed at a word boundary; the letters typed
-  // after it form a prefix filter. It never edits the text itself — the
-  // characters insert natively, and only an explicit pick touches the draft.
 
-  type ComboKind = "assign" | "tag" | "file";
+  const combo = new CaretCombo({
+    options(kind, filter): ComboOption[] {
+      // Bullets have tags, not assignees: an empty list never opens.
+      if (kind === "assign") return node.kind === "task" ? matchAssignees(filter).map((value) => ({ kind, value })) : [];
+      if (kind === "file") return fileRefs.match(filter).map((value) => ({ kind, value }));
+      const query = filter.toLowerCase();
+      return store.allTags.filter((tag) => tag.toLowerCase().startsWith(query)).map((value) => ({ kind, value }));
+    },
+    // The file list loads lazily, so an empty one is "not fetched yet", not "nothing to offer".
+    loading: (kind) => kind === "file" && fileRefs.files.length === 0,
+  });
 
-  let combo = $state<ComboKind | null>(null);
-  let comboFilter = $state("");
-  let comboIndex = $state(0);
-  /** Menu position relative to the row; null until the caret rect is measured. */
-  let comboPos = $state<{ left: number; top: number } | null>(null);
-  /** Draft offset of the typed trigger — where a pick edits from. */
-  let comboStart = 0;
+  /** Showing a list: measured, and with something to offer (a file list still
+      loading opens the combo but has no rows yet, and an empty box helps nobody). */
+  const comboOpen = $derived(combo.kind !== null && combo.pos !== null && combo.matches.length > 0);
 
-  /** Chip and menu labels show the file name; the full path lives in the title. */
-  function basename(path: string): string {
-    return path.slice(path.lastIndexOf("/") + 1);
-  }
-
-  function comboOptions(kind: ComboKind, filter: string): string[] {
-    if (kind === "assign") return matchAssignees(filter);
-    if (kind === "file") return fileRefs.match(filter);
-    const query = filter.toLowerCase();
-    return store.allTags.filter((tag) => tag.toLowerCase().startsWith(query));
-  }
-
-  const comboMatches = $derived(combo === null ? [] : comboOptions(combo, comboFilter));
-
-  function closeCombo(): void {
-    combo = null;
-    comboFilter = "";
-    comboIndex = 0;
-    comboPos = null;
-  }
-
-  /** Open on the trigger keydown when it lands at a word boundary. */
-  function maybeOpenCombo(kind: ComboKind): void {
-    if (kind === "assign" && node.kind !== "task") return; // bullets have tags, not assignees
-    // The file list loads lazily, so an empty one is "not fetched yet", not
-    // "nothing to offer": open anyway and let the menu fill in when it lands.
+  /** The trigger was typed: open at a word boundary, then measure where the menu hangs. */
+  function openCombo(kind: ComboKind): void {
     if (kind === "file") fileRefs.load();
-    else if (comboOptions(kind, "").length === 0) return; // no existing tags: plain typing
-    if (!el || window.getSelection()?.isCollapsed !== true) return;
-    const offset = caretOffset(el);
-    if (offset !== 0 && !/\s/.test(draft.charAt(offset - 1))) return;
-    comboStart = offset;
-    comboFilter = "";
-    comboIndex = 0;
-    comboPos = null;
-    combo = kind;
+    if (!el || !combo.open(kind, draft, collapsedCaret(el))) return;
     // Measure after the browser inserts the trigger, so the caret rect exists.
     requestAnimationFrame(() => {
-      if (combo === null || !rowEl) return;
+      if (combo.kind === null || !rowEl) return;
       const row = rowEl.getBoundingClientRect();
       const selection = window.getSelection();
       const rect = selection && selection.rangeCount > 0 ? selection.getRangeAt(0).getBoundingClientRect() : null;
-      comboPos =
+      combo.pos =
         rect && (rect.left !== 0 || rect.bottom !== 0)
-          ? { left: rect.left - row.left, top: rect.bottom - row.top }
-          : { left: 0, top: row.height }; // collapsed-range rect unavailable: fall back to the row
+          ? { left: rect.left - row.left, top: rect.top - row.top, height: rect.height }
+          : { left: 0, top: 0, height: row.height }; // collapsed-range rect unavailable: fall back to the row
     });
   }
 
-  /**
-   * Keys while the combobox is open. True = fully consumed here; false =
-   * fall through to the normal handling (possibly after closing the menu).
-   */
-  function handleComboKey(event: KeyboardEvent): boolean {
-    if (combo === null) return false;
-    const mod = event.metaKey || event.ctrlKey;
-    // Bare modifier presses (e.g. Shift for a capital letter) mean nothing here.
-    if (event.key === "Shift" || event.key === "Alt" || event.key === "Control" || event.key === "Meta") return true;
-    if (event.key === "Escape") {
-      event.preventDefault();
-      closeCombo(); // leave the text exactly as typed
-      return true;
-    }
-    if ((event.key === "ArrowDown" || event.key === "ArrowUp") && !mod && !event.altKey) {
-      event.preventDefault();
-      const count = comboMatches.length;
-      if (count > 0) comboIndex = (comboIndex + (event.key === "ArrowDown" ? 1 : count - 1)) % count;
-      return true;
-    }
-    if (event.key === "Enter" && !mod && !event.shiftKey && !event.altKey) {
-      const choice = comboMatches[comboIndex];
-      if (choice !== undefined) {
-        event.preventDefault();
-        pickCombo(choice);
-        return true;
-      }
-      closeCombo();
-      return false;
-    }
-    if (event.key === "Backspace" && !mod && !event.altKey) {
-      if (comboFilter === "") closeCombo(); // this press deletes the trigger itself
-      else {
-        comboFilter = comboFilter.slice(0, -1);
-        comboIndex = 0;
-      }
-      return false; // the deletion happens natively either way
-    }
-    if (event.key.length === 1 && !mod && !event.altKey) {
-      // File paths are full of `.` `/` `-` `_`, so every printable key narrows
-      // here rather than reaching the trigger handler. An empty file list means
-      // the fetch is still in flight, not that nothing matches — keep narrowing.
-      const stillMatches =
-        comboOptions(combo, comboFilter + event.key).length > 0 || (combo === "file" && fileRefs.files.length === 0);
-      if (event.key !== " " && stillMatches) {
-        comboFilter += event.key;
-        comboIndex = 0;
-        return false; // the character types natively and narrows the filter
-      }
-      closeCombo(); // space or non-matching character: leave the text as typed
-      return false; // a space still falls through to parse-on-space; a new #tag just keeps typing
-    }
-    // Structural/navigation keys (Tab, mod combos, caret moves…) close it.
-    closeCombo();
-    return false;
-  }
-
-  /**
-   * Pick: `/` removes the typed fragment and patches the assignee (metadata).
-   * `#` and `@` are pure text edits instead — the fragment completes to the
-   * full `#tag` / `@path` token, which stays in the text and chips on blur
-   * (SPEC key decision 7). A picked path gets one trailing space so the next
-   * word starts clean.
-   */
-  function pickCombo(choice: string): void {
-    if (!el || combo === null) return;
-    const kind = combo;
-    const offset = caretOffset(el);
-    const start = comboStart;
-    closeCombo();
-    const replacement = kind === "tag" ? `#${choice}` : kind === "file" ? `@${choice} ` : "";
-    draft = draft.slice(0, start) + replacement + draft.slice(offset);
-    if (kind === "assign" && isAssignee(choice)) store.setAssignee(node.id, choice);
-    const element = el;
-    void tick().then(() => placeCaret(element, start + replacement.length));
+  function pickCombo(option: ComboOption): void {
+    if (!el) return;
+    const edit = combo.pick(option, draft, caretOffset(el));
+    draft = edit.draft;
+    if (edit.assignee !== undefined) store.setAssignee(node.id, edit.assignee);
+    void caretAfterUpdate(edit.caret);
     refreshHighlights(); // token positions shifted
   }
 
@@ -406,59 +237,6 @@
   function onEditableInput(event: Event): void {
     if (event instanceof InputEvent && event.isComposing) return;
     refreshHighlights();
-  }
-
-  /** Map a point on the display rendering to the equivalent source-text offset. */
-  function sourceOffsetAt(x: number, y: number, display: HTMLElement): CaretPosition {
-    const hit = caretHit(x, y, display);
-    if (!hit) return "end";
-    const container = hit.node instanceof Element ? hit.node : hit.node.parentElement;
-    const slot = container?.closest<HTMLElement>("[data-start]");
-    if (!slot?.dataset.start) return "end";
-    const start = Number(slot.dataset.start);
-    // Clicks that land inside a chip map to just after its source token.
-    if (slot.dataset.chip !== undefined) return start + Number(slot.dataset.length ?? 0);
-    return start + hit.offset;
-  }
-
-  /**
-   * Pointer interaction with the display rendering: a click focuses with the
-   * caret at the click point; a drag must instead start a native text
-   * selection, so pointerdown cannot preventDefault or focus — the decision
-   * is deferred to pointerup. Because the div has tabindex="0", the browser
-   * focuses it on pointerdown; `pointerSession` makes the focus handler
-   * ignore that (an edit at "start" would destroy the selection mid-drag)
-   * while keyboard focus (Tab) still starts an edit.
-   */
-  let pointerSession = $state(false);
-  let downX = 0;
-  let downY = 0;
-
-  function onDisplayPointerDown(event: PointerEvent): void {
-    // Chips handle their own clicks (colour popover / asset link).
-    if (event.target instanceof Element && event.target.closest("[data-chip]")) return;
-    store.goalColumn = null;
-    pointerSession = true;
-    downX = event.clientX;
-    downY = event.clientY;
-  }
-
-  /** Window-level: a selection drag can end outside the display element. */
-  function onDisplayPointerEnd(event: PointerEvent): void {
-    pointerSession = false;
-    if (event.type === "pointercancel") return;
-    const dragged = Math.hypot(event.clientX - downX, event.clientY - downY) > 4;
-    // Decide after the browser's own mouseup handling: a click inside an
-    // existing selection collapses it only at mouseup, after this listener.
-    setTimeout(() => {
-      const selected = window.getSelection()?.isCollapsed === false;
-      // A drag leaves the native selection alone (for Mod+C / native copy).
-      if (!dragged && !selected && displayEl) void focusAt(sourceOffsetAt(downX, downY, displayEl));
-    }, 0);
-  }
-
-  function onDisplayFocus(): void {
-    if (!pointerSession) void focusAt("start");
   }
 
   /**
@@ -504,8 +282,8 @@
    * and cannot fire their own action as well. The copy button is explicitly
    * exempt because Mod+click has its own raw-text action.
    * pointerdown's preventDefault is the one that suppresses caret placement and
-   * focus — without it the display textbox takes focus and onDisplayFocus opens
-   * an edit underneath the chord.
+   * focus — without it the display textbox takes focus and opens an edit
+   * underneath the chord.
    */
   function onRowPointerDownCapture(event: PointerEvent): void {
     if (!rowChord(event)) return;
@@ -524,9 +302,15 @@
     else store.toggleCollapse(node.id);
   }
 
+  /** The row buttons must not take focus from the editable: blurring it would end the edit (and, on a phone, unmount the buttons) before the click lands. */
+  function keepCaret(event: PointerEvent): void {
+    event.preventDefault();
+  }
+
   function onDeleteClick(event: MouseEvent): void {
     event.preventDefault();
     event.stopPropagation();
+    commit(); // keepCaret means no blur saved the draft; Undo must restore what was typed
     store.deleteSubtree(node.id);
   }
 
@@ -547,15 +331,13 @@
    * backstop.
    */
   function extractTokenAtCaret(event: KeyboardEvent): void {
-    if (!el || window.getSelection()?.isCollapsed !== true) return;
-    const offset = caretOffset(el);
-    const hit = tokenBeforeCaret(draft, offset);
-    if (!hit) return;
+    const offset = el ? collapsedCaret(el) : null;
+    const hit = offset === null ? null : tokenBeforeCaret(draft, offset);
+    if (offset === null || !hit) return;
     event.preventDefault();
     draft = draft.slice(0, hit.start) + draft.slice(offset);
     store.applyToken(node.id, hit.parsed);
-    const element = el;
-    void tick().then(() => placeCaret(element, hit.start));
+    void caretAfterUpdate(hit.start);
     refreshHighlights(); // token positions shifted
   }
 
@@ -565,35 +347,25 @@
    * digits leave the draft the way an extracted token does.
    */
   function startNumbering(event: KeyboardEvent): boolean {
-    if (numbering !== null || !el || window.getSelection()?.isCollapsed !== true) return false;
-    const offset = caretOffset(el);
-    if (!/^\d+\.$/.test(draft.slice(0, offset))) return false;
+    const offset = el ? collapsedCaret(el) : null;
+    if (numbering !== null || offset === null || !/^\d+\.$/.test(draft.slice(0, offset))) return false;
     event.preventDefault();
     draft = draft.slice(offset);
     store.commitText(node.id, withNumbering(draft, 1));
-    const element = el;
-    void tick().then(() => placeCaret(element, 0));
+    void caretAfterUpdate(0);
     return true;
   }
 
   /** Images upload to .kalamu/assets/; a multi-line paste into an empty node splits into siblings. */
   function onPaste(event: ClipboardEvent): void {
-    closeCombo(); // pasted text would desync the filter
-    const items = event.clipboardData?.items;
-    if (items) {
-      const files: File[] = [];
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        if (item && item.kind === "file" && item.type.startsWith("image/")) {
-          const file = item.getAsFile();
-          if (file) files.push(file);
-        }
-      }
-      if (files.length > 0) {
-        event.preventDefault();
-        void pasteImages(files);
-        return;
-      }
+    combo.close(); // pasted text would desync the filter
+    const files = [...(event.clipboardData?.items ?? [])]
+      .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+      .flatMap((item) => item.getAsFile() ?? []);
+    if (files.length > 0) {
+      event.preventDefault();
+      void pasteImages(files);
+      return;
     }
     // Empty node + two or more lines: each line is a sibling of this kind.
     // A non-empty node (or a single line) pastes as ordinary text.
@@ -613,7 +385,11 @@
     for (const file of files) {
       try {
         const asset = await api.uploadAsset(file);
-        await insertToken(`![](${asset.path})`);
+        if (!(await insertToken(`![](${asset.path})`))) {
+          // The upload landed in .kalamu/assets/, but there's no draft left to put it in.
+          store.showToast("Image uploaded, but editing ended first — paste it again to add it");
+          return;
+        }
       } catch (err) {
         store.showToast(err instanceof Error ? err.message : "image upload failed");
         return;
@@ -622,16 +398,16 @@
     store.showToast(files.length === 1 ? "Image added" : `${files.length} images added`);
   }
 
-  async function insertToken(token: string): Promise<void> {
-    if (!el) return;
+  /** Insert `token` at the caret; false when editing ended before it could be. */
+  async function insertToken(token: string): Promise<boolean> {
+    if (!el) return false;
     const offset = caretOffset(el);
     const before = draft.slice(0, offset);
     const lead = before === "" || before.endsWith(" ") ? "" : " ";
     draft = before + lead + token + draft.slice(offset);
-    const element = el;
-    await tick();
-    placeCaret(element, offset + lead.length + token.length);
+    await caretAfterUpdate(offset + lead.length + token.length);
     refreshHighlights(); // token positions shifted
+    return true;
   }
 
   function onkeydown(event: KeyboardEvent): void {
@@ -644,13 +420,18 @@
     // Anything other than plain vertical navigation ends a goal-column run.
     if (event.key !== "ArrowUp" && event.key !== "ArrowDown") store.goalColumn = null;
 
-    if (combo !== null && handleComboKey(event)) return;
+    if (combo.kind !== null) {
+      const result = combo.handleKey(event);
+      if (result === "consumed") return;
+      if (result !== "pass") return pickCombo(result.pick);
+    }
     // `@` (repo files), `/` (assignees, tasks only) and `#` (tags) at a word
     // boundary open a completion dropdown; the character itself still types —
     // only a pick edits the text. Meta stays excluded, but Ctrl/Alt are allowed
     // for AltGr/Option layouts where they are part of typing the symbol.
-    if (combo === null && !event.metaKey && (event.key === "@" || event.key === "#" || event.key === "/")) {
-      maybeOpenCombo(event.key === "@" ? "file" : event.key === "#" ? "tag" : "assign");
+    const trigger = COMBO_TRIGGERS[event.key];
+    if (combo.kind === null && !event.metaKey && trigger !== undefined) {
+      openCombo(trigger);
       return;
     }
 
@@ -722,11 +503,12 @@
     }
     if (matches(event, S.deleteSubtree)) {
       event.preventDefault();
+      commit();
       store.deleteSubtree(node.id);
       return;
     }
     if (event.key === "Backspace" && !mod && !event.altKey) {
-      const atStart = window.getSelection()?.isCollapsed === true && el !== undefined && caretOffset(el) === 0;
+      const atStart = el !== undefined && collapsedCaret(el) === 0;
       // At the start of the text, one press clears the priority back to default.
       if (atStart && node.kind !== "bullet" && node.priority !== undefined) {
         event.preventDefault();
@@ -802,64 +584,59 @@
       store.expandChildren(node.id);
       return;
     }
-    // zoomOut needs no focused node; it lives in App's window handler.
+    // zoomOut needs no focused node; it lives in lib/global-keys.ts.
     if (matches(event, S.zoomIn)) {
       event.preventDefault();
       commit();
       store.zoomIn(node.id);
     }
   }
-
-  function closeMenus(): void {
-    prioOpen = false;
-    assignOpen = false;
-    blockOpen = false;
-  }
-
-  function closeMenusIfOutside(event: PointerEvent): void {
-    if (!(event.target instanceof Node)) return;
-    if (prioOpen && prioWrap && !prioWrap.contains(event.target)) prioOpen = false;
-    if (assignOpen && assignWrap && !assignWrap.contains(event.target)) assignOpen = false;
-    if (blockOpen && blockWrap && !blockWrap.contains(event.target)) blockOpen = false;
-  }
-
-  /**
-   * One blocker is a destination, not a choice — jump straight there. Several
-   * need the menu, which is why the badge only claims aria-haspopup then.
-   */
-  function onBlockedClick(): void {
-    const only = blockers.length === 1 ? blockers[0] : undefined;
-    if (only !== undefined) store.revealNode(only.id);
-    else blockOpen = !blockOpen;
-  }
 </script>
 
-<!-- File chip contents, shared by its link and its no-editor button form. Angle
-     brackets read as source code — deliberately distinct from the doc chip's page glyph. -->
-{#snippet fileChipBody(seg: FileSegment)}
-  <svg viewBox="0 0 16 16" width="12" height="12" fill="none" aria-hidden="true">
-    <path d="M6 3.5 2.5 8 6 12.5M10 3.5 13.5 8 10 12.5" stroke="currentColor" stroke-linecap="round" />
-  </svg>
-  {basename(seg.path)}{seg.line === undefined ? "" : `:${seg.line}`}
+<!-- Copy and delete: in the row's right gutter, or on phones in the meta row
+     of the row holding the caret (the gutter is gone there). A normal click
+     copies agent context like Mod+C; Mod+click copies only raw text like
+     Mod+Shift+C. Both mappings are uniform across node kinds. The trashcan
+     deletes the subtree, undoable (the toast offers Undo), so it asks for no
+     confirmation. -->
+{#snippet rowActions()}
+  <button
+    class="copy-context"
+    aria-label="Copy item context; modifier-click copies item text only"
+    title="Copy item context (Mod-click: copy text only)"
+    tabindex="-1"
+    onpointerdown={keepCaret}
+    onclick={onCopyClick}
+  >
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+      <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+    </svg>
+  </button>
+  <button
+    class="delete-node"
+    aria-label="Delete item with its subtree"
+    title="Delete item (undoable)"
+    tabindex="-1"
+    onpointerdown={keepCaret}
+    onclick={onDeleteClick}
+  >
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M3 6h18" />
+      <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+      <line x1="10" x2="10" y1="11" y2="17" />
+      <line x1="14" x2="14" y1="11" y2="17" />
+    </svg>
+  </button>
 {/snippet}
 
-<svelte:window
-  onpointerdown={menuOpen ? closeMenusIfOutside : undefined}
-  onpointerup={pointerSession ? onDisplayPointerEnd : undefined}
-  onpointercancel={pointerSession ? onDisplayPointerEnd : undefined}
-  onkeydown={menuOpen
-    ? (event) => {
-        if (event.key === "Escape") closeMenus();
-      }
-    : undefined}
-/>
-
-<div class="node" {@attach registerHandle}>
+<div class="node" role="listitem" {@attach registerHandle}>
   <!-- Pointer position feeds the progress bar's caption rule (store.captionIds);
        the capture-phase chords are the row's only other pointer behaviour. -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class={["row", { done: isDone, discussion: node.kind === "discussion", caret: editing }]}
+    class={["row", { done: isDone, caret: editing }]}
     bind:this={rowEl}
     onpointerdowncapture={onRowPointerDownCapture}
     onclickcapture={onRowClickCapture}
@@ -885,96 +662,8 @@
       </button>
     {/if}
 
-    {#if node.kind !== "bullet"}
-      {#if node.kind === "task"}
-        <button
-          class={["glyph", "check", { ringed, started }]}
-          role="checkbox"
-          aria-checked={isDone}
-          aria-label={isDone ? "Reopen task" : started ? "Mark in-progress task done" : "Mark task done"}
-          title={startedTitle}
-          tabindex="-1"
-          onclick={() => store.toggleDone(node.id)}
-        >
-          {#if isDone}
-            <svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">
-              <path d="M3 8.5 6.5 12 13 4.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
-            </svg>
-          {:else if started}
-            <span class="pulse" aria-hidden="true"></span>
-          {/if}
-        </button>
-      {:else}
-        <!-- Speech bubble in place of the checkbox (SPEC key decision 12); clicking toggles done all the same. -->
-        <button
-          class={["glyph", "bubble", { ringed, started }]}
-          role="checkbox"
-          aria-checked={isDone}
-          aria-label={isDone ? "Reopen discussion" : started ? "Mark in-progress discussion done" : "Mark discussion done"}
-          title={startedTitle}
-          tabindex="-1"
-          onclick={() => store.toggleDone(node.id)}
-        >
-          <!-- Lucide messages-square, restroked to match the row's other icons; done fills the front bubble, like the filled done checkbox. -->
-          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-            <path
-              d="M16 10a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 14.286V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"
-              fill={isDone ? "currentColor" : "none"}
-              stroke="currentColor"
-              stroke-width="2.25"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-            <path
-              d="M20 9a2 2 0 0 1 2 2v10.286a.71.71 0 0 1-1.212.502l-2.202-2.202A2 2 0 0 0 17.172 19H10a2 2 0 0 1-2-2v-1"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2.25"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-        </button>
-      {/if}
-    {:else}
-      <!-- The dot doubles as the zoom target (Workflowy-style); task check and
-           discussion bubble keep their toggle-done click — keyboard and
-           breadcrumbs cover zooming those kinds. -->
-      <button
-        class={["glyph", "dot", { ringed, numbered: numbering !== null }]}
-        aria-label="Zoom in"
-        title="Zoom in"
-        tabindex="-1"
-        onclick={() => store.zoomIn(node.id)}
-      ></button>
-    {/if}
-
-    <!-- Priority column on EVERY row (bullets included) so text aligns
-         vertically across kinds. On bullets the badge is always ghost;
-         picking p1/p3 there converts the bullet to a task (settled SPEC
-         behavior, handled by core). -->
-    <span class="prio-wrap" bind:this={prioWrap}>
-      <button
-        class={["prio", { ghost: priority === 2 || node.kind === "bullet" }]}
-        aria-haspopup="menu"
-        aria-expanded={prioOpen}
-        aria-label="Priority p{priority} — set priority"
-        title={node.kind === "bullet" ? "Set priority (makes this a task)" : "Set priority"}
-        tabindex="-1"
-        onclick={() => (prioOpen = !prioOpen)}
-      >
-        <PriorityBars {priority} />
-      </button>
-      {#if prioOpen}
-        <PriorityMenu
-          current={priority}
-          onpick={(picked) => {
-            store.setPriority(node.id, picked);
-            prioOpen = false;
-          }}
-        />
-      {/if}
-    </span>
+    <NodeGlyph {node} {store} ringed={hasChildren && isCollapsed} numbered={numbering !== null} />
+    <PriorityPicker {node} {store} />
 
     <!-- pointer-only widening of the textbox's click target; keyboard users focus the textbox directly -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -983,13 +672,19 @@
         <span class="ordinal" aria-hidden="true">{numbering.ordinal}.</span>
       {/if}
       {#if editing}
+        <!-- A combobox: the caret pickers (@ files, / assignees, # tags) hang
+             off it, with the highlighted option as the active descendant. -->
         <div
           class="text"
           contenteditable="plaintext-only"
-          role="textbox"
+          role="combobox"
           tabindex="0"
-          aria-multiline="false"
           aria-label={textLabel}
+          aria-describedby={metaId}
+          aria-autocomplete="list"
+          aria-expanded={comboOpen}
+          aria-controls={comboOpen ? comboId : undefined}
+          aria-activedescendant={comboOpen ? `${comboId}-${combo.index}` : undefined}
           bind:textContent={() => draft, (value) => (draft = value ?? "")}
           {onkeydown}
           oninput={onEditableInput}
@@ -999,182 +694,59 @@
           onblur={onEditableBlur}
           onpointerdown={() => {
             store.goalColumn = null;
-            closeCombo(); // a caret move invalidates the tracked fragment
+            combo.close(); // a caret move invalidates the tracked fragment
           }}
           {@attach registerEditable}
         ></div>
-        <!-- comboMatches gate: a file combo opens before its list has loaded,
-             and an empty menu would just be a floating empty box -->
-        {#if combo !== null && comboPos !== null && comboMatches.length > 0}
-          <!-- 0×0 anchor at the caret; the menu hangs below it (relative to .row) -->
-          <span class="combo-anchor" style="left: {comboPos.left}px; top: {comboPos.top}px">
-            <ComboMenu
-              options={comboMatches}
-              highlighted={comboIndex}
-              label={combo === "assign" ? "Assign" : combo === "file" ? "Files" : "Tags"}
+        {#if comboOpen && combo.kind !== null && combo.pos !== null}
+          <!-- Zero-width anchor over the caret's line; the menu hangs below it (relative to .row) -->
+          <span
+            class="combo-anchor"
+            style:left="{combo.pos.left}px"
+            style:top="{combo.pos.top}px"
+            style:height="{combo.pos.height}px"
+          >
+            <Menu
+              id={comboId}
+              role="listbox"
+              options={combo.matches}
+              highlighted={combo.index}
+              label={COMBO_LABELS[combo.kind]}
+              checked={(option) => option.kind === "assign" && option.value === node.assignee}
               onpick={pickCombo}
             >
               {#snippet item(option)}
-                {#if combo === "assign" && isAssignee(option)}
-                  <span class="combo-icon" aria-hidden="true">{@render assigneeIcon(option)}</span>
-                  <span class="combo-label">{ASSIGNEE_LABELS[option]}</span>
-                  {#if node.assignee === option}<span class="combo-tick" aria-hidden="true">✓</span>{/if}
-                {:else if combo === "file"}
-                  <span class="combo-label">{basename(option)}</span>
-                  <span class="combo-path">{option}</span>
+                {#if option.kind === "assign"}
+                  <span class="combo-icon" aria-hidden="true"><AssigneeIcon assignee={option.value} /></span>
+                  {ASSIGN_LABELS[option.value]}
+                {:else if option.kind === "file"}
+                  <span class="combo-name">{basename(option.value)}</span>
+                  <span class="combo-path">{option.value}</span>
                 {:else}
-                  <span class="combo-chip" style:--tag-color={tagColor(option, store.meta.tags)}>#{option}</span>
+                  <span class="combo-chip" style:--tag-color={tagColor(option.value, store.meta.tags)}>#{option.value}</span>
                 {/if}
               {/snippet}
-            </ComboMenu>
+            </Menu>
           </span>
         {/if}
       {:else}
-        <div
-          class={["text", "display", { clamped: store.overview }]}
-          role="textbox"
-          tabindex="0"
-          aria-multiline="false"
-          aria-label={textLabel}
-          title={label === null ? undefined : node.text}
-          onpointerdown={onDisplayPointerDown}
-          onfocus={onDisplayFocus}
-          {@attach registerDisplay}
-        >
-          {#each segments as seg (seg.start)}
-            {#if seg.kind === "tag"}
-              <span class="chip-slot" data-chip data-start={seg.start} data-length={seg.length}>
-                <TagChip
-                  tag={seg.label}
-                  color={tagColor(seg.name, store.meta.tags)}
-                  onSetColor={(color) => store.setTagColor(seg.name, color)}
-                  onFilter={() => store.setFilter(seg.name)}
-                />
-              </span>
-            {:else if seg.kind === "link"}
-              <!-- data-chip: the anchor handles its own click (opens the URL), like the image thumb;
-                   inline (no chip-slot wrapper) so long URLs wrap with the text -->
-              <a
-                class="link"
-                href={seg.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                data-chip
-                data-start={seg.start}
-                data-length={seg.length}>{seg.href}</a
-              >
-            {:else if seg.kind === "doc"}
-              {@const docLabel = seg.anchor === undefined ? seg.path : `${seg.path}#${seg.anchor}`}
-              <!-- data-chip: the anchor handles its own click (opens the doc), like the image thumb -->
-              <span class="chip-slot" data-chip data-start={seg.start} data-length={seg.length}>
-                <a class="doc" href={docUrl(seg.path, seg.anchor)} target="_blank" rel="noreferrer" title={docLabel}>
-                  <svg viewBox="0 0 16 16" width="12" height="12" fill="none" aria-hidden="true">
-                    <path
-                      d="M4 1.5h5.5L13 5v9a.5.5 0 0 1-.5.5h-8.5a.5.5 0 0 1-.5-.5v-12a.5.5 0 0 1 .5-.5Z"
-                      stroke="currentColor"
-                    />
-                    <path d="M9.5 1.5V5H13" stroke="currentColor" />
-                  </svg>
-                  {basename(docLabel)}
-                </a>
-                <button
-                  type="button"
-                  class={["peek-toggle", { open: peeks.has(peekKey(seg)) }]}
-                  tabindex="-1"
-                  aria-expanded={peeks.has(peekKey(seg))}
-                  aria-label="Peek at {docLabel}"
-                  title="Peek inline"
-                  onclick={(event) => togglePeek(event, seg)}
-                >
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="m6 9 6 6 6-6" />
-                  </svg>
-                </button>
-              </span>
-            {:else if seg.kind === "file"}
-              {@const href = fileRefs.editorUrl(seg.path, seg.line)}
-              <!-- data-chip: the chip handles its own click (hands the file to the
-                   configured editor, or explains how to configure one) -->
-              <span class="chip-slot" data-chip data-start={seg.start} data-length={seg.length}>
-                {#if href === null}
-                  <button
-                    type="button"
-                    class="doc file"
-                    title={seg.path}
-                    onclick={() => store.showToast("Set an editor to open files: kalamu config editor vscode")}
-                  >
-                    {@render fileChipBody(seg)}
-                  </button>
-                {:else}
-                  <!-- No target=_blank: a custom scheme is an OS handoff, not a page -->
-                  <a class="doc file" {href} title={seg.path}>
-                    {@render fileChipBody(seg)}
-                  </a>
-                {/if}
-              </span>
-            {:else if seg.kind === "image"}
-              <!-- data-chip: handles its own clicks (opens the asset), like tag chips -->
-              <span class="chip-slot" data-chip data-start={seg.start} data-length={seg.length}>
-                <a class="thumb" href={assetUrl(seg.path)} target="_blank" rel="noreferrer" title={seg.path}>
-                  <img src={assetUrl(seg.path)} alt={seg.alt || "pasted image"} loading="lazy" />
-                </a>
-              </span>
-            {:else}
-              <span data-start={seg.start}>{seg.text}</span>
-            {/if}
-          {/each}{#if label !== null}<span class="more">…</span>{/if}
-        </div>
-        <!-- Outside the clamped box on purpose: these are the tags the summary
-             cut off, and a clamp that could hide them again would defeat them. -->
-        {#if droppedTags.length > 0}
-          <span class="cut-tags">
-            {#each droppedTags as tag (tag)}
-              <TagChip
-                {tag}
-                color={tagColor(tag, store.meta.tags)}
-                onSetColor={(color) => store.setTagColor(tag, color)}
-                onFilter={() => store.setFilter(tag)}
-              />
-            {/each}
-          </span>
-        {/if}
+        <NodeText
+          {node}
+          {store}
+          {segments}
+          {label}
+          {peeks}
+          ariaLabel={textLabel}
+          describedby={metaId}
+          onfocusat={(target) => void focusAt(target)}
+          bind:element={displayEl}
+        />
       {/if}
 
       <!-- Absolute in the row's right gutter and mounted even while editing, so
-           entering/leaving edit mode never shifts the row; CSS reveals it on
-           row hover/focus. Clicking mid-edit blurs the editable, which commits
-           the draft before a normal click reads the tree. A normal click copies
-           agent context like Mod+C; Mod+click copies only raw text like
-           Mod+Shift+C. Both mappings are uniform across node kinds. The
-           trashcan to its right deletes the subtree, undoable like
-           Mod+Shift+Backspace, so it asks for no confirmation. -->
-      <button
-        class="copy-context"
-        aria-label="Copy item context; modifier-click copies item text only"
-        title="Copy item context (Mod-click: copy text only)"
-        tabindex="-1"
-        onclick={onCopyClick}
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
-          <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
-        </svg>
-      </button>
-      <button
-        class="delete-node"
-        aria-label="Delete item with its subtree"
-        title="Delete item (undoable)"
-        tabindex="-1"
-        onclick={onDeleteClick}
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M3 6h18" />
-          <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-          <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-          <line x1="10" x2="10" y1="11" y2="17" />
-          <line x1="14" x2="14" y1="11" y2="17" />
-        </svg>
-      </button>
+           entering/leaving edit mode never shifts the row; CSS reveals them on
+           row hover/focus. -->
+      {#if !phone.current}{@render rowActions()}{/if}
     </div>
   </div>
 
@@ -1183,103 +755,10 @@
     <DocPeek path={seg.path} anchor={seg.anchor} />
   {/each}
 
-  <!-- Its own row, under the parent and above the children, carrying whatever
-       this node has to say about itself. Rendered for every node whatever the
-       state of the outline: furniture that appeared on hover would shove the
-       hovered row out from under the pointer and oscillate. Only the bar and
-       the caption come and go, and the row's fixed height keeps even that free
-       of reflow. Assignment and blocked are the interactive items; both keep
-       tabindex="-1" like the row's other furniture, so click-to-edit and caret
-       navigation still step straight past this row. -->
-  <div class={["meta-row", { done: isDone }]}>
-    {#if showBar}
-      <ProgressBar done={progress.done} active={progress.active} total={progress.total} caption={showCaption} />
-    {/if}
-
-    <!-- What the task or discussion waits on (SPEC key decision 16), and the
-         way there: blockers cross the tree freely, so the badge is also the
-         only affordance that takes the reader to one. Editing the list still
-         belongs to the palette's Block on…/Unblock. After the text it wrapped
-         onto a line of its own the moment the prose filled the row — the same
-         failure that moved assignment down. Progress stays first so sibling
-         bars still line up; blocked before assignment because "cannot proceed"
-         outranks who it is for; the age stays last, ambient. -->
-    {#if blockers.length > 0}
-      {@const title = blockedTitle(blockers)}
-      {@const many = blockers.length > 1}
-      {@const blockedLabel = `${title}\n${many ? "Click to pick a blocker" : "Click to go to the blocker"}`}
-      <span class="block-wrap" bind:this={blockWrap}>
-        <button
-          class="blocked"
-          aria-haspopup={many ? "menu" : undefined}
-          aria-expanded={many ? blockOpen : undefined}
-          aria-label={blockedLabel}
-          {title}
-          tabindex="-1"
-          onclick={onBlockedClick}
-        >
-          <!-- Lucide lock, restroked to match the row's other icons. -->
-          <svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true">
-            <rect x="3" y="11" width="18" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="2.25" />
-            <path d="M7 11V7a5 5 0 0 1 10 0v4" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" />
-          </svg>
-          <span>{many ? `Blocked ×${blockers.length}` : "Blocked"}</span>
-        </button>
-        <!-- `many` as well as blockOpen: a blocker completed elsewhere can drop
-             the count to one under an open menu, and one blocker is no choice. -->
-        {#if blockOpen && many}
-          <BlockerMenu
-            {blockers}
-            onpick={(picked) => {
-              blockOpen = false;
-              store.revealNode(picked.id);
-            }}
-          />
-        {/if}
-      </span>
-    {/if}
-
-    <!-- Who owns this task, parked on the meta row rather than after the text:
-         inline it belongs to the last word, so a long row wraps it onto a line
-         of its own and strands the badge where nothing scans for it. Here it
-         sits in the row's fixed-height footer, next to the age it reads with. -->
-    {#if node.assignee}
-      {@const assignTitle =
-        node.assignee === "human" ? "Assigned to you — agents skip this task" : "Assigned to agents"}
-      <span class="assign-wrap" bind:this={assignWrap}>
-        <button
-          class="assignee"
-          class:human={node.assignee === "human"}
-          aria-haspopup="menu"
-          aria-expanded={assignOpen}
-          aria-label={assignTitle}
-          title={assignTitle}
-          tabindex="-1"
-          onclick={() => (assignOpen = !assignOpen)}
-        >
-          {@render assigneeIcon(node.assignee)}
-          <!-- Only human gets a word: agents skip those rows, so it is the one
-               assignment worth the width. Hidden from AT — aria-label above
-               already names the button, and would otherwise say it twice. -->
-          {#if node.assignee === "human"}<span aria-hidden="true">Human</span>{/if}
-        </button>
-        {#if assignOpen}
-          <AssignMenu
-            current={node.assignee}
-            onpick={(picked) => {
-              store.setAssignee(node.id, picked);
-              assignOpen = false;
-            }}
-          />
-        {/if}
-      </span>
-    {/if}
-
-    <time class="created" datetime={node.createdAt} title={createdTitle}>{createdAgo}</time>
-  </div>
+  <NodeMeta {node} {store} id={metaId} actions={phone.current && editing ? rowActions : undefined} />
 
   {#if hasChildren && !isCollapsed}
-    <div class="children">
+    <div class="children" role="list">
       {#each children as child (child.id)}
         <Self node={child} {store} />
       {/each}
@@ -1290,12 +769,25 @@
 <style>
   /* The gutter every row carries, kept in the pieces it is actually made of so
      one edit moves everything that depends on it. .content — the row's text —
-     starts at --text-col, and the progress bar row lines up with that. */
+     starts at --text-col, and the meta row lines up with that. --indent is
+     one nesting step, row edge to row edge. */
   .node {
     --glyph-col: 18px;
     --prio-col: 27px;
     --prio-gap: 3px;
     --text-col: calc(var(--glyph-col) + var(--prio-col) + var(--prio-gap));
+    --indent: 60px;
+  }
+  /* Phones can't spare a full step per level: a child's checkbox sits under its
+     parent's prio column instead, so deep subtrees keep a usable width.
+     (Literal breakpoint: see lib/breakpoints.ts.) */
+  @media (max-width: 639.98px) {
+    .node {
+      --indent: 24px;
+      /* The priority column costs every row its width, badge or not: on a
+         phone it shrinks to the bars' own 11px plus a little air. */
+      --prio-col: 16px;
+    }
   }
 
   .row {
@@ -1330,9 +822,10 @@
     user-select: none;
   }
 
+  /* Hangs in the outline's chevron gutter, left of the row box. */
   .chevron {
     position: absolute;
-    left: -17px;
+    left: calc(1px - var(--chevron-gutter));
     top: 6px;
     width: 15px;
     height: 15px;
@@ -1353,137 +846,17 @@
   .chevron.closed {
     transform: rotate(0deg);
   }
+  /* Shown on hover, on the row holding the caret, and always where there is
+     no hover to reveal it (touch). */
   .row:hover .chevron,
+  .row.caret .chevron,
   .chevron:focus-visible {
     opacity: 1;
   }
-
-  .glyph {
-    flex: none;
-    width: var(--glyph-col);
-    height: 26px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .dot {
-    padding: 0;
-    border: none;
-    background: none;
-    cursor: pointer;
-  }
-  .dot::before {
-    content: "";
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--bullet);
-  }
-  .dot.ringed::before {
-    box-shadow: 0 0 0 3.5px var(--ring);
-  }
-  .dot:hover::before {
-    box-shadow: 0 0 0 3.5px var(--ring);
-  }
-  /* A numbered bullet's marker is its ordinal; the dot only surfaces on hover
-     (it is still the zoom target). Collapsed stays visible: the ring is the
-     only sign that children are folded. */
-  .dot.numbered:not(:hover):not(.ringed)::before {
-    opacity: 0;
-  }
-
-  .check {
-    position: relative; /* the checkmark svg / pulsing dot overlays the ::after box */
-    padding: 0;
-    border: none;
-    background: none;
-    cursor: pointer;
-    color: transparent;
-  }
-  .check::after {
-    content: "";
-    width: 12px;
-    height: 12px;
-    border: 1.5px solid var(--check-border);
-    border-radius: 3.5px;
-    box-sizing: border-box;
-  }
-  .check.ringed::after {
-    box-shadow: 0 0 0 3px var(--ring);
-  }
-  .check svg,
-  .check .pulse {
-    position: absolute;
-    z-index: 1;
-  }
-  /* Claimed and still open: the box keeps its outline (the work isn't done) and
-     holds a breathing amber dot. It reports what the CLI reports by printing
-     `▶` — the same claim, said the way a live surface can say it. */
-  .check.started::after {
-    border-color: var(--started);
-  }
-  .pulse {
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: var(--started);
-    /* opacity + transform only: this animates on the compositor, so a screenful
-       of claimed tasks costs no layout or paint work per frame. */
-    animation: breathe 1.8s ease-in-out infinite;
-  }
-  @keyframes breathe {
-    0%,
-    100% {
+  @media (hover: none) {
+    .chevron {
       opacity: 1;
-      transform: scale(1);
     }
-    50% {
-      opacity: 0.45;
-      transform: scale(0.8);
-    }
-  }
-  /* Reduced motion: the dot still has to say "claimed", so it stays — it just
-     stops breathing. */
-  @media (prefers-reduced-motion: reduce) {
-    .pulse {
-      animation: none;
-    }
-    .bubble.started svg {
-      animation: none;
-    }
-  }
-  .row.done .check {
-    color: var(--bg);
-  }
-  .row.done .check::after {
-    background: var(--done);
-    border-color: var(--done);
-  }
-
-  .bubble {
-    padding: 0;
-    border: none;
-    background: none;
-    cursor: pointer;
-    color: var(--check-border);
-  }
-  .bubble svg {
-    border-radius: 4px;
-  }
-  .bubble.ringed svg {
-    box-shadow: 0 0 0 3px var(--ring);
-  }
-  /* Claimed and still open: the bubble turns the claim colour and breathes,
-     the same signal the checkbox's dot gives on a task. */
-  .bubble.started {
-    color: var(--started);
-  }
-  .bubble.started svg {
-    animation: breathe 1.8s ease-in-out infinite;
-  }
-  .row.done .bubble {
-    color: var(--done);
   }
 
   .content {
@@ -1512,7 +885,10 @@
     color: var(--done);
   }
 
-  .text {
+  /* Both renderings of the text: the editable here and NodeText's display.
+     Monospace for the outline text only — chips, badges and the rest of the
+     chrome keep the UI font. */
+  .content :global(.text) {
     max-width: 100%;
     min-width: 8px;
     min-height: 22px;
@@ -1521,299 +897,34 @@
     outline: none;
     word-break: break-word;
     white-space: pre-wrap;
+    font-family: var(--font-mono);
+    font-size: 13.5px;
   }
-
-  /* Overview mode. The summary shortens 96 rows in 118 (see lib/summary.ts) but
-     some of what survives is still 265 characters, and a row that is already
-     its own summary can be long too — so the two-line clamp is what actually
-     bounds the height, and it applies to every row while overview is on. Only
-     the display rendering: the editable is never clamped. */
-  .text.clamped {
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    overflow: hidden;
-  }
-
-  /* "Something was cut" — chrome, not text. Its span is butted straight against
-     {/each} in the markup: .text is pre-wrap, so a newline there would render
-     as a real space before the ellipsis. It carries no data-start either, so a
-     click on it maps to the end of the FULL text. */
-  .more {
-    color: var(--muted);
-  }
-
-  .cut-tags {
-    flex: none;
-    align-self: center;
-    display: inline-flex;
-    flex-wrap: wrap;
-    gap: 4px;
-  }
-
-  .row.done .text {
+  .row.done :global(.text) {
     color: var(--done);
     text-decoration: line-through;
   }
-  /* Chips read as content, not as struck-through text. */
-  .row.done .chip-slot,
-  .row.done .cut-tags {
-    opacity: 0.6;
+
+  .combo-anchor {
+    position: absolute;
+    width: 0;
   }
 
-  .chip-slot {
-    display: inline-block;
-    text-decoration: none;
-  }
-
-  /* Quiet link: text keeps the row's colour, only the underline marks it. */
-  .link {
-    color: inherit;
-    text-decoration: underline;
-    text-decoration-color: var(--muted);
-    text-underline-offset: 2px;
-  }
-  .link:hover {
-    text-decoration-color: currentcolor;
-  }
-
-  /* Quiet reference chip for repo docs: muted until hovered, deliberately
-     less loud than a tag chip. */
-  .doc {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 1px 6px;
-    border-radius: 5px;
-    font-size: 12px;
-    white-space: nowrap;
+  /* Option content for the caret combobox. */
+  .combo-icon {
+    display: flex;
     color: var(--muted);
-    background: var(--guide);
-    text-decoration: none;
   }
-  .doc:hover {
-    color: var(--fg);
+  /* The name takes the slack, so paths line up on the right. */
+  .combo-name {
+    flex: 1;
   }
-  .doc svg {
-    flex: none;
-  }
-  /* Expands the referenced section under the row; as quiet as the chip it follows. */
-  .peek-toggle {
-    display: inline-flex;
-    align-items: center;
-    padding: 0 2px;
-    border: 0;
-    background: none;
-    color: var(--muted);
-    cursor: pointer;
-    vertical-align: middle;
-  }
-  .peek-toggle:hover {
-    color: var(--fg);
-  }
-  .peek-toggle svg {
-    transition: transform 120ms;
-  }
-  .peek-toggle.open svg {
-    transform: rotate(180deg);
-  }
-  /* Same chip, rendered as a <button> when no editor is configured. */
-  button.doc {
-    border: 0;
-    font: inherit;
-    font-size: 12px;
-    cursor: pointer;
-  }
-
   .combo-path {
     margin-left: 6px;
     color: var(--muted);
     font-size: 11px;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-
-  .thumb {
-    display: inline-flex;
-    vertical-align: middle;
-  }
-  .thumb img {
-    max-height: 120px;
-    max-width: 240px;
-    object-fit: contain;
-    border-radius: 6px;
-    border: 1px solid var(--guide);
-    color: var(--muted); /* alt-text fallback for missing files */
-    font-size: 12px;
-  }
-
-  .prio-wrap {
-    position: relative;
-    flex: none;
-    width: var(--prio-col);
-    height: 26px;
-    display: flex;
-    align-items: center;
-    margin-right: var(--prio-gap);
-  }
-
-  /* The bars carry the signal, so the button is bare chrome — it fills the
-     gutter purely to give the 11px glyph a comfortable hit area. */
-  .prio {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 100%;
-    height: 100%;
-    padding: 0;
-    border: none;
-    border-radius: 4px;
-    background: none;
-    cursor: pointer;
-  }
-  /* Default (p2) — and any bullet — shows no badge, only a ghost affordance
-     on hover/focus. */
-  .prio.ghost {
-    opacity: 0;
-    transition: opacity 0.1s;
-  }
-  .row:hover .prio.ghost,
-  .row:focus-within .prio.ghost,
-  .prio.ghost[aria-expanded="true"] {
-    opacity: 0.5;
-  }
-
-  /* Anchors the multi-blocker menu. Same box as .assign-wrap: centred so the
-     meta-row divider generated inside it sits on the row's midline. */
-  .block-wrap {
-    position: relative;
-    flex: none;
-    align-self: center;
-    display: flex;
-    align-items: center;
-  }
-
-  /* Built for the meta row's fixed 14px, same recipe as .assignee.human — both
-     are scan-distance signals, only the hue differs. It is a button (it jumps
-     to the blocker), so the UA's border/background/font are reset; at rest it
-     must read as a status badge, not a control. The count only appears when
-     more than one blocker is open. */
-  .blocked {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 1px 6px;
-    border: none;
-    border-radius: 999px;
-    font: inherit;
-    font-size: 11px;
-    font-weight: 500;
-    line-height: 1;
-    color: var(--blocked);
-    background: color-mix(in srgb, var(--blocked) 14%, transparent);
-    user-select: none;
-    cursor: pointer;
-  }
-  .blocked svg {
-    width: 12px;
-    height: 12px;
-  }
-  /* Same deepen-on-approach as .assignee, in the badge's own colour. */
-  .blocked:hover,
-  .blocked:focus-visible,
-  .blocked[aria-expanded="true"] {
-    background: color-mix(in srgb, var(--blocked) 26%, transparent);
-  }
-  /* A done task's badge is history, not a warning. Keyed off the meta row:
-     the badge lives down there now, outside anything .row can reach. */
-  .meta-row.done .blocked {
-    opacity: 0.6;
-  }
-
-  /* Anchors the assign menu, so it stays a positioned box of its own. Centred
-     because the meta row's divider is generated inside it (see .meta-row's
-     .assign-wrap rules): centring is what puts that dot on the row's midline
-     alongside the one in front of the timestamp. */
-  .assign-wrap {
-    position: relative;
-    flex: none;
-    align-self: center;
-    display: flex;
-    align-items: center;
-  }
-
-  /* Both variants are built to land inside the meta row's fixed 14px: nothing
-     on that row may ever reflow the outline, so the badge fits the row rather
-     than the row growing for the badge. Agent = 12px icon + 1px ring of pad. */
-  .assignee {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 1px;
-    border: none;
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--fg) 9%, transparent);
-    color: var(--muted);
-    cursor: pointer;
-  }
-  /* The shared assignee icon ships at 14px, which both overpowers the row's
-     11px text and busts its height budget. */
-  .assignee :global(svg) {
-    width: 12px;
-    height: 12px;
-  }
-  .assignee:hover,
-  .assignee[aria-expanded="true"] {
-    color: var(--fg);
-  }
-
-  /* The human badge shares .blocked's pill — same weight, radius and
-     deepen-on-approach — because both are signals the reader hunts for at a
-     scan distance; only the hue differs. Sized to clear 14px and sit with the
-     11px timestamp. Agent keeps the quiet icon dot above: it is the default,
-     and defaults should not compete. */
-  .assignee.human {
-    gap: 4px;
-    padding: 1px 6px;
-    font: inherit;
-    font-size: 11px;
-    font-weight: 500;
-    line-height: 1;
-    color: var(--assigned-human);
-    background: color-mix(in srgb, var(--assigned-human) 14%, transparent);
-    user-select: none;
-  }
-  .assignee.human:hover,
-  .assignee.human:focus-visible,
-  .assignee.human[aria-expanded="true"] {
-    color: var(--assigned-human);
-    background: color-mix(in srgb, var(--assigned-human) 26%, transparent);
-  }
-  /* A done task's assignment is history, not a live signal. Keyed off the meta
-     row's own done flag, like .created below: the badge lives down there now,
-     outside anything .row can reach. */
-  .meta-row.done .assignee.human {
-    opacity: 0.6;
-  }
-
-  .combo-anchor {
-    position: absolute;
-    width: 0;
-    height: 0;
-  }
-
-  /* Option content for the caret combobox (rendered into ComboMenu rows). */
-  .combo-icon {
-    display: flex;
-    color: var(--muted);
-  }
-  .combo-label {
-    flex: 1;
-  }
-  .combo-tick {
-    font-size: 11px;
-    color: var(--muted);
   }
   /* Same recipe as TagChip, so options preview exactly how the tag will chip. */
   .combo-chip {
@@ -1822,14 +933,15 @@
     line-height: 1;
     padding: 2.5px 7px;
     border-radius: 999px;
-    color: var(--tag-color);
+    color: light-dark(color-mix(in oklab, var(--tag-color) 60%, black), color-mix(in oklab, var(--tag-color) 65%, white));
     background: color-mix(in srgb, var(--tag-color) 15%, transparent);
   }
 
-  /* In the row's right gutter (main's 52px right padding, which every nesting
-     depth keeps — children indent only on the left), anchored to .row like the
-     chevron is on the left. Absolute, so neither reshapes the row. Copy sits
-     nearest the text, delete 4px further out. */
+  /* In the row's right gutter (--row-gutter-right, which whatever holds the
+     outline leaves clear and every nesting depth keeps — children indent only
+     on the left), anchored to .row like the chevron is on the left. Absolute,
+     so neither reshapes the row. Copy sits nearest the text, delete 4px
+     further out. */
   .copy-context,
   .delete-node {
     position: absolute;
@@ -1866,117 +978,73 @@
   .delete-node:hover {
     color: var(--fg);
   }
-  /* Forgiving hover, left side: approaching a row through the left gutter
-     counts as hovering the row. The chevron renders later, so it stays
-     clickable. */
-  .row::before {
-    content: "";
-    position: absolute;
-    left: -20px;
-    top: 0;
-    bottom: 0;
-    width: 20px;
+
+  /* Phones: the snippet renders inside NodeMeta's meta row instead, only for
+     the row holding the caret — in flow at the row's right end, always shown. */
+  @media (max-width: 639.98px) {
+    .copy-context,
+    .delete-node {
+      position: relative;
+      top: 0;
+      right: 0;
+      opacity: 1;
+      pointer-events: auto;
+    }
   }
 
-  /* Forgiving hover, right side: the copy and delete buttons live in main's
-     52px right padding, outside the row box — without this, travelling from
-     the row to a button drops :hover and hides it mid-flight. Painted after
-     the row's children, so the buttons need their z-index to stay clickable. */
+  /* Touch: hit areas drawn past the small icons, so the layout is untouched.
+     The chevron's stops short of the glyph beside it; copy and delete spread
+     across the gutter so theirs don't overlap (24×32 each). */
+  @media (pointer: coarse) {
+    .chevron::after,
+    .copy-context::after,
+    .delete-node::after {
+      content: "";
+      position: absolute;
+    }
+    .chevron::after {
+      inset: -8px -2px -8px -10px;
+    }
+    .copy-context::after,
+    .delete-node::after {
+      inset: -8px -4px;
+    }
+  }
+  @media (pointer: coarse) and (min-width: 640px) {
+    .copy-context {
+      right: -22px;
+    }
+    .delete-node {
+      right: -48px;
+    }
+  }
+
+  /* Forgiving hover, both sides: approaching a row through either gutter counts
+     as hovering it. Left, the chevron renders later, so it stays clickable.
+     Right, without this, travelling from the row to the copy and delete
+     buttons drops :hover and hides them mid-flight; painted after the row's
+     children, so the buttons need their z-index to stay clickable. */
+  .row::before,
   .row::after {
     content: "";
     position: absolute;
-    right: -52px;
     top: 0;
     bottom: 0;
-    width: 52px;
+  }
+  .row::before {
+    left: calc(-1 * var(--chevron-gutter));
+    width: var(--chevron-gutter);
+  }
+  .row::after {
+    right: calc(-1 * var(--row-gutter-right));
+    width: var(--row-gutter-right);
   }
 
-  /* Starts exactly where THIS row's text starts — the meta reads as a footer to
-     its own row, not as the first of its children. Height is fixed rather than
-     intrinsic, and one constant for every node: the bar comes and goes with the
-     subtree, and neither it nor the caption may move anything when it does.
-     Margin, not padding: height is 14px and the app is border-box. Below is
-     the gap between nodes — without it the age sits as close to the next
-     checkbox as to its own text, and could belong to either. Above is a
-     breath so a tag chip on the last line of text does not kiss this row. */
-  .meta-row {
-    --meta-gap: 10px;
-    --meta-dot: 3px;
-    display: flex;
-    align-items: center;
-    gap: var(--meta-gap);
-    height: 14px;
-    margin-top: 3px;
-    margin-bottom: 8px;
-    padding-left: var(--text-col);
-    user-select: none;
-  }
-
-  /* Dividers generated rather than placed: whatever this row grows later is
-     separated without touching the markup, and nothing strands a dot at either
-     end when the bar is away — only an item with something before it draws one.
-     Drawn as a box, not a middot glyph: a glyph's size is hostage to the font's
-     metrics and to the 11px it inherits, which renders it too small to read.
-     :global because a later item may be a component root, which carries no
-     scope class of ours. */
-  .meta-row > :global(:not(:first-child))::before {
-    content: "";
-    display: inline-block;
-    width: var(--meta-dot);
-    height: var(--meta-dot);
-    border-radius: 50%;
-    vertical-align: middle;
-    margin-right: var(--meta-gap);
-    background: color-mix(in srgb, var(--muted) 50%, transparent);
-  }
-
-  /* A 3px square after a strip of dashes reads as one more dash. Keep every
-     other divider — including after the bar once its caption is showing,
-     because that is text, not a dash. */
-  .meta-row > :global(.bar.bare + *)::before {
-    content: none;
-  }
-
-  /* Flex-container items (badges that wrap a menu) generate the divider
-     inside themselves, which would widen the menu-anchor box and drop the
-     menu off the badge by a dot. Out of flow it draws in exactly the same
-     place; the margin gives the row back the width the dot no longer holds. */
-  .meta-row > .block-wrap:not(:first-child),
-  .meta-row > .assign-wrap:not(:first-child) {
-    margin-left: calc(var(--meta-dot) + var(--meta-gap));
-  }
-  .meta-row > .block-wrap::before,
-  .meta-row > .assign-wrap::before {
-    position: absolute;
-    right: 100%;
-  }
-  /* The reserved-dot margin would leave a hole once the divider is suppressed. */
-  .meta-row > :global(.bar.bare + .block-wrap),
-  .meta-row > :global(.bar.bare + .assign-wrap) {
-    margin-left: 0;
-  }
-
-  /* Same weight as the bar's caption — this is ambient provenance, and the
-     exact timestamp is a hover away. */
-  .created {
-    font-size: 11px;
-    line-height: 1;
-    color: var(--muted);
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
-  /* A finished node's age is history, like its other badges. The divider in
-     front of it fades too, without being named here: it is generated inside
-     this element, so it is part of what this opacity composites. */
-  .meta-row.done .created {
-    opacity: 0.6;
-  }
-
-  /* Every row now carries the same gutter — glyph (18px) + prio column
-     (27px + 3px margin) — so a single indent step fits all kinds. */
+  /* One --indent per level: the guide line sits under the parent's glyph
+     centre, and the padding makes up the rest of the step. */
   .children {
-    margin-left: 8px;
-    padding-left: 51px;
+    margin-left: calc(var(--glyph-col) / 2 - 1px);
+    padding-left: calc(var(--indent) - var(--glyph-col) / 2);
     border-left: 1px solid var(--guide);
   }
 </style>

@@ -123,7 +123,7 @@
     border-radius: 4px;
     background: var(--guide);
     color: inherit;
-    font-family: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    font-family: var(--font-mono);
     font-size: 11.5px;
   }
 

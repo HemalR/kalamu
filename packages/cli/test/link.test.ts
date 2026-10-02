@@ -49,7 +49,7 @@ describe("link", () => {
     const id = (added.json as { id: string }).id;
 
     expect(commands.link(cwd, id).text).toContain("[Fix \\[duplicate\\] \\\\ handling]");
-    expect(() => commands.link(cwd, "n_missing")).toThrowError(new CliError("no node with id n_missing"));
+    expect(() => commands.link(cwd, "n_missing")).toThrowError(new CliError("no node with id n_missing", "not-found"));
     expect(() => commands.link(cwd, id, { format: "text" })).toThrow(/use markdown, url or json/);
   });
 });

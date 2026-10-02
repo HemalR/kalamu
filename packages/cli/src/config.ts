@@ -6,23 +6,33 @@
 import { kalamuHome } from "@kalamu/core/store";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { z } from "zod";
 import { resolveEditorTemplate } from "./editor.js";
 import { DEFAULT_HUB_BASE_URL } from "./hub-url.js";
 
 export { kalamuHome };
 
-export interface Config {
-  /** false disables the npm update check (default on). */
-  updateCheck?: boolean;
-  /** true once the one-time "we check npm" notice has been shown. */
-  updateNoticeSeen?: boolean;
-  /** Machine-local base address used for shareable hub node links. */
-  baseUrl?: string;
-  /** Editor preset name or `{path}` URL template for `@file` references. */
-  editor?: string;
-  /** Where local-store project data lives (absolute); absent = ~/.kalamu/projects. Read by core's `dataHome`. */
-  dataDir?: string;
-}
+/**
+ * A malformed value reads as unset rather than discarding the file, and keys
+ * this build doesn't know pass through, so an older CLI rewriting the file
+ * never drops a newer one's settings.
+ */
+const configSchema = z
+  .object({
+    /** false disables the npm update check (default on). */
+    updateCheck: z.boolean().optional().catch(undefined),
+    /** true once the one-time "we check npm" notice has been shown. */
+    updateNoticeSeen: z.boolean().optional().catch(undefined),
+    /** Machine-local base address for shareable hub node links, and a host the servers answer to. */
+    baseUrl: z.string().optional().catch(undefined),
+    /** Editor preset name or `{path}` URL template for `@file` references. */
+    editor: z.string().optional().catch(undefined),
+    /** Where local-store project data lives (absolute); absent = ~/.kalamu/projects. Read by core's `dataHome`. */
+    dataDir: z.string().optional().catch(undefined),
+  })
+  .passthrough();
+
+export type Config = z.infer<typeof configSchema>;
 
 function configFile(): string {
   return join(kalamuHome(), "config.json");
@@ -30,12 +40,10 @@ function configFile(): string {
 
 export function readConfig(): Config {
   try {
-    const parsed: unknown = JSON.parse(readFileSync(configFile(), "utf8"));
-    if (parsed !== null && typeof parsed === "object") return parsed as Config;
+    return configSchema.parse(JSON.parse(readFileSync(configFile(), "utf8")));
   } catch {
-    // missing or corrupt → defaults
+    return {}; // missing or corrupt → defaults
   }
-  return {};
 }
 
 export function writeConfig(config: Config): void {
@@ -62,10 +70,10 @@ export function normalizeBaseUrl(value: string): string | null {
   }
 }
 
-/** Configured link base, or the default hub address for old/unconfigured installs. */
+/** Configured base URL (node links, allowed host), or the default hub address for old/unconfigured installs. */
 export function hubBaseUrl(): string {
   const configured = readConfig().baseUrl;
-  return typeof configured === "string" ? (normalizeBaseUrl(configured) ?? DEFAULT_HUB_BASE_URL) : DEFAULT_HUB_BASE_URL;
+  return (configured !== undefined ? normalizeBaseUrl(configured) : null) ?? DEFAULT_HUB_BASE_URL;
 }
 
 /**
@@ -75,7 +83,7 @@ export function hubBaseUrl(): string {
  */
 export function editorTemplate(): string | null {
   const configured = readConfig().editor;
-  return typeof configured === "string" ? resolveEditorTemplate(configured) : null;
+  return configured !== undefined ? resolveEditorTemplate(configured) : null;
 }
 
 /**

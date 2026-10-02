@@ -1,10 +1,10 @@
-import { initKalamu, readUiState, type KalamuPaths } from "@kalamu/core/store";
+import { initKalamu, migrateStore, outlineVersion, pathsFor, readOutline, readUiState, type KalamuPaths } from "@kalamu/core/store";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createServer, type KalamuServer } from "../src/server.js";
+import { BASE_VERSION_HEADER, createServer, VERSION_HEADER, type KalamuServer } from "../src/server.js";
 
 let root: string;
 let paths: KalamuPaths;
@@ -19,7 +19,7 @@ beforeEach(() => {
   process.env.KALAMU_HOME = home;
   process.env.KALAMU_NO_UPDATE_CHECK = "1";
   paths = initKalamu(root).paths;
-  server = createServer(paths, null);
+  server = createServer(root, null);
 });
 
 afterEach(() => {
@@ -68,36 +68,57 @@ describe("nodes API", () => {
     expect(((await deleted.json()) as { deleted: number }).deleted).toBe(1);
   });
 
+  const replace = async (nodes: unknown, version?: string): Promise<Response> =>
+    server.app.request("/api/nodes", {
+      method: "PUT",
+      body: JSON.stringify({ nodes, version }),
+      headers: { "Content-Type": "application/json" },
+    });
+
   it("PUT /api/nodes replaces the outline (undo restore) and rejects invalid payloads", async () => {
     const a = await createNode({ text: "keep", kind: "task" });
-    const snapshot = ((await (await server.app.request("/api/nodes")).json()) as { nodes: unknown[] }).nodes;
-    await server.app.request(`/api/nodes/${a.id}`, { method: "DELETE" });
+    const loaded = await server.app.request("/api/nodes");
+    const snapshot = (await loaded.json()) as { nodes: unknown[]; version: string };
+    expect(loaded.headers.get(VERSION_HEADER)).toBe(snapshot.version);
+    const deleted = await server.app.request(`/api/nodes/${a.id}`, { method: "DELETE" });
+    // Every outline write reports the version it produced, and the one it was
+    // applied on: the client adopts the first only when the second is its own.
+    const version = deleted.headers.get(VERSION_HEADER) ?? "";
+    expect(version).toBe(outlineVersion(paths.outline));
+    expect(deleted.headers.get(BASE_VERSION_HEADER)).toBe(snapshot.version);
 
-    const restored = await server.app.request("/api/nodes", {
-      method: "PUT",
-      body: JSON.stringify({ nodes: snapshot }),
-      headers: { "Content-Type": "application/json" },
-    });
+    const restored = await replace(snapshot.nodes, version);
     expect(restored.status).toBe(200);
-    expect(((await restored.json()) as { nodes: { id: string }[] }).nodes.map((n) => n.id)).toEqual([a.id]);
+    const body = (await restored.json()) as { nodes: { id: string }[]; version: string };
+    expect(body.nodes.map((n) => n.id)).toEqual([a.id]);
+    expect(body.version).toBe(restored.headers.get(VERSION_HEADER));
+    expect(body.version).toBe(outlineVersion(paths.outline));
 
-    const bad = await server.app.request("/api/nodes", {
-      method: "PUT",
-      body: JSON.stringify({ nodes: [...snapshot, ...snapshot] }), // duplicate ids
-      headers: { "Content-Type": "application/json" },
-    });
-    expect(bad.status).toBe(400);
+    expect((await replace([...snapshot.nodes, ...snapshot.nodes], body.version)).status).toBe(400); // duplicate ids
+    expect((await replace(snapshot.nodes)).status).toBe(400); // no version
+  });
+
+  it("PUT /api/nodes refuses to clobber a write made since the client loaded", async () => {
+    await createNode({ text: "mine", kind: "task" });
+    const { nodes, version } = (await (await server.app.request("/api/nodes")).json()) as {
+      nodes: unknown[];
+      version: string;
+    };
+    await createNode({ text: "an agent's, meanwhile", kind: "task" });
+    const stale = await replace(nodes, version);
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toEqual({ error: "outline changed since it was loaded", code: "conflict" });
+    expect(readOutline(paths.outline).nodes).toHaveLength(2);
   });
 
   it("whole-outline PUT keeps node fields this build doesn't know", async () => {
     await createNode({ text: "keep me", kind: "task" });
-    const listed = (await (await server.app.request("/api/nodes")).json()) as { nodes: Record<string, unknown>[] };
+    const listed = (await (await server.app.request("/api/nodes")).json()) as {
+      nodes: Record<string, unknown>[];
+      version: string;
+    };
     const withExtra = listed.nodes.map((n) => ({ ...n, futureField: "yes" }));
-    const put = await server.app.request("/api/nodes", {
-      method: "PUT",
-      body: JSON.stringify({ nodes: withExtra }),
-      headers: { "Content-Type": "application/json" },
-    });
+    const put = await replace(withExtra, listed.version);
     expect(put.status).toBe(200);
     const after = (await put.json()) as { nodes: Record<string, unknown>[] };
     expect(after.nodes[0]?.["futureField"]).toBe("yes");
@@ -137,6 +158,59 @@ describe("nodes API", () => {
   it("never records createdBy — everything through the UI is the developer typing", async () => {
     await createNode({ text: "typed by hand", kind: "task" });
     expect(readFileSync(paths.outline, "utf8")).not.toContain("createdBy");
+  });
+
+  it("surfaces a structurally broken outline instead of hiding the nodes it cannot place", async () => {
+    writeFileSync(
+      paths.outline,
+      `${JSON.stringify({ id: "n_orphan", parentId: "n_gone", kind: "task", text: "x", createdAt: "2026-07-09T07:00:00.000Z", doneAt: null })}\n`,
+    );
+    const res = await server.app.request("/api/nodes");
+    expect(res.status).toBe(500);
+    expect(await res.json()).toMatchObject({ code: "invalid-outline", error: expect.stringMatching(/kalamu validate/) });
+    expect((await post("/api/nodes", { text: "would drop the orphan" })).status).toBe(500);
+  });
+
+  it("follows the store when the project migrates under a running server", async () => {
+    migrateStore(root, "repo");
+    const node = await createNode({ text: "after the move" });
+    expect(readOutline(pathsFor(root).outline).nodes.map((n) => n.id)).toEqual([node.id]);
+    expect(pathsFor(root).store).toBe("repo");
+  });
+});
+
+describe("request guard", () => {
+  const request = async (path: string, init: RequestInit = {}): Promise<Response> =>
+    server.app.request(`http://127.0.0.1:4242${path}`, init);
+
+  it("answers loopback hosts and refuses any other Host (DNS rebinding)", async () => {
+    expect((await request("/api/nodes", { headers: { Host: "localhost:4242" } })).status).toBe(200);
+    const foreign = await request("/api/nodes", { headers: { Host: "evil.example:4242" } });
+    expect(foreign.status).toBe(403);
+    expect(await foreign.text()).toContain("kalamu config base-url");
+  });
+
+  it("answers the configured base-url's host through a proxy's X-Forwarded-Host", async () => {
+    writeFileSync(join(home, "config.json"), JSON.stringify({ baseUrl: "https://box.example.dev:4400" }));
+    const via = async (forwarded: string, host = "127.0.0.1:4400"): Promise<number> =>
+      (await request("/api/nodes", { headers: { Host: host, "X-Forwarded-Host": forwarded } })).status;
+    expect(await via("box.example.dev:4400")).toBe(200);
+    expect(await via("BOX.example.dev:4400")).toBe(200);
+    expect(await via("box.example.dev:4401")).toBe(403);
+    // A local proxy may hand over the VM's own single-label name instead of loopback.
+    expect(await via("box.example.dev:4400", "box:4400")).toBe(200);
+    // A rebinding page can forge the forwarded header, never its own Host.
+    expect(await via("box.example.dev:4400", "evil.example:4400")).toBe(403);
+  });
+
+  it("refuses cross-origin writes and non-JSON bodies on JSON routes", async () => {
+    const send = async (headers: Record<string, string>): Promise<Response> =>
+      request("/api/nodes", { method: "POST", body: JSON.stringify({ text: "csrf" }), headers });
+    expect((await send({ "Content-Type": "text/plain", Origin: "https://evil.example" })).status).toBe(403);
+    expect((await send({ "Content-Type": "application/json", Origin: "https://evil.example" })).status).toBe(403);
+    expect((await send({ "Content-Type": "text/plain" })).status).toBe(415);
+    expect((await send({ "Content-Type": "application/json", Origin: "http://localhost:4242" })).status).toBe(201);
+    expect(readOutline(paths.outline).nodes).toHaveLength(1);
   });
 });
 
@@ -212,6 +286,9 @@ describe("assets API", () => {
     const served = await server.app.request(url);
     expect(served.status).toBe(200);
     expect(served.headers.get("content-type")).toBe("image/png");
+    // A pasted SVG can carry script: assets render sandboxed, never sniffed.
+    expect(served.headers.get("content-security-policy")).toBe("sandbox");
+    expect(served.headers.get("x-content-type-options")).toBe("nosniff");
     expect(Buffer.from(await served.arrayBuffer())).toEqual(png);
   });
 
@@ -256,6 +333,9 @@ describe("docs route", () => {
     // URL parsing collapses a literal ../, so the encoded form is the one that
     // reaches the handler — it must hit the repo-root guard, not the file.
     expect((await server.app.request("/docs/..%2Fkalamu-docs-outside.md")).status).toBe(404);
+    // Nor through a symlink that resolves outside the repo.
+    symlinkSync(join(tmpdir(), "kalamu-docs-outside.md"), join(root, "linked.md"));
+    expect((await server.app.request("/docs/linked.md")).status).toBe(404);
   });
 });
 
@@ -341,7 +421,7 @@ describe("meta and ui-state API", () => {
     expect((await project(server)).branchDrift).toBeNull();
 
     const repoRoot = mkdtempSync(join(tmpdir(), "kalamu-srv-repo-"));
-    const repo = createServer(initKalamu(repoRoot, { store: "repo" }).paths, null);
+    const repo = createServer(initKalamu(repoRoot, { store: "repo" }).paths.root, null);
     try {
       expect(await project(repo)).toMatchObject({ store: "repo", branchDrift: null }); // not a git checkout yet
       offMain(repoRoot);

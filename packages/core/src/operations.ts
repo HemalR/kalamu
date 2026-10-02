@@ -4,11 +4,22 @@ import { renumber } from "./numbering.js";
 import { appendTags, stripTags } from "./tokens.js";
 import { ancestors, buildTree, isDescendant, pathOf, preorder, subtreeIds, type Tree } from "./tree.js";
 
-export class OperationError extends Error {}
+/**
+ * A refused operation. `code` marks the two refusals callers branch on — the
+ * server maps them to 404/409, `--format json` reports them to agents.
+ */
+export class OperationError extends Error {
+  constructor(
+    message: string,
+    readonly code?: "not-found" | "cycle",
+  ) {
+    super(message);
+  }
+}
 
 function requireNode(tree: Tree, id: string): KalamuNode {
   const node = tree.byId.get(id);
-  if (!node) throw new OperationError(`no node with id ${id}`);
+  if (!node) throw new OperationError(`no node with id ${id}`, "not-found");
   return node;
 }
 
@@ -336,7 +347,7 @@ export function addBlocker(
   const existing = node.blockedBy ?? [];
   if (existing.includes(blockerId)) return { nodes: preorder(tree), node };
   if (dependsOn(nodes, blockerId, id)) {
-    throw new OperationError(`${blockerId} already waits on ${id}; blocking would create a cycle`);
+    throw new OperationError(`${blockerId} already waits on ${id}; blocking would create a cycle`, "cycle");
   }
   return replace(tree, { ...node, blockedBy: [...existing, blockerId] });
 }

@@ -181,7 +181,7 @@ and the data lives under the data home, one directory per id:
   assets/
 ```
 
-The data home is `KALAMU_DATA_DIR`, else `dataDir` in `~/.kalamu/config.json` (`kalamu config data-dir <path>`; `default` clears it), else `~/.kalamu/projects`. Point it at a synced folder to carry outlines between machines — Kalamu never syncs anything itself, and changing the setting moves nothing: it only changes where ids resolve. The marker is the project test for root resolution and wins over any `outline.jsonl` a pre-migration branch still carries. A clone on a machine without the data errors until `kalamu init` gives it an empty outline. Nothing in this store's `.kalamu/` needs a `.gitignore` entry. `kalamu hub list` prints each local-store project's data dir; `/api/project` reports `store` and `dataDir`.
+The data home is `KALAMU_DATA_DIR`, else `dataDir` in `~/.kalamu/config.json` (`kalamu config data-dir <path>`; `default` clears it), else `~/.kalamu/projects`. Point it at a synced folder to carry outlines between machines — Kalamu never syncs anything itself, and changing the setting moves nothing: it only changes where ids resolve. The marker is the project test for root resolution and wins over any `outline.jsonl` a pre-migration branch still carries. A clone on a machine without the data errors — naming the project id, the data home it checked and which setting chose it (`KALAMU_DATA_DIR`, `dataDir`, or the default) — because the likelier cause is a process with a different data home, such as an agent sandbox, where `kalamu init` would quietly start a second, empty outline. `kalamu init` gives a genuinely fresh clone its empty outline; `kalamu open` never does it implicitly for an existing project. Nothing in this store's `.kalamu/` needs a `.gitignore` entry. `kalamu hub list` prints each local-store project's data dir; `/api/project` reports `store` and `dataDir`.
 
 **`repo`.** Everything committed:
 
@@ -651,6 +651,24 @@ The web UI is for humans.
 
 The JSONL file is the shared source of truth.
 
+Exit codes are part of the agent contract:
+
+```text
+0  ok
+1  error (bad flags, unknown id, refused operation, invalid outline, …)
+2  nothing to do (`next` with no eligible item)
+3  write conflict — another writer kept changing the outline; retry the command
+```
+
+With `--format json`, a failing command prints exactly one JSON document on
+**stdout**, like a succeeding one, so an agent parsing stdout never has to
+read stderr: `{"error": {"message": "...", "code": "..."}}`. `code` is
+`not-found`, `cycle` (a blocker would close a loop), `conflict` (exit 3),
+`invalid-outline` (the file needs `kalamu validate` and a hand fix), or
+`error` for everything else. Text mode prints `kalamu: <message>` on stderr.
+Success shapes only ever grow: keys agents already parse are never renamed or
+removed.
+
 ### Required MVP commands
 
 ```bash
@@ -813,7 +831,10 @@ kalamu open --file .kalamu/outline.jsonl
 Expected behaviour:
 
 1. Detect project root or use current working directory.
-2. Ensure `.kalamu/outline.jsonl` exists. (Amended 2026-07-13.) When no
+2. Ensure the project exists: a directory with no project is initialised;
+   an existing project is only resolved, so a local-store project whose data
+   is missing here gets the same error as any other command (see
+   [Storage](#storage)). (Amended 2026-07-13.) When no
    `.kalamu/` exists anywhere up the tree and the run is interactive (TTY),
    `open` first asks "No Kalamu project here — initialise `<cwd>`? [Y/n]" —
    showing the path catches wrong-directory accidents — and on yes runs the
@@ -901,7 +922,7 @@ Example text output:
 ```text
 n_001  • Auth improvements
 n_002    • SSO
-n_003      ☐ p2 Investigate WorkOS org mapping #research
+n_003      ☐ p3 Investigate WorkOS org mapping #research
 n_004      ☐ Add SAML config screen
 n_005    • Login UX
 n_006      ☐ p1 Fix password reset redirect
@@ -913,22 +934,18 @@ Done task:
 n_007      ☑ Add login tests
 ```
 
-Handed-off task:
-
-```text
-n_008      ☐ Add audit logs → backlog:backlog/tasks/add-audit-logs.md
-```
-
 Assigned task (`@human` or `@agent`):
 
 ```text
 n_009      ☐ Write launch blog post #publishing @human
 ```
 
+Priority leads the row for `p1` and `p3`; the default `p2` is never printed.
+
 Discussion (open `?`, done `✓`):
 
 ```text
-n_010      ? p2 WorkOS or Auth0 for SSO
+n_010      ? p1 WorkOS or Auth0 for SSO
 n_011      ✓ Settled: auth stays cookie-based
 ```
 
@@ -1165,6 +1182,7 @@ Validation:
 
 * Do not allow priority outside 1–3.
 * Do not allow unknown kind.
+* With no change flags at all, fail ("nothing to do") like `move`, rather than rewrite the file and report `Updated`.
 
 ---
 
@@ -1372,7 +1390,8 @@ kalamu next --format json
 the task's own subtree. `link` is the task's copy-ready markdown reference
 (see `kalamu link`; best-effort, omitted when the slug cannot be resolved).
 Batch mode (`--limit`/`--all`) keeps its lighter per-entry shape (`id`,
-`text`, `priority`, `path`) and carries no links.
+`text`, `priority`, `path`) plus the same best-effort `link` field on each JSON
+entry; its text output prints no `Link:` lines.
 
 When no task is eligible, exit with a non-zero status and output `{"id": null}` in JSON mode so agents can detect "nothing to do" deterministically.
 
@@ -1509,7 +1528,7 @@ The UI should feel like Workflowy:
 * Easy move up/down
 * Fast creation of sibling and child nodes
 * Pasting a multi-line clipboard into an empty node splits it: each non-empty line becomes its own sibling, inheriting the target's kind (an empty task stays a list of tasks, an empty discussion a list of discussions). A non-empty node pastes as ordinary text, including newlines. Paste on the zoom root creates children rather than invisible siblings, matching Enter
-* Collapsible parents — collapsed state persists across sessions (via `ui-state.json`) but never touches the outline file; a collapsed node shows a visual hint that it has hidden children (e.g. ringed bullet, Workflowy-style)
+* Collapsible parents — collapsed state persists across sessions (via `ui-state.json`) but never touches the outline file; a collapsed node shows a visual hint that it has hidden children (e.g. ringed bullet, Workflowy-style). Collapsed reads as a darker glyph in a strong halo; hovering a bullet only grows its dot, so hover never looks collapsed
 * Fast deletion (backspace on an empty node deletes it, Workflowy-style)
 * Undo/redo for all structural operations (in-session undo stack is sufficient for MVP)
 * Ability to toggle bullet/task
@@ -1519,13 +1538,13 @@ The UI should feel like Workflowy:
 * URLs recognised in text (`http://`/`https://` schemes only — no bare-domain guessing) render underlined and clickable, opening in a new tab; while the node is focused the URL is raw editable text, like tags. Trailing sentence punctuation is not part of the link, and a `#fragment` inside a URL never becomes a tag chip
 * Assigned tasks visibly distinct: human-assigned tasks carry a blue **Human** badge (user icon plus the word), a small muted robot icon marks agent-assigned ones; unassigned tasks show neither. The asymmetry is deliberate — human-assigned rows are the ones the developer scans a long outline for, and agents skip them, so only that side is worth colour and width
 * Discussions marked with a speech-bubble glyph in place of the checkbox (clicking it toggles done, like a task's checkbox)
-* Every unfocused node shows a subtle copy affordance at the end of its text. A normal click copies the same agent-context block as Cmd/Ctrl+C; Mod-click copies only the raw node text, like Cmd/Ctrl+Shift+C. Both actions are uniform across node kinds
+* Every row has copy and delete buttons in its right gutter, revealed on hover or focus; on phones they sit at the right end of the meta row of the row being edited. A normal click on copy copies the same agent-context block as Cmd/Ctrl+C; Mod-click copies only the raw node text, like Cmd/Ctrl+Shift+C. Both actions are uniform across node kinds. Delete removes the subtree and toasts the count with an Undo button
 * Modifier chords make the whole row a mouse target for the two operations whose own affordance is small or absent: **Mod+click** toggles collapse (the chevron alone is a 10px target), **Alt+click** zooms in. One modifier each, so neither is a two-hand stretch; holding both is a slip, not a third gesture, and does nothing. Shift is left to the browser throughout, so Shift+click still extends a native text selection. The chords are claimed in the capture phase, so the chevron, glyph, priority badge, tag chips and inline links never fire their own action as well — the copy affordance is the one exemption, since Mod+click there is already its own action
 * A blocked node carries a **Blocked** badge on the meta row, and the badge is the way to what it waits on: with one open blocker it jumps straight there, with several it opens a menu of them first. The jump is the app's one reveal primitive — it drops a zoom the target sits outside of, unfolds the ancestors hiding it, and reprieves it from the active filters (`hideDone` included) until those filters next change. Nothing is restored afterwards: the zoom change is a history entry, so the way back is browser Back
-* Find (header magnifying glass, or Cmd/Ctrl+K then `f`) opens a text box that classifies the query rather than offering a mode switch: a whole-query node id (`n_…`, optionally wrapped in quotes/backticks/parens) or a kalamu link (`#z=<id>`, including inside a URL or markdown) jumps by zooming to that node — the same as opening the link — and pasting such a query jumps immediately; anything else is a live substring search over node text, and choosing a hit reveals it in place (unfolds ancestors, does not zoom). An id that matches the shape but is not in the tree says "No item with that id" rather than searching the letters. Collapsed / filtered-out nodes are reachable this way; they are not reachable via the browser's own find-in-page
+* Find (header magnifying glass, or Cmd/Ctrl+K then `f`) opens a text box that classifies the query rather than offering a mode switch: a whole-query node id (`n_…`, optionally wrapped in quotes/backticks/parens) or a kalamu link (`#z=<id>`, including inside a URL or markdown) jumps by zooming to that node — the same as opening the link — and pasting such a query jumps immediately; anything else is a live substring search over node text, and choosing a hit reveals it in place (unfolds ancestors, does not zoom). An id that matches the shape but is not in the tree says "No item with that id" rather than searching the letters. Collapsed / filtered-out nodes are reachable this way; they are not reachable via the browser's own find-in-page. Text hits highlight the match and start their one-line excerpt just before it
 * Each rendered row includes its node id as visually hidden, `aria-hidden` text so the browser's find-in-page (Cmd/Ctrl+F) can land on a currently visible row when an id is pasted. The id is never shown and is excluded from the accessibility tree. Collapsed, filtered-out, and hide-done nodes are not in the DOM, so they are not found this way — use Find
-* Every node carries its creation time in a meta row beneath it, as a relative age that keeps aging in a window left open (one shared clock, not a timer per row), with the exact local timestamp on hover. It shares that row with the progress bar, the Blocked badge, and the assignment badge; the row is a fixed height whether or not any of them are showing, so nothing ever reflows
-* Zoom (Workflowy-style): any node can become the temporary root — only its subtree is displayed, with a sticky breadcrumb trail above the outline (project name › ancestors › current node) whose crumbs are clickable to change the zoom level. The zoom target lives in the URL hash (`#z=<id>`), so reload restores it and browser Back unwinds it; zoom is per-tab view state, never in `ui-state.json` or the outline file. Operations that would move a node outside the zoomed subtree (indent/outdent/move on the zoom root, outdenting its direct children) are inert; Enter on the zoom root creates a child rather than an invisible sibling, and a multi-line paste into an empty zoom root does the same with the extra lines; deleting the zoom root lands the zoom on its parent; Escape (when not editing, once no tag filter is active) zooms fully out
+* Every node carries its creation time in a meta row beneath it, as a relative age that keeps aging in a window left open (one shared clock, not a timer per row), with the exact local timestamp on hover. It shares that row with the progress bar, the Blocked badge, and the assignment badge; the row is a fixed height whether or not any of them are showing, so nothing ever reflows — except in Overview mode, where a row that would show only the age is folded away (Overview's job is a shorter page)
+* Zoom (Workflowy-style): any node can become the temporary root — only its subtree is displayed, with a sticky breadcrumb trail above the outline (project name › ancestors › current node) whose crumbs are clickable to change the zoom level. The zoom target lives in the URL hash (`#z=<id>`), so reload restores it and browser Back unwinds it; zoom is per-tab view state, never in `ui-state.json` or the outline file. Operations that would move a node outside the zoomed subtree (indent/outdent/move on the zoom root, outdenting its direct children) are inert; Enter on the zoom root creates a child rather than an invisible sibling, and a multi-line paste into an empty zoom root does the same with the extra lines; deleting the zoom root lands the zoom on its parent; Escape (when not editing or typing in a field, and with no menu or popover open — Escape closes the innermost of those first — once no tag filter is active) zooms fully out
 * Overview mode shortens every row to a derived one-glance label so a long outline stays scannable — nothing is stored, and the full text comes back the moment you edit. Toggled from the header or ⌘K then `o`; persisted in `ui-state.json` as `overview` (a legacy `compact` key still reads as on)
 * Minimal visual clutter
 * Light/dark theme follows the system by default; an explicit switcher (navbar button, or the palette's "Activate dark/light mode") overrides it, persisted in the browser's localStorage — per-browser view state, never in the repo
@@ -1559,12 +1578,6 @@ High-priority task (badge leads the row so priorities align in a scannable colum
 ```
 
 Default priority `p2` should generally be hidden.
-
-Handed-off task:
-
-```text
-☐ Add audit logs → backlog
-```
 
 Discussion (speech-bubble glyph in the UI; `?` in CLI output, `✓` when done):
 
@@ -1629,7 +1642,7 @@ Cmd/Ctrl+C               (nothing selected) copy an agent-context block: a
                          uniform across kinds
 Cmd/Ctrl+Shift+C         copy only the focused node's raw text — no id, kind,
                          markdown marker or context wrapper; uniform across kinds
-Cmd/Ctrl+/               open keyboard cheat sheet ("?" also opens it when not editing)
+Cmd/Ctrl+/               open keyboard cheat sheet ("?" also opens it when not editing or typing in a field)
 Cmd/Ctrl+Z               undo
 Cmd/Ctrl+Shift+Z         redo
 ```
@@ -1649,7 +1662,7 @@ Need not implement all shortcuts in first pass, but structure the code so they c
 
 ## Command palette
 
-Cmd/Ctrl+K opens the command palette — including while a node is being edited.
+Cmd/Ctrl+K opens the command palette — including while a node is being edited; the header's ⌘ button opens it too, which is the only way in on touch screens.
 (Amended 2026-08-10.) It is a **leader-key menu** in the style of
 [LeaderKey](https://github.com/mikker/LeaderKey), not a search box: a static
 panel listing every action alongside the single key that triggers it. There is
@@ -1702,6 +1715,11 @@ l    Labels ->            submenu: every #tag in the outline, checkmark if the
                           node has it; selecting toggles the #token in the
                           node's text (tags stay inline — key decision 7);
                           stays open for multi-toggle
+m    Move ->              submenu: ↑ Move up / ↓ Move down / → Indent /
+                          ← Outdent (same as Mod+↑/↓, Tab, Shift+Tab); a move
+                          that would be inert (no sibling that way, the zoom
+                          boundary) is greyed; stays open so a node can travel
+                          several steps
 o    Overview             toggle whose label is the action: "Overview enabled"
                           when the mode is off, "Overview disabled" when it is
                           on (short derived labels on every row; nothing is
@@ -1724,7 +1742,8 @@ x    Clean up             deletes every done task with its subtree, plus done
                           bullets and blank nodes (same as `kalamu clean`),
                           applied through the UI's undo stack so it is undoable
                           in-session; toasts the result ("Deleted 4 nodes
-                          (3 done tasks)" / "Nothing to clean."), closes
+                          (3 done tasks)" / "Nothing to clean."; the toast
+                          carries an Undo button), closes
 z    Zoom ->              submenu: i Zoom in — zooms the view to this node
                           (same as Mod+Shift+.), disabled when it is already the
                           zoom root, closes with focus in the new root · o Zoom
@@ -1746,7 +1765,7 @@ The action list is fixed: every non-digit item always renders, on a stable key
 and in key order — digits, then the letters alphabetically, then the
 punctuation and arrow rows. Only the project digit rows vary, with the hub
 registry. Items that don't apply are greyed out and disabled rather than
-hidden — with no node focused, every node-targeting action (`c d p a l t s b
+hidden — with no node focused, every node-targeting action (`c d p a l m t s b
 ← → ↑`) is disabled (the overview, view, find, clean, undo/redo, zoom and
 sheet items need no target and are always enabled — Clean up with nothing to
 clean just toasts "Nothing to clean."). On a bullet, Start/End and Block are disabled
@@ -1790,7 +1809,7 @@ Key rules:
   at a sublevel, close at the root. Esc therefore behaves identically with or
   without such an extension. Focus moving to a real element outside the palette
   closes it without refocusing; switching apps does not close it.
-* Label toggles keep the palette open; every other action closes it.
+* Label toggles and Move steps keep the palette open; every other action closes it.
 * The direct shortcuts that duplicate palette actions (Mod+Enter, Mod+.,
   Alt+Enter, Mod+Shift+↑/↓, Mod+Shift+H, Mod+Shift+./,, Mod+C,
   Mod+Shift+C, Mod+Z, Mod+Shift+Z) remain for now, but the leader sequences are
@@ -1906,24 +1925,14 @@ kalamu/
         tree.ts
         validate.ts
         operations.ts
+        store.ts        (Node-only file access, behind "@kalamu/core/store")
     cli/
       src/
-        index.ts
-        commands/
-          init.ts
-          open.ts
-          list.ts
-          show.ts
-          add.ts
-          update.ts
-          move.ts
-          delete.ts
-          done.ts
-          reopen.ts
-          search.ts
-          next.ts
-          validate.ts
-        server.ts
+        index.ts        (Commander wiring: parse argv, print, exit codes)
+        commands.ts     (every command as (cwd, options) -> CommandResult)
+        server.ts       (per-project Hono server)
+        hub.ts          (the hub, mounting per-project servers)
+        http.ts         (request guard, JSON bodies, error envelope)
     web/
       src/
         App.svelte
@@ -1944,7 +1953,7 @@ Stack (decided):
 * Hono for the local server (routing, JSON handling, SSE helpers)
 * Commander for CLI parsing
 * Zod for validation
-* chokidar for file watching
+* `fs.watch` for file watching (no watcher dependency)
 * tsup (esbuild) to bundle the CLI so users don't inherit the dependency tree
 * Vitest for tests
 
@@ -1955,18 +1964,62 @@ Stack (decided):
 The local server should:
 
 * Serve static web app assets
-* Read/write `.kalamu/outline.jsonl`
+* Read/write the project's outline wherever its store keeps it — resolved per request, so `kalamu migrate` or a data-dir change never strands a running server (or hub instance) on the old copy
 * Provide JSON API endpoints
 * Validate operations before writing
 * Avoid corrupting the file
 * Use atomic writes
 * Watch the file and push change events to connected UIs
 
+**Request guard** (shared by the per-project server and the hub, so it applies
+under `/p/<slug>/...` mounts unchanged). Both bind `127.0.0.1`, but a browser
+will still carry a malicious page's requests there:
+
+* The host a request was addressed to — `X-Forwarded-Host` behind a proxy, else
+  `Host` — must be a loopback name (`localhost`, `127.0.0.1`, `[::1]`, any port)
+  or the host of the configured base-url (`kalamu config base-url`, compared
+  case-insensitively, a default port matching its omission). Behind a proxy the
+  `Host` itself must also pass or be an IP literal: a DNS-rebinding page can add
+  `X-Forwarded-Host` to its own requests, but its `Host` is always its own name.
+  Anything else is a 403 whose plain-text body tells the human to set
+  `kalamu config base-url <url>` — the step any reverse proxy (exe.dev, `tailscale
+  serve`) needs.
+* A `POST`/`PUT`/`PATCH`/`DELETE` carrying an `Origin` must come from an allowed
+  host, else 403 `{"code": "forbidden-origin"}` (CSRF).
+* Routes that take a JSON body require `Content-Type: application/json` (415
+  otherwise): cross-site forms and `text/plain` posts skip CORS preflight, JSON
+  never does. `POST /api/assets` keeps its image types; bodiless routes
+  (`done`, `reopen`, `end`, deletes, and `start` without options) take none.
+
+Error responses are `{"error": "<message>", "code"?: "<code>"}`, with the same
+codes as `--format json` (see [CLI requirements](#cli-requirements)): `not-found`
+404, `cycle` 409, `conflict` 409, `invalid-outline` 500; plain refusals are 400
+without a code.
+
+**Outline version.** `GET /api/nodes`, `PUT /api/nodes`, and every successful
+route that writes the outline set `X-Kalamu-Version: <token>` — core's
+`outlineVersion`, `<inode>-<size>-<mtimeMs>` of the file after the operation,
+an opaque string to clients. Writes also set `X-Kalamu-Base-Version`, the
+version the operation was applied on. `GET /api/nodes` returns `{nodes, version}`.
+`PUT /api/nodes` takes `{nodes, version}` (version required, 400 without) and
+is **not** last-write-wins: when the file's current version differs from the
+one sent, it answers 409 `{"error": "outline changed since it was loaded",
+"code": "conflict"}` and writes nothing; success is 200 `{nodes, version}`.
+That is what lets undo restore a snapshot without silently reverting an
+agent's write made in between. The UI sends the version it last synced to —
+from the newest `GET /api/nodes` body it adopted, or the header of its own
+latest write when that write's base version is the one it held (otherwise
+another writer got in between, and it keeps the stale token until a reload
+shows their change) — with every whole-outline PUT (undo/redo, split, merge,
+multi-line paste, clean). On 409 it reloads, clears both undo and redo, and
+says so; a reload that brings in another writer's change also clears both
+stacks, since every snapshot in them predates it.
+
 Suggested API routes:
 
 ```http
-GET    /api/nodes
-PUT    /api/nodes         (replace whole outline; exists for UI undo/redo snapshot-restore; payload fully validated)
+GET    /api/nodes         ({nodes, version}; X-Kalamu-Version header)
+PUT    /api/nodes         (replace whole outline for UI undo/redo; body {nodes, version}; 409 when the file moved on; payload fully validated)
 GET    /api/nodes/:id
 POST   /api/nodes
 PATCH  /api/nodes/:id
@@ -1982,8 +2035,8 @@ GET    /api/search?q=...
 GET    /api/next
 GET    /api/validate
 POST   /api/assets        (raw image body; writes content-hashed file to .kalamu/assets/; returns {path, url})
-GET    /assets/:file      (serves .kalamu/assets/ files)
-GET    /docs/*            (serves repo-relative .md files as plain text — doc references, key decision 19; anything else is 404)
+GET    /assets/:file      (serves .kalamu/assets/ files with `Content-Security-Policy: sandbox` and `nosniff` — a pasted SVG can carry script)
+GET    /docs/*            (serves repo-relative .md files as plain text — doc references, key decision 19; containment is checked on real paths, so a `..` or a symlink leading outside the checkout is 404, as is anything else)
 GET    /api/files         (repo-relative paths from `git ls-files` for the @ file picker; {files, truncated})
 GET    /api/meta          (meta.json: version + tag colour overrides)
 PUT    /api/tags/:tag     (set or clear a colour override; body: {"color": "#hex" | null})
@@ -2000,19 +2053,20 @@ Two writers exist by design: the local server (driven by the UI) and the CLI (dr
 
 Every write — CLI or server — follows this sequence:
 
-1. Read all JSONL nodes; record the file's mtime.
-2. Apply the validated operation in memory.
-3. Serialize nodes as JSONL in pre-order traversal.
-4. Before writing, verify the file's mtime is unchanged.
-   * If it changed, re-read the file and re-apply the operation once; if it changed again, fail with a clear error.
-5. Write to a temp file in the same directory.
-6. Atomic rename over the original.
+1. Read all JSONL nodes; record the file's version token (`<inode>-<size>-<mtimeMs>` — mtime alone can repeat within its resolution, and an atomic rename changes the inode).
+2. Refuse to go on if the file has malformed lines or a broken tree — duplicate ids, missing parents, parent cycles (`kalamu validate` names them). The tree builder cannot place such nodes, so serializing it would silently delete them; reads refuse too, so the UI shows the error instead of an outline with nodes missing.
+3. Apply the validated operation in memory.
+4. Serialize nodes as JSONL in pre-order traversal.
+5. Before writing, verify the version token is unchanged.
+   * If it changed, re-read the file and re-apply the operation once; if it changed again, fail with a clear error (CLI exit code 3, HTTP 409 `conflict`).
+6. Write to a temp file in the same directory and fsync it.
+7. Atomic rename over the original.
 
 `meta.json` and `ui-state.json` writes use the same temp-file + atomic-rename pattern (ui-state additionally debounced — it changes on every fold).
 
 The server additionally:
 
-* Watches `.kalamu/outline.jsonl` (chokidar or `fs.watch`).
+* Watches the outline's directory — `.kalamu/` on the repo store, the data dir on the local store — plus the repo's `.kalamu/`, where `kalamu migrate` adds or removes the marker (`fs.watch`).
 * Pushes an `outline-changed` event over SSE whenever the file changes on disk (e.g. an agent ran `kalamu done` while the UI is open).
 * The UI reloads its state on that event, preserving focus/cursor where possible.
 
@@ -2048,10 +2102,10 @@ Shape:
 
 Rules:
 
-* Every CLI command that resolves a project (`init`, `open`, `add`, `next`, …) upserts that project's entry — registration is a side effect of use, never a setup step. Existing entry: touch `lastSeenAt` only.
+* Every CLI command that resolves a project (`init`, `open`, `add`, `next`, …) upserts that project's entry — registration is a side effect of use, never a setup step. Existing entry: touch `lastSeenAt` only, and only once it is over an hour old — the file is read and rewritten without a lock, so an unchanged entry is never rewritten. The file sits under `KALAMU_HOME` like the rest of `~/.kalamu`; `KALAMU_REGISTRY` overrides the file alone.
 * Entries are keyed by repo path whichever store the project uses; `kalamu hub list` adds a local-store project's data dir as a third column (`dir` in JSON, with `store`).
 * A linked git worktree never registers on its own path. (Added 2026-09-02.) Root resolution already lands on the main checkout (key decision 20), so a worktree is one sidebar entry and one slug, and `kalamu link` from inside it points at the shared project. Before this, every worktree an agent ran kalamu in became a fresh `<slug>-N` row, dimmed as `missing` once the worktree was removed; `kalamu hub forget` clears any such leftovers.
-* Entries whose `path` no longer contains `.kalamu/outline.jsonl` are **kept** and served with `missing: true`; the sidebar dims them and names the expected path. (Amended 2026-08-23: they used to be pruned silently on read, which turned a deleted outline into "no registered project" with no pointer to where the file had lived — the registry is the only record of that path, and losing it is exactly when the human needs it. `kalamu hub forget` remains the explicit way to drop one.) The outline file — not the bare directory — is still the project test for registration (`findRoot`), so the machine-global `~/.kalamu` (registry, hub log) can never make the home directory masquerade as a project.
+* Entries whose outline file is gone (`.kalamu/outline.jsonl` on the repo store, the data dir's copy on the local store) are **kept** and served with `missing: true`; the sidebar dims them and names the expected path. (Amended 2026-08-23: they used to be pruned silently on read, which turned a deleted outline into "no registered project" with no pointer to where the file had lived — the registry is the only record of that path, and losing it is exactly when the human needs it. `kalamu hub forget` remains the explicit way to drop one.) A project file in `.kalamu/` — the outline or the local-store marker, never the bare directory — is still the project test for registration (`findRoot`), so the machine-global `~/.kalamu` (registry, hub log) can never make the home directory masquerade as a project.
 * Writes use the same temp-file + atomic-rename pattern as everything else. Registry failures must never break an unrelated command that triggered registration — a broken registry degrades the hub, not ordinary CLI work. `kalamu link` is the deliberate exception because its result depends on the registered slug; it fails clearly rather than inventing a broken URL. The `Link:` lines that `add`/`done`/`start`/`next` append are back on the never-break side: an unresolvable slug omits the line, since there the link decorates a command that must still succeed.
 * The registry is plumbing, not data: deleting it loses nothing except the sidebar list (plus slug assignments, name/colour overrides, and the manual sidebar order), which repopulates on use.
 
@@ -2100,13 +2154,14 @@ Behaviour:
 * The sidebar lists projects in **registry array order** — a manual order, dragged into place row by row in the UI (`PATCH {"index": n}` moves a project to 0-based position n, clamped). New projects register at the end; re-registration touches `lastSeenAt` only and never moves an entry. Recency deliberately does not order the sidebar — a stable order is what keeps the palette's `⌘K 1…9` project digits stable — and only picks which project `GET /` lands on.
 * Every project has a **theme colour** so multiple Kalamus are tellable apart at a glance: the sidebar is tinted with the active project's colour and each row carries a swatch. Like tag colours (key decision 7), the colour is the slug hashed into the shared palette — automatic, stable, stored nowhere — until a swatch pick stores an override in the registry (`PATCH {"color": "#rrggbb"}`; blank clears back to derived).
 * Removing a project from the sidebar is a **forget**, consistent with the registry being plumbing: the entry is dropped, the project's `.kalamu/` data is untouched, and the next kalamu command run inside the project re-registers it. The UI's per-entry remove affordance and `kalamu hub forget <slug>` both expose this operation without confirmation because it is non-destructive; `kalamu hub list` prints the stable slugs and paths needed to identify entries from the terminal.
-* SSE live reload, mtime-checked atomic writes, and undo work unchanged per project; hub, standalone `kalamu open` servers, and CLI agents can all write concurrently because every writer already does mtime-checked atomic writes.
+* SSE live reload, version-checked atomic writes, undo's conflict-checked replace, and the request guard (see [Local server](#local-server)) work unchanged per project; hub, standalone `kalamu open` servers, and CLI agents can all write concurrently because every writer already does version-checked atomic writes. The hub's own routes sit behind the same guard, and its `PATCH /api/projects/:slug` takes a JSON body like every other route.
+* Reaching the hub from another machine means a reverse proxy in front of the loopback port (`tailscale serve`, the exe.dev HTTPS proxy). Set `kalamu config base-url` to the URL you open there: it makes node links point at that address and is the one non-loopback host the guard answers to.
 * `kalamu hub install` writes a launchd user agent (macOS first; systemd user unit later) so the hub is always up and `http://localhost:4400` becomes a permanent bookmark — the terminal disappears from the human workflow entirely.
 * A launchd-managed hub (installed plist, launchd is the parent process) polls the bundle it was started from (~30s) and exits once a replaced one has settled on disk (mtime changed and ≥10s old, so a mid-write install never counts), letting `KeepAlive` restart it on the new code. Otherwise a CLI update refreshes the web assets (served from disk) while the server process keeps running months-old code. This is a restart, not a self-update — the human still installs updates (key decision 14) — and `kalamu restart` remains the way to force it immediately. A foreground hub never self-exits; it belongs to whoever's terminal it runs in.
 
 ### `kalamu open` integration
 
-When a hub is already listening on the hub port, `kalamu open` opens `http://localhost:4400/p/<slug>` instead of starting a standalone server. When no hub answers but the launchd agent is installed (macOS, plist present), `open` wakes it (`launchctl kickstart`, falling back to `bootstrap`) and routes there once it responds — an installed hub is always the destination, never a standalone server. Only when neither applies (or the wake fails, or `--port` opts out) does `open` start a standalone server. Agents are unaffected — the hub exists for the human at the keyboard, and no agent-facing command needs it.
+When a hub is already listening, `kalamu open` opens `http://127.0.0.1:<port>/p/<slug>` instead of starting a standalone server — the port read from a live `~/.kalamu/hub.lock` (so `kalamu hub --port` is found), else 4400. When no hub answers but the launchd agent is installed (macOS, plist present), `open` wakes it (`launchctl kickstart`, falling back to `bootstrap`) and routes there once it responds — an installed hub is always the destination, never a standalone server. Only when neither applies (or the wake fails, or `--port` opts out) does `open` start a standalone server. Agents are unaffected — the hub exists for the human at the keyboard, and no agent-facing command needs it.
 
 Node deep links use the existing zoom hash:
 `<base-url>/p/<slug>#z=<node-id>`. `kalamu link <id>` is the agent-facing way to
@@ -2229,7 +2284,7 @@ The outliner UI is the hardest part of this project and its biggest risk. Prove 
 1. **UI spike (throwaway):** a Svelte 5 prototype of just the editing core — nested bullets, Enter/Tab/Shift+Tab, arrow-key focus movement, edit-in-place using per-node plain-text contenteditable (key decision 9) — against in-memory data. No persistence, no server, no polish. Timebox: 2–3 days.
 2. **Go/no-go on feel.** If the editing experience isn't great, fix or rethink before writing anything else.
 3. Core model and validation
-4. JSONL read/write (lenient parse, pre-order emit, mtime-checked atomic writes)
+4. JSONL read/write (lenient parse, pre-order emit, version-checked atomic writes)
 5. Tree building
 6. CLI `init`
 7. CLI `add`
@@ -2277,7 +2332,10 @@ Add tests for:
 * Moving nodes (subtree moves as a block)
 * Preventing invalid moves
 * Delete: leaf, refusal with children, `--recursive`
-* mtime conflict detection and single retry
+* Version-token conflict detection and single retry
+* Refusing to read or write an outline with duplicate IDs, missing parents, or parent cycles (the write that used to delete them)
+* `PUT /api/nodes`: 409 on a stale version, success on the current one
+* Request guard: foreign `Host` refused, cross-origin and non-JSON writes refused, the base-url host accepted via `X-Forwarded-Host`
 * Regex parsing of `p1`–`p3`
 * Not parsing invalid priority strings
 * Regex parsing of `#tag` and `@human`/`@agent` tokens

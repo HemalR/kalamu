@@ -1,5 +1,6 @@
 import {
   buildTree,
+  DEFAULT_PRIORITY,
   depthOf,
   effectivePriority,
   pathOf,
@@ -18,10 +19,10 @@ export function glyphFor(node: KalamuNode): string {
   return node.kind === "discussion" ? "?" : "☐";
 }
 
-/** Priority leads the row so priorities align in a scannable column. */
+/** Priority leads the row so priorities align in a scannable column; the default (p2) is hidden. */
 export function prefixFor(node: KalamuNode): string {
-  if (node.kind !== "bullet" && effectivePriority(node) !== 3) return `p${effectivePriority(node)} `;
-  return "";
+  const priority = effectivePriority(node);
+  return node.kind !== "bullet" && priority !== DEFAULT_PRIORITY ? `p${priority} ` : "";
 }
 
 export function suffixFor(node: KalamuNode): string {

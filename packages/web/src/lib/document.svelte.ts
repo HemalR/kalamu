@@ -8,6 +8,14 @@
  * server uses (@kalamu/core), then persisted through the API on a serialized
  * queue — so the UI feels instant while the JSONL file stays canonical.
  *
+ * Undo restores whole-outline snapshots, so it must never cross a write made
+ * elsewhere (an agent's `kalamu done`): restoring a snapshot from before it
+ * would silently revert it. Two guards keep that true. Every whole-outline
+ * write carries the version token the store last synced to, and the server
+ * refuses it (409 conflict) once the file has moved on; and a refetch that
+ * brings in someone else's change clears both history stacks, because every
+ * snapshot in them predates that change.
+ *
  * Created nodes keep their locally generated id for the whole session (the
  * server's id is aliased via toServer/toLocal); this keeps `{#each}` keys and
  * therefore contenteditable elements stable while a POST is in flight.
@@ -23,13 +31,49 @@ import { api, ApiError } from "./api";
 
 const UNDO_LIMIT = 100;
 const TOAST_MS = 4000;
+/** Toasts with an action stay longer: reading and reaching for the button takes time. */
+const ACTION_TOAST_MS = 7000;
+
+/** A transient message, optionally with one action button (e.g. Undo after a delete). */
+export interface Toast {
+  message: string;
+  action?: { label: string; run: () => void };
+}
+
+/** A node's content as the outline sees it: timestamps reduced to whether they are set, since the optimistic copy and the server stamp them independently. */
+const signature = (n: KalamuNode): string =>
+  JSON.stringify([n.id, n.parentId, n.kind, n.text, n.doneAt !== null, n.startedAt !== undefined, n.priority, n.assignee, n.createdBy, n.blockedBy]);
+
+/** Same nodes, same content, same order — i.e. a refetch brought in nothing from another writer. */
+function sameOutline(a: readonly KalamuNode[], b: readonly KalamuNode[]): boolean {
+  return a.length === b.length && a.every((node, index) => {
+    const other = b[index];
+    return other !== undefined && (node === other || signature(node) === signature(other));
+  });
+}
+
+/** What the store tells its host page; every hook is optional (the embed sets none). */
+export interface StoreHooks {
+  /** Something /api/project reports changed on the server (SSE); App refetches it. */
+  onProjectChanged?: () => void;
+  /** The zoom moved (a server id; null = unzoomed). App mirrors it into the URL hash. */
+  onZoom?: (serverId: string | null) => void;
+}
 
 export class OutlineDocument {
+  protected readonly hooks: StoreHooks;
+
+  constructor(hooks: StoreHooks = {}) {
+    this.hooks = hooks;
+  }
+
   nodes = $state.raw<KalamuNode[]>([]);
   meta = $state.raw<KalamuMeta>({ version: 1 });
   loaded = $state(false);
   loadError = $state<string | null>(null);
-  toast = $state<string | null>(null);
+  /** Set while the outline file on disk is structurally broken (a refetch got `invalid-outline`); App shows it as a banner. */
+  outlineError = $state<string | null>(null);
+  toast = $state<Toast | null>(null);
 
   /**
    * Server reachability. While false, every mutation refuses (mutate/restore/
@@ -45,8 +89,6 @@ export class OutlineDocument {
    * derived views without racing the outline file.
    */
   outlineChanges = $state(0);
-  /** Bumped on every SSE project-changed event; App refetches /api/project. */
-  projectChanges = $state(0);
 
   tree = $derived(buildTree(this.nodes));
   roots = $derived(this.tree.children.get(null) ?? []);
@@ -63,6 +105,13 @@ export class OutlineDocument {
   // only ever swapped out wholesale. Reactive so the palette can grey its rows.
   private undoStack = $state.raw<KalamuNode[][]>([]);
   private redoStack = $state.raw<KalamuNode[][]>([]);
+  /** History was dropped for an outside write since the last edit, so an empty undo can say why. */
+  private historyCleared = false;
+  /**
+   * The outline version `nodes` is in step with: set by every adopted read
+   * and every landed write. Whole-outline writes send it (see replaceAll).
+   */
+  protected version = "";
   private toServer = new Map<string, string>();
   private toLocal = new Map<string, string>();
   private queue: Promise<unknown> = Promise.resolve();
@@ -87,9 +136,7 @@ export class OutlineDocument {
         void this.refetchNodes();
       },
       onMetaChanged: () => void this.refetchMeta(),
-      onProjectChanged: () => {
-        this.projectChanges++;
-      },
+      onProjectChanged: () => this.hooks.onProjectChanged?.(),
     });
   }
 
@@ -129,11 +176,27 @@ export class OutlineDocument {
   protected enqueue(persist: () => Promise<unknown>): void {
     this.pending++;
     this.queue = this.queue
-      .then(persist)
+      .then(async () => {
+        await persist();
+        // Serialized, so the newest written version is this write's. Adopt it
+        // only if the write landed on the version we hold: otherwise another
+        // writer got in between, and keeping the stale token makes any
+        // whole-outline write 409 until a refetch has shown their change.
+        const written = api.takeVersion();
+        if (written !== null) {
+          if (written.base === this.version) this.version = written.version;
+          else this.needsRefetch = true;
+        }
+      })
       .catch((err: unknown) => {
         // A network-level failure means disconnected; the banner says so.
         if (err instanceof ApiError && err.status === 0) this.setConnected(false);
-        else this.showToast(err instanceof Error ? err.message : "failed to save");
+        else if (err instanceof ApiError && err.code === "conflict") {
+          // A whole-outline write met a newer file: the refetch below brings
+          // that change in, and no snapshot from before it may be restored.
+          this.clearHistory();
+          this.showToast("Outline changed elsewhere — reloaded (undo history cleared)");
+        } else this.showToast(err instanceof Error ? err.message : "failed to save");
         this.needsRefetch = true;
       })
       .finally(() => {
@@ -152,17 +215,29 @@ export class OutlineDocument {
       this.needsRefetch = true;
       return;
     }
-    const version = this.opVersion;
+    const opVersion = this.opVersion;
     try {
-      const { nodes } = await api.getNodes();
-      if (this.opVersion === version && this.pending === 0) {
-        this.nodes = this.localize(nodes);
+      const { nodes, version } = await api.getNodes();
+      if (this.opVersion === opVersion && this.pending === 0) {
+        const next = this.localize(nodes);
+        // Our own writes come back identical; anything else is another writer's.
+        if (!sameOutline(this.nodes, next)) this.clearHistory();
+        this.nodes = next;
+        this.version = version;
+        this.outlineError = null;
       } else {
         this.needsRefetch = true;
       }
-    } catch {
-      // Server briefly unreachable; the next SSE event or op retries.
+    } catch (err) {
+      // A broken file is worth a banner; anything else is the server briefly
+      // unreachable, and the next SSE event or op retries.
+      if (err instanceof ApiError && err.code === "invalid-outline") this.outlineError = err.message;
     }
+  }
+
+  /** Whole-outline write at the synced version (read when the queue runs it, after the writes before it). */
+  protected replaceAll(nodes: KalamuNode[]): Promise<unknown> {
+    return api.replaceNodes(this.serverize(nodes), this.version);
   }
 
   private async refetchMeta(): Promise<void> {
@@ -199,6 +274,7 @@ export class OutlineDocument {
     }
     this.undoStack = [...this.undoStack, this.nodes].slice(-UNDO_LIMIT);
     this.redoStack = [];
+    this.historyCleared = false;
     this.opVersion++;
     this.nodes = next;
     this.enqueue(persist);
@@ -254,7 +330,30 @@ export class OutlineDocument {
   }
 
   undo(): void {
+    if (!this.canUndo && this.historyCleared) this.showToast("Nothing to undo — the outline changed elsewhere");
     this.restore("undo");
+  }
+
+  /**
+   * An Undo button for a toast about the change just made. It only acts while
+   * that change is still the newest step — after any later edit it would undo
+   * something else.
+   */
+  protected undoAction(): Toast["action"] {
+    const step = this.undoStack.at(-1);
+    return {
+      label: "Undo",
+      run: () => {
+        if (this.undoStack.at(-1) === step) this.undo();
+      },
+    };
+  }
+
+  private clearHistory(): void {
+    if (!this.canUndo && !this.canRedo) return;
+    this.undoStack = [];
+    this.redoStack = [];
+    this.historyCleared = true;
   }
 
   redo(): void {
@@ -273,16 +372,19 @@ export class OutlineDocument {
     this.redoStack = undoing ? handed : rewound;
     this.opVersion++;
     this.nodes = target;
-    this.enqueue(() => api.replaceNodes(this.serverize(target)));
+    this.enqueue(() => this.replaceAll(target));
   }
 
   // ---- toast --------------------------------------------------------------------
 
-  showToast(message: string): void {
-    this.toast = message;
+  showToast(message: string, action?: Toast["action"]): void {
+    this.toast = action === undefined ? { message } : { message, action };
     clearTimeout(this.toastTimer);
-    this.toastTimer = setTimeout(() => {
-      this.toast = null;
-    }, TOAST_MS);
+    this.toastTimer = setTimeout(() => this.dismissToast(), action === undefined ? TOAST_MS : ACTION_TOAST_MS);
+  }
+
+  dismissToast(): void {
+    clearTimeout(this.toastTimer);
+    this.toast = null;
   }
 }

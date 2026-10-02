@@ -1,0 +1,105 @@
+/*
+ * Design tokens, shared by the app (app.css imports this) and the landing
+ * page's embed (OutlineEmbed.svelte imports it directly — the host page has
+ * no app.css). Light and dark follow the system by default;
+ * lib/theme.svelte.ts sets data-theme on the root element to override
+ * (SPEC "UI principles").
+ */
+
+:root {
+  color-scheme: light dark;
+  --bg: light-dark(#ffffff, #17191d);
+  --panel: light-dark(#ffffff, #24272d);
+  --fg: light-dark(#24292f, #e3e6ea);
+  /* Secondary text. Both meet WCAG AA (4.5:1) for the 11px meta text on
+     --bg and --panel alike; --muted-strong is for small text sitting on a
+     tint (sidebar counts, kbd hints), where --muted alone falls short. */
+  --muted: light-dark(#6e7781, #8b949e);
+  --muted-strong: light-dark(#57606a, #a3abb4);
+  --done: light-dark(#a8afb8, #5f6771);
+  --bullet: light-dark(#b7bec7, #5c646e);
+  --ring: light-dark(rgba(70, 80, 90, 0.18), rgba(190, 200, 210, 0.2));
+  /* A collapsed node's halo around its glyph: hidden children. Well past
+     --ring's weight, so a folded node is unmistakable at a glance. */
+  --ring-collapsed: light-dark(rgba(70, 80, 90, 0.3), rgba(190, 200, 210, 0.34));
+  /* Tint for the one row holding the text caret, so "where am I" stays visible.
+     Deliberately lighter than --ring: it must not read as a selection. */
+  --caret-row: light-dark(rgba(70, 80, 90, 0.07), rgba(190, 200, 210, 0.075));
+  /* Checkbox and speech-bubble outlines: ≥3:1 on --bg and --panel (WCAG non-text contrast). */
+  --check-border: light-dark(#8c959f, #6b737d);
+  --guide: light-dark(rgba(20, 30, 40, 0.09), rgba(220, 230, 240, 0.09));
+  /* Brand accent (bronze ink) — the wordmark's k and the favicon. Lightened
+     in dark mode for contrast. */
+  --brand: light-dark(#9a6a2e, #d0a256);
+  /* Task state beyond done: a claimed task in progress (startedAt) and one
+     waiting on an open blocker (blockedBy). Started is the same amber as
+     --progress-active below, because both mean "claimed but unfinished" — the
+     checkbox's pulsing dot and the active progress dash should speak one
+     colour, not two. That amber does sit close to the brand bronze; what keeps
+     it from reading as chrome is that it only ever appears on a work item's own
+     glyph, and on the started checkbox it breathes. Blocked stays well clear of
+     both. */
+  --started: light-dark(#c08a3e, #c99a4f);
+  --blocked: light-dark(#b04b3c, #e0897c);
+  /* Human-assigned work is what the reader scans a long outline *for* — agents
+     skip those rows, so they are the only ones they must find — which is why it
+     gets a hue nothing else in the app uses: clear of the blocked red, the
+     started amber, the brand bronze and the done green, and still legible as
+     badge text at 11.5px. Lightened in dark mode, where the light-mode blue
+     sinks into the ground. */
+  --assigned-human: light-dark(#2f6fd0, #8ab4f8);
+  /* Segmented progress dashes. Done reads at full saturation — at this size a
+     muted green disappeared into the row it was meant to report on. Lifted in
+     dark mode, where the same hue sits duller against the ground. Active stays
+     quieter: it is the transient state, and two loud colours in one strip read
+     as an alarm. Unfilled dashes reuse --ring. */
+  --progress-done: light-dark(#00bd7d, #12ce8c);
+  --progress-active: light-dark(#c08a3e, #c99a4f);
+  --toast-bg: light-dark(#24292f, #e3e6ea);
+  --toast-fg: light-dark(#f6f8fa, #17191d);
+  /* Amber notices: the offline and branch-drift banners. */
+  --warn-fg: light-dark(#9a6700, #e3b341);
+  --warn-bg: light-dark(#fff8e5, rgba(227, 179, 65, 0.12));
+  --warn-border: light-dark(rgba(154, 103, 0, 0.35), rgba(227, 179, 65, 0.35));
+  /* The faint wash a hovered menu row or list item takes. */
+  --hover-tint: color-mix(in srgb, var(--fg) 7%, transparent);
+  /* Anchored popovers (row menus, tag popover, filter menu) vs modal panels. */
+  --menu-shadow: 0 6px 24px rgba(0, 0, 0, 0.16);
+  --dialog-shadow: 0 16px 48px rgba(0, 0, 0, 0.3);
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
+
+  /* Outline geometry. Rows hang their chevron in a left gutter and their
+     copy/delete buttons in a right one, both outside the row box, so whatever
+     contains an outline must leave these clear (see OutlineNode.svelte). */
+  --chevron-gutter: 18px;
+  --row-gutter-right: 52px;
+
+  /* Stacking order, lowest first. Menus and the sticky breadcrumbs share a
+     level (DOM order decides between them); the header sits above both so its
+     dropdowns cover the trail. */
+  --z-menu: 10;
+  --z-crumbs: 10;
+  --z-header: 11;
+  --z-help: 15;
+  --z-backdrop: 16;
+  --z-drawer: 17;
+  --z-drawer-toggle: 18;
+  --z-toast: 20;
+  --z-overlay: 30;
+}
+
+/* Phones can't spare a 52px gutter: the copy/delete buttons move into the
+   focused row's meta row there (OutlineNode.svelte), leaving only a margin.
+   (Literal breakpoint: see lib/breakpoints.ts.) */
+@media (max-width: 639.98px) {
+  :root {
+    --row-gutter-right: 12px;
+  }
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}

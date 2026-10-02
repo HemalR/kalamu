@@ -1,5 +1,6 @@
 <script lang="ts">
   import { TAG_PALETTE } from "@kalamu/core";
+  import { keepInView } from "../lib/popover";
 
   interface Props {
     /** Lowercase tag name (for the filter action label); omit with onfilter
@@ -15,7 +16,7 @@
   let { tag, color, onpick, onfilter }: Props = $props();
 </script>
 
-<div class="popover" role="dialog" aria-label={onfilter ? "Tag actions" : "Choose colour"}>
+<div class="popover" role="dialog" aria-label={onfilter ? "Tag actions" : "Choose colour"} {@attach keepInView}>
   {#if tag !== undefined && onfilter !== undefined}
     <button class="filter" onclick={onfilter}>Filter by <strong>#{tag}</strong></button>
   {/if}
@@ -37,12 +38,12 @@
     position: absolute;
     top: calc(100% + 5px);
     left: 0;
-    z-index: 10;
+    z-index: var(--z-menu);
     padding: 8px;
     border-radius: 8px;
     background: var(--panel);
     border: 1px solid var(--guide);
-    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.16);
+    box-shadow: var(--menu-shadow);
     white-space: normal;
   }
 
@@ -62,7 +63,7 @@
     white-space: nowrap;
   }
   .filter:hover {
-    background: color-mix(in srgb, var(--fg) 7%, transparent);
+    background: var(--hover-tint);
   }
 
   .swatches {
@@ -80,6 +81,24 @@
   }
   .swatch:hover {
     transform: scale(1.15);
+  }
+  /* Touch: 28px swatches whose hit areas meet across the 4px gaps — 32px
+     each, and the grid still fits the 230px hub drawer. */
+  @media (pointer: coarse) {
+    .swatches {
+      grid-template-columns: repeat(6, 28px);
+      gap: 4px;
+    }
+    .swatch {
+      position: relative;
+      width: 28px;
+      height: 28px;
+    }
+    .swatch::after {
+      content: "";
+      position: absolute;
+      inset: -2px;
+    }
   }
   .swatch.active {
     box-shadow:
